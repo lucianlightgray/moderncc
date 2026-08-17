@@ -1624,6 +1624,17 @@ static int smf_point_dump(const char *cat)
 					n++;
 				}
 		}
+	for (t = 0; t < SM_BFT_COUNT; t++)
+		for (op = 0; op < SM_BFO_COUNT; op++) {
+			sprintf(name, "bfsweep.%s.%s", smb_type_name[t], smb_op_name[op]);
+			if (strcmp(name, cat))
+				continue;
+			for (i = 0; i < SMB_CORPUS_N; i++) {
+				printf("P %s %d 0 %016llx\n", name, i,
+							 (unsigned long long)smb_run(t, op, smb_corpus[i]));
+				n++;
+			}
+		}
 	for (t = 0; t < SMC_T_COUNT; t++)
 		for (op = 0; op < SMC_O_COUNT; op++) {
 			SmBits a1, a2, b1, b2;

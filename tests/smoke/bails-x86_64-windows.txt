@@ -425,8 +425,6 @@ div diverge-one:bfsweep.BFS_32.SUB1.fold 1
 div diverge-one:bfsweep.BFS_32.SUB1.run 1
 div diverge-one:bfsweep.BFUL_31.ADD1.fold 1
 div diverge-one:bfsweep.BFUL_31.ADD1.run 1
-div diverge-one:bfsweep.BFUL_31.MUL3.fold 1
-div diverge-one:bfsweep.BFUL_31.MUL3.run 1
 div diverge-one:bfsweep.BFUL_33.ADD1.fold 1
 div diverge-one:bfsweep.BFUL_33.ADD1.run 1
 div diverge-one:bfsweep.BFUL_33.COM.fold 1
@@ -591,3 +589,58 @@ div diverge-refs:shl.sll.w.fold 1
 div diverge-refs:shl.sll.wp1.fold 1
 wrapv wrapv-inert:digest-identical-under-fno-wrapv 1
 wrapv wrapv-inert:digest-identical-under-fwrapv 1
+# 6. bfsweep long/long-long-declared bit-field promotion rows (2026-08-17,
+#    T-win-50027): since 8d4f0a80 defaulted ms_bitfields on PE, mcc promotes
+#    an extended-type bit-field to its DECLARED type (cl-conformant; the
+#    8d4f0a80 message records the decision and pe-xoracle-exclude.txt banks
+#    the same class) while BOTH mingw references use the GNU width rule --
+#    so these rows are diverge-both, plus BFUL_31.MUL3 as diverge-refs where
+#    the references also disagree with each other. Deliberate divergence,
+#    not a defect; the two old diverge-one:BFUL_31.MUL3 rows renamed here.
+div diverge-both:bfsweep.BFSL_31.MUL3.fold 1
+div diverge-both:bfsweep.BFSL_31.MUL3.run 1
+div diverge-both:bfsweep.BFSL_32.ADD1.fold 1
+div diverge-both:bfsweep.BFSL_32.ADD1.run 1
+div diverge-both:bfsweep.BFSL_32.MUL3.fold 1
+div diverge-both:bfsweep.BFSL_32.MUL3.run 1
+div diverge-both:bfsweep.BFSL_32.NEG.fold 1
+div diverge-both:bfsweep.BFSL_32.NEG.run 1
+div diverge-both:bfsweep.BFSL_32.SELF.fold 1
+div diverge-both:bfsweep.BFSL_32.SELF.run 1
+div diverge-both:bfsweep.BFSL_32.SHL1.fold 1
+div diverge-both:bfsweep.BFSL_32.SHL1.run 1
+div diverge-both:bfsweep.BFSL_32.SUB1.fold 1
+div diverge-both:bfsweep.BFSL_32.SUB1.run 1
+div diverge-both:bfsweep.BFUL_16.GTM1.fold 1
+div diverge-both:bfsweep.BFUL_16.GTM1.run 1
+div diverge-both:bfsweep.BFUL_31.GTM1.fold 1
+div diverge-both:bfsweep.BFUL_31.GTM1.run 1
+div diverge-both:bfsweep.BFUL_31.SELF.fold 1
+div diverge-both:bfsweep.BFUL_31.SELF.run 1
+div diverge-both:bfsweep.BFUL_31.SHL1.fold 1
+div diverge-both:bfsweep.BFUL_31.SHL1.run 1
+div diverge-both:bfsweep.BFUL_32.ADD1.fold 1
+div diverge-both:bfsweep.BFUL_32.ADD1.run 1
+div diverge-both:bfsweep.BFUL_32.COM.fold 1
+div diverge-both:bfsweep.BFUL_32.COM.run 1
+div diverge-both:bfsweep.BFUL_32.EQM1.fold 1
+div diverge-both:bfsweep.BFUL_32.EQM1.run 1
+div diverge-both:bfsweep.BFUL_32.MUL3.fold 1
+div diverge-both:bfsweep.BFUL_32.MUL3.run 1
+div diverge-both:bfsweep.BFUL_32.NEG.fold 1
+div diverge-both:bfsweep.BFUL_32.NEG.run 1
+div diverge-both:bfsweep.BFUL_32.SELF.fold 1
+div diverge-both:bfsweep.BFUL_32.SELF.run 1
+div diverge-both:bfsweep.BFUL_32.SHL1.fold 1
+div diverge-both:bfsweep.BFUL_32.SHL1.run 1
+div diverge-both:bfsweep.BFUL_32.SUB1.fold 1
+div diverge-both:bfsweep.BFUL_32.SUB1.run 1
+div diverge-both:bfsweep.BFUL_8.GTM1.fold 1
+div diverge-both:bfsweep.BFUL_8.GTM1.run 1
+div diverge-refs:bfsweep.BFUL_31.MUL3.fold 1
+div diverge-refs:bfsweep.BFUL_31.MUL3.run 1
+#    BFUL_31.MUL3 decomposed (the new bfsweep --points arm): 7 of 24 points
+#    have gcc==clang with mcc differing -- verified against cl.exe: ull:31 *3
+#    at 0x7fffffff is 0x17ffffffd under declared-type promotion (mcc == cl
+#    byte-for-byte); the references coincide on the int-overflow UB wrap.
+div diverge-masked:bfsweep.BFUL_31.MUL3 7

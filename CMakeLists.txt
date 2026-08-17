@@ -4838,10 +4838,27 @@ if(MCC_BUILD_TESTS)
         else()
             find_program(MCC_SMOKE_GCC NAMES gcc-15 gcc)
         endif()
-        if(DIFF3_CLANG)
-            set(MCC_SMOKE_CLANG "${DIFF3_CLANG}")
-        else()
-            find_program(MCC_SMOKE_CLANG NAMES clang-22 clang)
+        if(NOT MCC_SMOKE_CLANG)
+            if(DIFF3_CLANG)
+                set(MCC_SMOKE_CLANG "${DIFF3_CLANG}")
+            else()
+                find_program(MCC_SMOKE_CLANG NAMES clang-22 clang)
+            endif()
+        endif()
+        # On PE the smoke references must be mingw-target: an MSVC-target clang
+        # cannot link the smoke subject (no compiler-rt __extendhfsf2/__mulsc3)
+        # and would silently drop out, collapsing every divergence verdict to
+        # diverge-one against a two-reference bank. The bank header names the
+        # required llvm-mingw clang; pass -DMCC_SMOKE_CLANG=... to point at it.
+        if(MCC_TARGETOS STREQUAL "WIN32" AND MCC_SMOKE_CLANG)
+            execute_process(COMMAND "${MCC_SMOKE_CLANG}" --print-target-triple
+                OUTPUT_VARIABLE _smoke_clang_triple OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET RESULT_VARIABLE _smoke_clang_rc)
+            if(NOT _smoke_clang_rc EQUAL 0 OR NOT _smoke_clang_triple MATCHES "windows-gnu")
+                message(STATUS "mcc smoke: dropping clang reference ${MCC_SMOKE_CLANG} "
+                               "(target '${_smoke_clang_triple}' is not *-windows-gnu)")
+                set(MCC_SMOKE_CLANG "")
+            endif()
         endif()
         add_test(NAME "smoke/divergence"
             COMMAND smokerun --mcc "${_mcc_exe}"

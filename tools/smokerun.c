@@ -1628,6 +1628,24 @@ static void divergence(void)
 		g_skip = 1;
 		return;
 	}
+	if (g_have_bank && (!have_g || !have_c)) {
+		int i;
+		for (i = 0; i < g_nbank; i++) {
+			if (strstr(g_bank[i].key, "diverge-both:") ||
+					strstr(g_bank[i].key, "diverge-refs:")) {
+				fprintf(stderr,
+								"SKIP: only one working reference (%s), but this key's bank "
+								"holds diverge-both/diverge-refs rows taken under TWO "
+								"independent references; a one-reference run collapses every "
+								"verdict to diverge-one and grading it against a two-reference "
+								"bank misreads hundreds of banked rows as new categories. "
+								"Provision the second reference named in the bank header.\n",
+								have_g ? "gcc" : "clang");
+				g_skip = 1;
+				return;
+			}
+		}
+	}
 	m = slurp(mout);
 	g = have_g ? slurp(gout) : NULL;
 	c = have_c ? slurp(cout) : NULL;

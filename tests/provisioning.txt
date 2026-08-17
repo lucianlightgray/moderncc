@@ -33,3 +33,4 @@ gentoo-stage3-i386-glibc|vendor/gentoo-stage3-i386-glibc|i386 glibc sysroot (qem
 gentoo-stage3-arm-glibc|vendor/gentoo-stage3-arm-glibc|arm glibc sysroot (qemu run-tier/arm, o0-baseline arm key)
 gentoo-stage3-arm64-glibc|vendor/gentoo-stage3-arm64-glibc|arm64 glibc sysroot (qemu run-tier/arm64, o0-baseline arm64 key)
 gentoo-stage3-riscv64-glibc|vendor/gentoo-stage3-riscv64-glibc|riscv64 glibc sysroot (qemu run-tier/riscv64, o0-baseline riscv64 key)
+llvm-mingw|vendor/llvm-mingw|llvm-mingw (mstorsjo) windows-gnu clang, the SECOND smoke-divergence reference on win (bails-x86_64-windows.txt header requires two independent references; without it the cell skips per the smokerun one-ref floor)
