@@ -49716,11 +49716,16 @@ all opt levels (bit-fields fall back).
   cross-verified, a94b1127). Preferred fix (mac's): un-gate the inline path on arm64 via native
   AArch64 REV/REV16/REV32 + an arm64 `ir_cap_gen_bswap`, turning it into the same AST_OP_BSWAP node
   slice A handles (also drops a libcall fleet-wide). Proposed reassigned to mac-arm64 (native verify).
-- **C (x86_64 bit-fields).** DEEPER than the alias: even carried via the dedicated flag, a rev-SO
-  bit-field member with VT_REVSO breaks the -O1 c3 optimizer, but ONLY in full-function context —
-  an isolated bit-field body passes -O1, while sso.c's bf section fails only *after* the preceding
-  rev-SO members run. A c3-pipeline transform mis-handles rev-SO bit-field stores; slice A guards
-  bit-fields OUT (`!(v->type.t & VT_BITFIELD)`) so they fall back (no -O1 regression). Lin owns C.
+- **C (x86_64 bit-fields) — LANDED (42e5e6f5).** The -O1 breakage was NOT the alias: it was the RIR
+  bit-field NORMALIZER (`rir_bf_shape`, `MCC_RIR_BF_NORM` default-on at -O1+) decomposing bit-field
+  accesses into shift/mask arithmetic, which drops the rev-SO byte-swap. It fired only in
+  full-function context (once the normalizer engaged on the bf section after the preceding rev-SO
+  members). Fix: bail the normalizer on members carrying AST_FB_MEMBER_REVSO (slice A's flag, now
+  also set for bit-field members — the slice-A guard is removed) so rev-SO bit-fields fall to
+  gv/vstore's bit-field rev path (bit_pos flip + swap), which is already correct. **x86_64 side now
+  COMPLETE**: sso.c OK at O0-Os in normal AND forced-replay incl. bit-fields; rir-nofb-probe GREEN on
+  x86_64; no regression (o0-baseline 5/5, exec-replay+sso+bitfield 561/561). Only slice B (arm64)
+  remains for fleet close.
 
 Forward-compatible with mac T-mac-30009 (narrow SValue.r): if VT_REVSO drops below 0x10000, root
 (1)'s truncation fix becomes a redundant no-op; the dedicated flag and array helper are bit-agnostic.
