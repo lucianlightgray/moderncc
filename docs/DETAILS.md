@@ -49660,3 +49660,19 @@ ast_func_end reset / keep-vs-fallback / epilog) to find the 0x65897BE0 writer be
 code; gate every candidate on `tests/exec/vla/*.c` at O0-O3 in BOTH normal and
 `MCC_FORCE_REPLAY -fno-replay-fallback` modes (the slice smoke test I under-scoped the first time
 — I only tested the nofb-keep path). **Source.** win-x64, 2026-08-17.
+
+### T-win-50028 fix vehicle (win-x64, 2026-08-17) — the member node's fbits, plus array/index/regdisp
+
+VT_REVSO (0x10000) is an SValue.r flag, set by the PARSER only (mccgen.c:13962/13966/14000 from
+`base_revso && sso_reverses(type)`); mccast.c has zero VT_REVSO references, so replay never
+re-applies it. The natural fix vehicle: the AST_OP_MEMBER replay already does
+`vtop->r |= VT_LVAL | (int)ast_fbits(a,n)` (mccast.c:5570), so if the member node's captured
+`fbits` carried VT_REVSO it would be re-applied for free. So (1) at member capture, OR VT_REVSO
+into the node's fbits when member_rev; BUT also cover the cases 5570 skips: (2) the array-member
+branch (mt.t & VT_ARRAY — 5570 is gated `!(mt.t & VT_ARRAY)`; the parser sets VT_REVSO for array
+members at mccgen.c:13965-13967), (3) the `[` index replay (a separate AST node; parser sets it
+at 13998-14000 from sub_revso), and (4) the VT_REGDISP fast-path (mccast.c:5559-5563) which takes
+a different branch before 5570. The store side reads vtop[-1].r&VT_REVSO in vstore, so as long as
+the reverse-SO LOAD/member re-applies VT_REVSO, the store swap follows. Verify: `sso_load.c` and
+`sso.c` print OK under `MCC_FORCE_REPLAY -fno-replay-fallback`; full exec nofb-probe 0 miscompiles.
+Lin's SSO domain — left for the owner (T-lin-10010).
