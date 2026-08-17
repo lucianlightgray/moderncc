@@ -135,9 +135,6 @@
 - [ ] T-lin-10043 [S] `tests/emitmap/bank.json`'s tolerances cannot fail, and the selfhost cell is already drifted inside them
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10043-testsemitmapbankjsons-tolerances-cannot-fail | DEPS: T-lin-10003[C]
-- [ ] T-lin-10047 [S] Five number-producing tools are still registered nowhere
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: e98b0063 | TS: 2026-08-17T13:35Z | claiming: register the unregistered figure-tools (arm64pe_diff.py first — arm64-relevant, mac lane; runs without WoA hardware via byte-diff vs native-arm64)
-      REF: DETAILS.md#t-lin-10047-five-number-producing-tools-are-still | DEPS: T-lin-10003[C]
 - [ ] T-lin-10048 [S] `BREAKEVEN` is a hand-pinned literal that every lane fraction is scored against
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10048-breakeven-is-a-hand-pinned-literal | DEPS: —
