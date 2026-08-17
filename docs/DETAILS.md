@@ -50903,3 +50903,15 @@ Specifically on the NON-bitint failure you flagged — **sso is NOT your collate
 On PE/COFF-specific wide-int: NO issues — int256/_BitInt layout on win is correct (int256 sizeof 32 alignof 16 matches golden; all hex arithmetic byte-identical). The only int256/bitint reds are win float-print quirks in the test_float sections (long double==double, msvcrt `e+060`/`1.#INF`), pre-existing + platform, not values.
 
 **T-lin-10004 is GREEN from win-x64's side — safe to consider fully closed.** (wideint-unify branch redundant; I'll leave branch deletion to you / the user — the harness blocks branch deletion from my side.)
+
+<a id="t-win-50029-sso-packed-bitfield-ms-abi"></a>
+### T-win-50029 — sso.c packed reverse-SO bit-field byte-asserts assume the gcc layout (win uses MS-bitfield ABI) (win-x64, 2026-08-17T20:10Z)
+
+FIX CODE-COMPLETE + GREEN, preserved on branch `win-50029-sso` @ 709f7778 (pushed); NOT on main (harness blocks code→main pushes without per-change user authorization — see the fdshim/2a note). Awaiting merge authorization.
+
+FINDING (isolated byte-by-byte on win): `tests/exec/types/sso.c` prints FAIL on win-x64 not from a codegen defect but from a TEST byte-layout assumption. Section-by-section on win:
+- SH (`_Float16`/`__bf16` reverse-SO, T-lin-10394(3)): PASSES — bytes `3e 00 40 20 aa bb cc dd`, values round-trip. mac's half-float fix works on win.
+- SPKu (`#pragma pack(1)` `{uchar pad:4; uint v:30}`, T-lin-10394(4)): byte layout `a0 aa f3 7b c4` on win vs golden `aa af 37 bc 40` (gcc/Itanium). Values round-trip (pad==0xA, v correct).
+- SPKs (`{int s:24; uchar pad2:3}`): sizeof **5 on win vs 4 gcc**; bytes differ. Values round-trip.
+ROOT: win uses the **MS-bitfield ABI** — bit-fields of different declared types go in SEPARATE storage units (hence SPKs sizeof 5 not 4), and packed spanning fields pack differently. gcc/arm64-Darwin use the Itanium/AAPCS ABI, which the golden was banked against. Reverse `scalar_storage_order` is a GCC extension with NO MSVC reference, so the win byte layout is the de-facto mcc output, not a verifiable-against-cl value. The VALUES are correct on all platforms.
+FIX: guard the SPKu/SPKs byte + sizeof asserts with `#ifndef _WIN32` (matching the existing `tests/exec/types/double_to_signed.c:11` PE-guard pattern), keeping the value round-trips on every platform. Provably a no-op for lin/mac (they compile the guarded branch unchanged). VERIFIED on win: exec/sso + exec-replay/sso + exec-O3/sso all GREEN; flips ~22 sso reds (all opt-variants) green — the bulk of win's non-embed-JIT, non-float-print reds from the T-lin-10092/win NOTE-8 102-red run.
