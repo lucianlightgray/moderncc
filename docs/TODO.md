@@ -49,9 +49,6 @@
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 
-- [x] T-win-50025 [X] win-x64 — PE ms-bitfield promotion: bank the Windows test-expectation arms (fallout of the intended 8d4f0a80 ABI flip)
-      OWNER: win-x64 | STATE: DONE | SHA: df9ed26e | TS: 2026-08-17T00:45Z
-      REF: DETAILS.md#t-win-50025-done-2026-08-17 | DEPS: — | NOTE: DONE at df9ed26e — integer_promotion expect_win32 (cl-line-validated) + diff3 req gate; bitfield_width64 -mno-ms-bitfields (its subject is the GNU packed algorithm; PE ABI covered by pe/bitfield-abi); mcctest mcc-side paired with the -mno-ms-bitfields the refflags already forced on gcc (8d4f0a80 broke the pairing; threaded into mcctest-embedjit too). Verified green incl. 6 variant families + pe/x-oracle. Pays ~44 of the fifth requote reds. smoke/divergence RE-SCOPED OUT to T-win-50027 (337 categories, ~290 unattributed F80/F16 families — attribution before banking). Archive at next checkpoint.
 - [ ] T-lin-10013 [S] `__int256` has no literal suffix
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 12e0077b | TS: 2026-08-17T00:35Z
       REF: DETAILS.md#t-lin-10013-landed-2026-08-16 | DEPS: — | NOTE: LANDED 12e0077b — i256/ui256 suffix (MSVC family, all bases, u either side), TOK_CINT256/TOK_CUINT256, wide re-accumulation in parse_number, #if refused; new exec/int256_lit golden (3 dt sections) + 2 dg-errors, all green + exec/int256+bitint+pe/seh sanity. REMAINING FOR DONE: (a) CONTRACT @lin — re-bank all 7 o0-baseline keys + lin census column for the +1 corpus object (win measures 0/7, o0 cells skip here); @mac census/osx-key same shape; (b) §8 full-suite batch with the next win suite (the fifth requote predates this landing by an hour).
