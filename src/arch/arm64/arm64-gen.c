@@ -8,7 +8,14 @@ ST_DATA const char *const target_machine_defs =
 #if defined(MCC_TARGET_MACHO)
 		"__arm64__\0"
 #endif
-		"__AARCH64EL__\0";
+		"__AARCH64EL__\0"
+		"__ARM_ARCH 8\0"
+		"__ARM_ARCH_ISA_A64\0"
+		"__ARM_64BIT_STATE\0"
+		"__ARM_ARCH_PROFILE 'A'\0"
+		"__ARM_PCS_AAPCS64\0"
+		"__ARM_SIZEOF_MINIMAL_ENUM 4\0"
+		"__ARM_SIZEOF_WCHAR_T 4\0";
 
 ST_DATA int reg_classes[MCC_NB_REGS] = {
 		MCC_RC_INT | MCC_RC_R(0),
