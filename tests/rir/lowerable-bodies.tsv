@@ -145,6 +145,7 @@ self	macho	src/arch/arm64/arm64-gen.c	gen_asan_stack_prolog	src/mcc.c	0000
 self	macho	src/arch/arm64/arm64-gen.c	gen_bounds_call	src/mcc.c	0000
 self	macho	src/arch/arm64/arm64-gen.c	gen_bounds_epilog	src/mcc.c	0000
 self	macho	src/arch/arm64/arm64-gen.c	gen_bounds_prolog	src/mcc.c	0000
+self	macho	src/arch/arm64/arm64-gen.c	gen_bswap	src/mcc.c	0000
 self	macho	src/arch/arm64/arm64-gen.c	gen_clear_cache	src/mcc.c	0000
 self	macho	src/arch/arm64/arm64-gen.c	gen_cmov	src/mcc.c	0000
 self	macho	src/arch/arm64/arm64-gen.c	gen_copysign	src/mcc.c	0000
@@ -276,6 +277,22 @@ self	macho	src/ast_eval_slice.h	ast_eval_slice_tsize	src/mcc.c	0000
 self	macho	src/ast_eval_slice.h	ast_eval_slice_uac	src/mcc.c	0000
 self	macho	src/ast_eval_slice.h	ast_eval_slice_width_type	src/mcc.c	0000
 self	macho	src/ast_eval_slice.h	ast_eval_slice_wtype	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_deconst	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_from_int	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_init_putv	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_materialize	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_nlimbs	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_nlimbs_n	src/mcc.c	6666
+self	macho	src/bitint128_slice.h	bitint128_prec	src/mcc.c	6666
+self	macho	src/bitint128_slice.h	bitint128_read_operand	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_reduce_limbs	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_sv_limbs	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	bitint128_to_wide256	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	gen_bitint128_cast	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	gen_bitint128_op	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	mk_bitint128_type	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	vpush_bitint128_const	src/mcc.c	0000
+self	macho	src/bitint128_slice.h	wide256_to_bitint128	src/mcc.c	0000
 self	macho	src/libmcc.c	_mcc_error	src/mcc.c	0000
 self	macho	src/libmcc.c	_mcc_error_noabort	src/mcc.c	0000
 self	macho	src/libmcc.c	_mcc_open	src/mcc.c	0000
@@ -359,6 +376,7 @@ self	macho	src/libmcc.c	mcc_write_uleb128	src/mcc.c	0000
 self	macho	src/libmcc.c	normalized_PATHCMP	src/mcc.c	0000
 self	macho	src/libmcc.c	opt_level_reject	src/mcc.c	0000
 self	macho	src/libmcc.c	opt_level_top	src/mcc.c	0000
+self	macho	src/libmcc.c	parse_jit_budget	src/mcc.c	0000
 self	macho	src/libmcc.c	parse_version	src/mcc.c	0000
 self	macho	src/libmcc.c	permerror_promote	src/mcc.c	6666
 self	macho	src/libmcc.c	pstrcat	src/mcc.c	0000
@@ -483,6 +501,7 @@ self	macho	src/mccast.c	ast_abs_try	src/mcc.c	0000
 self	macho	src/mccast.c	ast_add_child	src/mcc.c	0000
 self	macho	src/mccast.c	ast_addr_iszero	src/mcc.c	0000
 self	macho	src/mccast.c	ast_addr_nonnull	src/mcc.c	0000
+self	macho	src/mccast.c	ast_addr_over_revso_member	src/mcc.c	0000
 self	macho	src/mccast.c	ast_adump_body	src/mcc.c	0000
 self	macho	src/mccast.c	ast_adump_etype	src/mcc.c	0000
 self	macho	src/mccast.c	ast_adump_ifail	src/mcc.c	0000
@@ -1576,10 +1595,14 @@ self	macho	src/mccgen.c	atomic_store_needs_libcall	src/mcc.c	0000
 self	macho	src/mccgen.c	auto_type_decay	src/mcc.c	0000
 self	macho	src/mccgen.c	auto_type_deduce	src/mcc.c	0000
 self	macho	src/mccgen.c	auto_type_relink_vm	src/mcc.c	0000
+self	macho	src/mccgen.c	bf16_bits_to_f32	src/mcc.c	0000
+self	macho	src/mccgen.c	bf16_round	src/mcc.c	0000
 self	macho	src/mccgen.c	bf_operand_bits	src/mcc.c	6666
+self	macho	src/mccgen.c	bitint128_is_unsigned	src/mcc.c	0000
 self	macho	src/mccgen.c	block	src/mcc.c	0000
 self	macho	src/mccgen.c	block_cleanup	src/mcc.c	0000
 self	macho	src/mccgen.c	block_nested	src/mcc.c	0000
+self	macho	src/mccgen.c	bswap_inline_on	src/mcc.c	0000
 self	macho	src/mccgen.c	btype_size	src/mcc.c	6666
 self	macho	src/mccgen.c	builtin_libm_alias	src/mcc.c	0000
 self	macho	src/mccgen.c	builtin_libm_find	src/mcc.c	0000
@@ -1654,6 +1677,7 @@ self	macho	src/mccgen.c	external_helper_sym	src/mcc.c	0000
 self	macho	src/mccgen.c	external_sym	src/mcc.c	0000
 self	macho	src/mccgen.c	f16_bits_to_f32	src/mcc.c	0000
 self	macho	src/mccgen.c	f16_round	src/mcc.c	0000
+self	macho	src/mccgen.c	f32_to_bf16_bits	src/mcc.c	0000
 self	macho	src/mccgen.c	f32_to_f16_bits	src/mcc.c	0000
 self	macho	src/mccgen.c	fconst_bits	src/mcc.c	0000
 self	macho	src/mccgen.c	fconst_key1	src/mcc.c	0000
@@ -1752,8 +1776,8 @@ self	macho	src/mccgen.c	gen_complex_int_div	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_complex_neg	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_complex_op	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_complex_unary_neg	src/mcc.c	0000
-self	macho	src/mccgen.c	gen_cvt_f16	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_cvt_ftoi1_helper	src/mcc.c	4444
+self	macho	src/mccgen.c	gen_cvt_half	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_cvt_itof1_helper	src/mcc.c	7777
 self	macho	src/mccgen.c	gen_function	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_imaginary_complex	src/mcc.c	0000
@@ -1761,6 +1785,7 @@ self	macho	src/mccgen.c	gen_inline_functions	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_le16	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_negf_const_ref	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_op	src/mcc.c	0000
+self	macho	src/mccgen.c	gen_op_f128	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_opic	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_opic_lt	src/mcc.c	6666
 self	macho	src/mccgen.c	gen_opic_sdiv	src/mcc.c	6666
@@ -1768,6 +1793,7 @@ self	macho	src/mccgen.c	gen_opif	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_select	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_select_branch	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_select_regok	src/mcc.c	6666
+self	macho	src/mccgen.c	gen_sso_bswap	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_test_zero	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_union_cast	src/mcc.c	0000
 self	macho	src/mccgen.c	gen_vector_cast	src/mcc.c	0000
@@ -1808,6 +1834,7 @@ self	macho	src/mccgen.c	init_llocal_push_addr	src/mcc.c	0000
 self	macho	src/mccgen.c	init_prec	src/mcc.c	0000
 self	macho	src/mccgen.c	init_putv	src/mcc.c	0000
 self	macho	src/mccgen.c	init_putz	src/mcc.c	0000
+self	macho	src/mccgen.c	is_bitint128_type	src/mcc.c	0000
 self	macho	src/mccgen.c	is_compatible_func	src/mcc.c	0000
 self	macho	src/mccgen.c	is_compatible_param	src/mcc.c	0000
 self	macho	src/mccgen.c	is_compatible_transp_union	src/mcc.c	0000
@@ -1834,6 +1861,7 @@ self	macho	src/mccgen.c	lcen_open	src/mcc.c	0000
 self	macho	src/mccgen.c	lcen_slot	src/mcc.c	0000
 self	macho	src/mccgen.c	leave_scope	src/mcc.c	0000
 self	macho	src/mccgen.c	load_packed_bf	src/mcc.c	0000
+self	macho	src/mccgen.c	load_packed_bf_rev	src/mcc.c	0000
 self	macho	src/mccgen.c	macro_eval_call	src/mcc.c	0000
 self	macho	src/mccgen.c	mcc_debug_end_scope	src/mcc.c	0000
 self	macho	src/mccgen.c	mcc_parse_depth_enter	src/mcc.c	0000
@@ -1857,6 +1885,7 @@ self	macho	src/mccgen.c	move_reg	src/mcc.c	0000
 self	macho	src/mccgen.c	new_scope	src/mcc.c	0000
 self	macho	src/mccgen.c	new_scope_s	src/mcc.c	0000
 self	macho	src/mccgen.c	new_vla_dyn_slot	src/mcc.c	0000
+self	macho	src/mccgen.c	packed_bf_rev_span	src/mcc.c	6666
 self	macho	src/mccgen.c	parse_asm_str	src/mcc.c	0000
 self	macho	src/mccgen.c	parse_atomic	src/mcc.c	0000
 self	macho	src/mccgen.c	parse_attribute	src/mcc.c	0000
@@ -1897,7 +1926,11 @@ self	macho	src/mccgen.c	seqp_key	src/mcc.c	0000
 self	macho	src/mccgen.c	seqp_record_sv	src/mcc.c	0000
 self	macho	src/mccgen.c	seqp_reset	src/mcc.c	0000
 self	macho	src/mccgen.c	skip_or_save_block	src/mcc.c	0000
+self	macho	src/mccgen.c	sso_bitcast	src/mcc.c	0000
+self	macho	src/mccgen.c	sso_member_supported	src/mcc.c	0000
+self	macho	src/mccgen.c	sso_reverses	src/mcc.c	0000
 self	macho	src/mccgen.c	store_packed_bf	src/mcc.c	0000
+self	macho	src/mccgen.c	store_packed_bf_rev	src/mcc.c	0000
 self	macho	src/mccgen.c	store_vla_dyn_slot	src/mcc.c	0000
 self	macho	src/mccgen.c	struct_decl	src/mcc.c	0000
 self	macho	src/mccgen.c	struct_decl_nested	src/mcc.c	0000
@@ -1963,6 +1996,7 @@ self	macho	src/mccgen.c	vpop	src/mcc.c	0000
 self	macho	src/mccgen.c	vpush	src/mcc.c	0000
 self	macho	src/mccgen.c	vpush64	src/mcc.c	0000
 self	macho	src/mccgen.c	vpush_case	src/mcc.c	0000
+self	macho	src/mccgen.c	vpush_f128_helper	src/mcc.c	0000
 self	macho	src/mccgen.c	vpush_helper_func	src/mcc.c	0000
 self	macho	src/mccgen.c	vpush_nullptr	src/mcc.c	0000
 self	macho	src/mccgen.c	vpush_ref	src/mcc.c	0000
@@ -2012,6 +2046,7 @@ self	macho	src/mcchost.c	host_fopen	src/mcc.c	0000
 self	macho	src/mcchost.c	host_fsync	src/mcc.c	0000
 self	macho	src/mcchost.c	host_icache_flush	src/mcc.c	0000
 self	macho	src/mcchost.c	host_install_interrupt	src/mcc.c	0000
+self	macho	src/mcchost.c	host_loadavg	src/mcc.c	0000
 self	macho	src/mcchost.c	host_macos_sdk_root	src/mcc.c	0000
 self	macho	src/mcchost.c	host_mkdirs	src/mcc.c	0000
 self	macho	src/mcchost.c	host_nproc	src/mcc.c	0000
@@ -2065,6 +2100,7 @@ self	macho	src/mccircap.c	ir_cap_gap	src/mcc.c	0000
 self	macho	src/mccircap.c	ir_cap_gen_asan_mark_write	src/mcc.c	0000
 self	macho	src/mccircap.c	ir_cap_gen_asan_shadow_check	src/mcc.c	0000
 self	macho	src/mccircap.c	ir_cap_gen_bit_builtin	src/mcc.c	0000
+self	macho	src/mccircap.c	ir_cap_gen_bswap	src/mcc.c	0000
 self	macho	src/mccircap.c	ir_cap_gen_cmov	src/mcc.c	0000
 self	macho	src/mccircap.c	ir_cap_gen_copysign	src/mcc.c	0000
 self	macho	src/mccircap.c	ir_cap_gen_cvt_csti	src/mcc.c	0000
@@ -3073,8 +3109,8 @@ self	macho	src/wide256_slice.h	gen_wide256_cast	src/mcc.c	0000
 self	macho	src/wide256_slice.h	gen_wide256_op	src/mcc.c	0000
 self	macho	src/wide256_slice.h	mk_wide256_type	src/mcc.c	0000
 self	macho	src/wide256_slice.h	vpush_wide256_const	src/mcc.c	0000
+self	macho	src/wide256_slice.h	wide256_addrof_top	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_bin_helper	src/mcc.c	0000
-self	macho	src/wide256_slice.h	wide256_call3	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_cmp_result	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_cmp_signed_tok	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_deconst	src/mcc.c	0000
@@ -3087,6 +3123,7 @@ self	macho	src/wide256_slice.h	wide256_materialize	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_op_ok	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_push_ptr	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_s64_type	src/mcc.c	0000
+self	macho	src/wide256_slice.h	wide256_scratch_u64	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_store_int	src/mcc.c	0000
 self	macho	src/wide256_slice.h	wide256_sv_is_const	src/mcc.c	6666
 self	macho	src/wide256_slice.h	wide256_sv_is_stable_lval	src/mcc.c	6666
