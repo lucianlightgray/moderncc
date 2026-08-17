@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30014   | 2026-08-17T12:12Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T04:30Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T11:58Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50029   | 2026-08-17T06:50Z |
 
 ## Contracts — blocking, highest priority
@@ -31,6 +31,7 @@
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
 
+- GATEWIN REFACTOR (lin-x64, 2026-08-17T11:58Z, user-directed): answered Q-mac-30011 (human) and owned its full closure end-to-end (mac-arm64 ceded T-mac-30005). `runtime-bench-gatewin` is now WALL-CLOCK ONLY, no-regression A/B (fail only if the on-arm is slower than -fno-<flag> beyond the run's measured noise band), host-<90%-busy-gated (new host_busy_pct via /proc/stat sampling) + pinned to one fixed CPU (sched_setaffinity / taskpolicy -b). Dead chain-store/spectral subject (a ~2x pessimization, vendor/plb absent) re-targeted → promote-locals/nbody: in-tree + git-tracked so it runs on EVERY box (no more permanent-77), +19.1% wall here, exit 0. Instructions-retired removed from the gate but KEPT for the advisory main table + --baseline (nightly bench.yml + arm64-darwin.json golden unaffected); --check-only sibling still green. Code a27b1b5c [lin-x64]; T-mac-30005 DONE + archived, Q-mac-30011 ANSWERED + pruned. REF DETAILS.md#t-mac-30005-resolved-gatewin-wall-clock-no-regression-promote-locals-nbody.
 - §8 CLOSED 2026-08-16T18:15Z (lin-x64): FOUR rows archived (T-lin-10359/10390/10392 + T-mac-30007) on a -j1 full suite = 10197 cells, only 2 reds (fmt/census-bank drift from win's 5f27405f, re-banked 7d5952ff), zero bitint. Full accounting: DETAILS.md#lin-x64-8-close-2026-08-16-four-rows. ONE red remains on the current tree — ci/gate-contract, from win's slice/route registered in must-run without a gate-contract.txt row (win's incomplete T-win-50022, CONTRACT sent cade6760); NOT a lin cell. [At that 18:15Z close, open lin items were T-lin-10393/10389 + paused T-lin-10001; SUPERSEDED — T-lin-10393 has since closed, current open items are in the SESSION SUMMARY below.]
 - HANDOFF-BOX-FACTS (lin-x64, kept for successors): FULL SUITES RUN AT `-j1` ON THIS BOX — user directive 2026-08-16 ("limit to -j1, my machine is still running too slowly"), superseding -j8 then -j16 then M-TODO-0005's -j32 (all withdrawn same day; DETAILS.md#lin-x64-full-suite-parallelism-is-j16-superseding-the-j32-convention records the -j16 history). The user is ACTIVELY GAMING on this box (was WoWClassic.exe; now Baldur's Gate 3 bg3.exe ~6 cores + ~6 GB GPU), so a suite must not compete: -j1 caps CPU to one core, and GPU cells (slice/*, gpu/*, cref-oracle) should be gated to run only when WoW is OFF the GPU (else they contend with the game AND risk the T-lin-10359 false-reds). At -j1 there is NO self-contention, so slice/quiesce/cref-oracle load-flakiness (T-lin-10074) largely disappears — the main cost is wall-clock (full -j1 suite ≈ several hours). Independently the better setting here: the -j32 §8 run reported 2 failures and only ONE was genuine (slice/quiesce passes standalone in 0.35s = load-induced T-lin-10074; slice/census reproduced = real, T-lin-10391). After ANY aborted suite, wait for /proc/loadavg < 8 before starting the next — a killed -j32 run holds the 1-min average above 100 and a suite started into that decay measures contention, not the tree. Corpora are host-local symlinks in vendor/ -> ~/Projects/{gcc,llvm-test-suite,llvm-project} and are NOT tracked: if they vanish, six cells silently become skip stubs instead of failing (T-lin-10388). cmake-cross measures 7/7 active o0-baseline keys incl. BOTH *-osx; cmake-debug is the plain native build
 - [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation
@@ -210,9 +211,6 @@
 
 ## Blocked — awaiting QUESTIONS.md
 
-- [ ] T-mac-30005 [S] The chain-store 8% gate has never run against real input; when it does it reads +0.0%
-      OWNER: — | STATE: BLOCKED | SHA: 1b63f9c6 | TS: 2026-08-17T03:35Z | Q: Q-mac-30011
-      REF: DETAILS.md#t-mac-30005-retarget-candidate-chain-store-sieve-is-dead-on-instructions-too-escalating | DEPS: — | NOTE: characterisation + measurement DONE; escalated to Q-mac-30011 (retire-vs-retarget the human-mandated "instruction 15" GATE_WINS metric). chain-store is DEAD: -90.7% insns on spectral, instruction-FLAT (+0.0016%) on sieve re-measured explicit-arm here — the banked +1.966% re-target candidate no longer holds (p5 172a2f31 deleted the win mechanism). No gate wins TODAY by a margin worth asserting; cycles-table candidates are ~0-insn by construction; main levelbench gates are <0.5% or lowering defects. Retire vs re-target is a HUMAN call (not unilateral). gatewin cell stays honestly-red; prepared explicit-arm cell fix + KP ready to land once the subject is re-decided.
 
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
 
