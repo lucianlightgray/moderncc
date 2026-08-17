@@ -51256,3 +51256,24 @@ Gates that structurally cannot fail give false CI confidence. Fixed all four (co
 
 **Verification:** `ci/registration-stubs`, `ci/must-run-registered`, `ci/gate-contract`(+known-positive),
 `def-verify`, `opt-determinism`(+known-positive), and the new `bitint-diff` all green on arm64-Darwin.
+
+<a id="t-mac-30029-slice-1-arm64-predefs"></a>
+### T-mac-30029 slice-1 — arm64 ISA-identity predefines (mac-arm64, 2026-08-17T22:35Z)
+
+**Fixed (`499aac4b`).** mcc's arm64 `target_machine_defs` emitted only `__aarch64__`/`__arm64__`/
+`__AARCH64EL__`; both gcc and clang additionally emit a set of `__ARM_*` macros. Code keying on
+`__ARM_ARCH`, `__ARM_PCS_AAPCS64`, etc. mis-branched under mcc. Added the seven ISA-IDENTITY macros
+that gcc AND clang agree on byte-for-byte on this box (`__ARM_ARCH 8`, `__ARM_ARCH_ISA_A64 1`,
+`__ARM_64BIT_STATE 1`, `__ARM_ARCH_PROFILE 'A'`, `__ARM_PCS_AAPCS64 1`, `__ARM_SIZEOF_MINIMAL_ENUM 4`,
+`__ARM_SIZEOF_WCHAR_T 4`). **Deliberately NOT** the optional feature macros `__ARM_NEON`/`__ARM_FP`/
+`__ARM_FEATURE_*`: mcc ships no `runtime/include/arm_neon.h`, so advertising SIMD intrinsics it lacks
+would break `#ifdef __ARM_NEON` → `#include <arm_neon.h>` code — identity-only is the safe subset. New
+dg-error cell `arm64_isa_predefs` (guarded `#error` flips red→green on arm64, trivial pass off-arm64).
+exec/ + preprocess + dg-error green, no regression.
+
+**Residual (task stays IN_PROGRESS) — cross-target, mac can't natively verify:** the arm64/PE
+`long double` ABI headline (16-byte everywhere; should be 8 on Apple/Win arm64 — `arm64-gen.h:27`) is a
+high-blast-radius change (all arm64 long-double codegen + an arm64 o0-baseline re-bank) and wants a
+focused pass with full-suite validation; `__SIZEOF_WINT_T__`/`__WINT_TYPE__` PE mismatch + i386 SSE
+feature predefines are PE/i386 (mac can cross `-E` but not run to confirm codegen matches); host-vs-target
+ld-constant hi-word (`mccast.c:2735`) rides the long-double ABI.
