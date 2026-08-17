@@ -52,7 +52,7 @@
 ## In progress — win-x64     ← only win-x64 writes this zone
 
 - [ ] T-win-50025 [X] win-x64 — PE ms-bitfield promotion: bank the Windows test-expectation arms (fallout of the intended 8d4f0a80 ABI flip)
-      OWNER: — | STATE: OPEN | SHA: 12e0077b | TS: 2026-08-17T00:35Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 12e0077b | TS: 2026-08-17T00:50Z
       REF: DETAILS.md#t-win-50025-pe-bitfield-promotion-test-arms | DEPS: — | NOTE: pays ~44 win suite reds (exec*/integer_promotion + exec*/bitfield_width64 expect_win32 arms, diff3/integer_promotion req gate, mcctest full_language differential, smoke/divergence bfsweep bank). mcc==cl verified; decide the u:31 cl-vs-gcc delta in-task.
 - [ ] T-win-50026 [S] `rir/rec-miss` + `rir-nofb-probe`: the empty-subject floors fire on win — provision or gate honestly
       OWNER: — | STATE: OPEN | SHA: 12e0077b | TS: 2026-08-17T00:35Z
