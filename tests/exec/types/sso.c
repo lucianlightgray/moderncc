@@ -127,6 +127,30 @@ int main(void) {
 	ok = ok && w.flat == 0x0a0b0c0e && w.be.x == 0x11223345 &&
 			w.plain.x == 0x11223345;
 
+	struct __attribute__((scalar_storage_order("big-endian"))) SBF {
+		unsigned a : 4;
+		unsigned b : 12;
+		int c : 17;
+		unsigned d : 31;
+	} bf;
+	memset(&bf, 0, sizeof bf);
+	bf.a = 0x5;
+	bf.b = 0x123;
+	bf.c = -12345;
+	bf.d = 0x2ABCDEF;
+	unsigned char bb[sizeof bf];
+	memcpy(bb, &bf, sizeof bf);
+	ok = ok && sizeof bf == 12 &&
+			bb[0] == 0x51 && bb[1] == 0x23 &&
+			bb[4] == 0xe7 && bb[11] == 0xde &&
+			bf.a == 0x5 && bf.b == 0x123 && bf.c == -12345 &&
+			bf.d == 0x2ABCDEF;
+	bf.a += 1;
+	bf.c -= 55;
+	bf.d += 0x10;
+	ok = ok && bf.a == 0x6 && bf.b == 0x123 && bf.c == -12400 &&
+			bf.d == 0x2ABCDFF;
+
 	printf("%s\n", ok ? "OK" : "FAIL");
 	return 0;
 }
