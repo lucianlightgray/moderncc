@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30033   | 2026-08-17T21:35Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T15:00Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T21:07Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T20:55Z |
 
 ## Contracts — blocking, highest priority
@@ -37,10 +37,6 @@
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
-
-- [ ] T-mac-30014 [S] `ast_fold_eval` folds unsigned `/`/`%` with signed `gen_opic_sdiv` — const-fold vs `gen_opic` divergence: deterministic wrong-code under `-fno-replay-fallback` at -O1+ (masked by replay-fallback in default builds); 2-line repro + 1-line fix + verification spec ready
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: f90f27ce | TS: 2026-08-17T20:39Z
-      REF: DETAILS.md#t-mac-30014-unsigned-const-fold-uses-signed-sdiv | DEPS: —
 
 - SESSION SUMMARY (lin-x64, 2026-08-17T14:40Z): user-directed wide-int STORAGE UNIFICATION + a gcc/clang DIFFERENTIAL gate. (1) Built `tools/bitint-diff.py` — a 3-way mcc-vs-LIVE-gcc-vs-clang differential for the _BitInt/wide corpus, proving per-target VALUE parity instead of the target-independent stored golden (which was banked from arm64 and silently wrong for the x86_64 ABI); committed to MAIN (2192c0f1). It surfaced the real gap: mcc's uniform _BitInt (align16/uniform size) diverges from native x86_64 gcc/clang (align8/ceil(N/64)) on 6 sizeof/align lines while VALUES are 131/131. (2) On the user's decision (unify FIRST, uniform ABI kept; native-ABI a SEPARATE later phase): unified the 4 wide-int slice families → 2 nl-parameterized files + collapsed 15 dispatch sites → 2 arms = T-lin-10004 slice 4 — MERGED to main dcba0d5f (user-directed; gmp-diff BYTE-IDENTICAL + 131/131 differential + _BitInt(512)-vs-gcc re-verified green on the rebased-onto-main tree) and ARCHIVED (ARCHIVED.md + DETAILS#t-lin-10004-slice-4-done-wide-int-storage-unification-_bitint512-lin-x64-2026-08-17-dcba0d5f); win-x64's full-suite run is now a POST-merge cross-check. (3) PHASE 2, CLAIMABLE follow-ups: (a) native per-target _BitInt ABI conformance — needed ONLY where anon/external-linked fns exchange _BitInt data, and only if simpler than living without it (user's boundary rule); make bitint-diff.py the per-target gate then. (b) const-carrier reuse (user Q2, not started): extend the 8-limb CValue.q to _Complex/vector/__float128 CONSTANTS so they become const-foldable (additive). PEERS: mac fully green arm64 (rebanked RIR self-corpus floor for my committed int512.c bodies — mechanical, acked); win running the branch full-suite now (PE/COFF cross-check).
 - GATEWIN REFACTOR (lin-x64, 2026-08-17T11:58Z, user-directed): answered Q-mac-30011 (human) and owned its full closure end-to-end (mac-arm64 ceded T-mac-30005). `runtime-bench-gatewin` is now WALL-CLOCK ONLY, no-regression A/B (fail only if the on-arm is slower than -fno-<flag> beyond the run's measured noise band), host-<90%-busy-gated (new host_busy_pct via /proc/stat sampling) + pinned to one fixed CPU (sched_setaffinity / taskpolicy -b). Dead chain-store/spectral subject (a ~2x pessimization, vendor/plb absent) re-targeted → promote-locals/nbody: in-tree + git-tracked so it runs on EVERY box (no more permanent-77), +19.1% wall here, exit 0. Instructions-retired removed from the gate but KEPT for the advisory main table + --baseline (nightly bench.yml + arm64-darwin.json golden unaffected); --check-only sibling still green. Code a27b1b5c [lin-x64]; T-mac-30005 DONE + archived, Q-mac-30011 ANSWERED + pruned. REF DETAILS.md#t-mac-30005-resolved-gatewin-wall-clock-no-regression-promote-locals-nbody.
