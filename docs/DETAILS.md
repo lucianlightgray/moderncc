@@ -49883,3 +49883,43 @@ path replay-faithful for the reversed-SO member access. (a) is preferable (nativ
 better than a libcall for a byte-swap, and it unifies the replay path across targets). Verify per
 win's spec: the forced-replay command prints OK at O0-O3 AND the full exec nofb-probe reports 0
 miscompiles — on BOTH x86_64 and arm64. **Source.** mac-arm64, 2026-08-17, at 1058f958.
+<a id="t-win-50003-emitsize-defect-is-rdata-truncation-not-rel8"></a>
+
+## T-win-50003 Bucket B "emit-size rel8 defect" — RE-DIAGNOSED (win-x64, 2026-08-17): it is a .rdata truncation / fconst-pool desync, NOT branch relaxation
+
+The 4 reds `exec-search-emit{size,iso}/{floating_point,math_library}` were long labelled "the
+emit-size rel8-relaxation PE-AOT defect (bisected to head -39 floating_point.c)". That mechanism
+is WRONG. Reproduced cleanly (mingw-native mcc, box quiet):
+`MCC_SEARCH_WORKER=1 mcc -O13 -fopt-search -fopt-search-emit-size tests/exec/types/floating_point.c
+-o fps.exe` → **fps.exe SEGVs (rc139) at runtime**; the `-O0` AOT baseline runs clean. JIT `-run`
+does NOT diverge — it is AOT-only.
+
+**Evidence it is NOT rel8/branch relaxation:** objdump of baseline vs searched exe:
+- `.text` is **BYTE-IDENTICAL** — same size 0x17e8, same entry 0x402575. No branch encoding changed.
+- `.rdata` shrank by exactly **0x200 (512 B)** (0x628→0x428); `.data` by 8 B; `.pdata` identical.
+- No base relocations, no TLS (ruled out). Import Directory + IAT RVAs shifted DOWN 0x200
+  (0x33f0→0x31f0, 0x342c→0x322c) tracking the .rdata shrink; the `printf` import hint changed
+  (0000→0040).
+
+**The crash is in the WINDOWS LOADER, before main:** a breakpoint at the entry (0x402575) is NEVER
+hit; SIGSEGV fires inside `ntdll!LdrInitializeThunk`/`LdrShutdownThread` during image init/import
+resolution. So the emitted PE is structurally corrupt: the .rdata (which holds the FP constant pool
+AND the idata import structures) is 512 B short relative to what the byte-identical .text references
+and what the import table's internal RVAs assume.
+
+**Mechanism (strong hypothesis, needs the commit-path confirm):** `ast_search_emit_size`
+(mccast.c:19567) MEASURES a trial by re-emitting the body then ROLLING BACK
+`data_section`/`rodata_section` `data_offset` (19610-19613) — offset-rewind only, not byte-erase —
+while reusing the floating-constant pool via `ast_fconst_i = ast_fconst_n` (19585). The winning
+strategy ends up committed with a `.text` that references pooled FP constants whose `.rdata` bytes
+were rewound/never re-committed, so the final `.rdata` is 512 B short; everything after the constant
+pool (the import directory/ILT/IAT/hint-name tables) is misplaced and the loader faults. I.e. an
+emit-size search × fconst-pool / rodata-rollback desync in the COMMIT path, not a code-size branch
+bug. Same shape would hit any AOT program with enough .rdata constants under the search.
+
+**NEXT:** find where the winning strategy is finally committed to the real sections (the search
+driver, not the `ast_search_emit_size` measurement) and confirm it re-emits/keeps the rodata+fconst
+state consistent with the committed .text; fix = commit rodata/data coherently (or re-emit the
+winner into fresh sections). Verify: `fps.exe` runs and matches the `-O0` output; the 4
+exec-search-emit{size,iso} cells green. Repro is deterministic (3/3). **Source.** win-x64,
+2026-08-17.
