@@ -50430,3 +50430,21 @@ The 2026-08-17 anchor above (`t-win-50003-emitsize-defect-is-rdata-truncation-no
 **Why emit-size only.** The emit-size scorer `ast_search_score_emitsize`→`ast_search_emit_size` (`mccast.c:19608`) is the one scoring path that actually EMITS a trial body to the real `data_section`/`rodata_section` and then rewinds their `data_offset` (19652-54); cost-based `ast_search_score_one` and emit-iso do not (they clone + `ast_cost_score`, no emit). The emit+rewind leaves the fconst-pool / rodata-offset accounting inconsistent so the final winner emission places FP constants at offsets the PE import-table writer also uses. NOTE: rewinding `data_offset` and (tried) restoring `ast_fconst_n` around the measurement did NOT fix it (no change to output bytes), so the fault is not merely the pool counter — it is the interaction between the constant-symbol rodata offsets left by the measurement and where the PE writer (`mccpe.c`) subsequently lays the import ILT/IAT. FIX (next, focused): ensure the emit-size measurement leaves `rodata_section`/constant-symbol state byte-identical to never-measured (emit trials into a SCRATCH rodata like `.text` uses `ast_scratch_*`, or fully undo the constant symbols), so the committed constants and the import table do not overlap. VERIFY: `MCC_SEARCH_WORKER=1 mcc -O13 -fopt-search -fopt-search-emit-size tests/exec/types/floating_point.c -o x.exe && x.exe` runs and matches `-O0`; the 4 `exec-search-emit{size,iso}/{floating_point,math_library}` cells green. Deterministic repro.
 
 **Source.** win-x64, 2026-08-17; byte-diff + section compare of `-fopt-search-emit-size` vs `-O13` at `22333493`.
+
+<a id="t-mac-30013-fixed-2026-08-17-wide-struct-boolean-context"></a>
+
+## T-mac-30013 FIXED (wide-struct implicit boolean context) — 0f63438f (mac-arm64, 2026-08-17)
+
+`if(x)`, `x?:`, `while(x)`, `x&&`, `x||` on a struct-backed wide value (`__int256`, `_BitInt(64<N<=128)`)
+took the true branch unconditionally. Root: `gvtst_set` (src/mccgen.c) reduces a non-VT_CMP condition via
+`vpushi(0); gen_op(TOK_NE)`, then its fallback `vset_VT_CMP(vtop->c.i != 0)` assumed the result was a
+compile-time constant — but a wide compare (`gen_wide256_op`/`gen_bitint128_op` cmp) ends in `vcheck_cmp()`
+which MATERIALISES the VT_CMP into a runtime register, so `c.i` was stale garbage. (Explicit `x != 0` in a
+condition worked because gvtst_set re-wrapped the already-materialised 0/1 into a scalar VT_CMP.) Fix: in the
+fallback, only read `c.i` when the value is VT_CONST; otherwise `vpushi(0); gen_op(TOK_NE)` again to compare
+the runtime register against 0 into a proper scalar VT_CMP. Isolated to wide-materialised conditions (scalar
+gen_op(TOK_NE) always leaves a lazy VT_CMP, so no scalar codegen changes — o0-baseline unchanged, zero
+re-bank). Verified byte-identical to gcc-16 for _BitInt boolean context; __int256 boolean context also fixed
+(gcc has no __int256, output verified by construction). New test_boolctx sections in tests/exec/types/
+{bitint128,int256}.c; 96 bitint128+int256 variants green; 437-test regression sweep clean. **Source.**
+mac-arm64, 2026-08-17.
