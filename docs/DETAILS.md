@@ -50121,3 +50121,26 @@ replay dump of sso.c::main (does its store carry a BSWAP child, or a rev-SO memb
 explicit swap?) to know whether B is "un-gate the node + REV" (my WIP, insufficient alone) or
 "derive the swap from the member flag during arena-build" (slice-A-adjacent, x86_64-testable).
 **Source.** mac-arm64, 2026-08-17, at clean main (WIP reverted).
+
+### T-win-50003 emit-size — mechanism PROVEN by instrumentation + fix direction (win-x64, 2026-08-17)
+
+Instrumented `pe_build_imports` (print `pe->thunk->data_offset`) and `ast_search_emit_size` (print
+the rodata rollback). Ground truth for floating_point.c:
+- `-O0` AOT: rodata `data_offset = 0x3f0` at pe_build_imports (imports appended AFTER the constants). Clean.
+- emit-size: EVERY `ast_search_emit_size` measurement grows rodata `0x1f0 -> 0x368` (emits 0x178 B of
+  constants) then rolls back to `save_roff = 0x1f0`; **at pe_build_imports rodata data_offset is still
+  `0x1f0`** — 0x200 short. So the winning body's constants are NEVER committed to rodata; they exist
+  only transiently inside measurements (always rolled back). The winning `.text` IS committed (with
+  RIP displacements pointing at [0x1f0,0x368)), but rodata stops at 0x1f0, so pe_build_imports appends
+  the import descriptors at 0x1f0 — ON TOP of the constant bytes still sitting in the buffer → the
+  overlap / garbage-terminator / loader crash.
+
+TRIED + INSUFFICIENT: saving/restoring `ast_fconst_n` across `ast_search_emit_size` (so measurement-
+pooled constants are dropped and the final emission re-misses + re-emits). data_offset STILL 0x1f0 —
+so the emit-size COMMIT path does not re-run body codegen at all (it keeps the winning trial's .text
+bytes without re-emitting its rodata constants). The fix must live in the emit-size winner-commit:
+either re-emit the winning body for real (committing rodata, advancing data_offset) BEFORE
+pe_build_imports, or carry the winning trial's rodata delta forward instead of rolling it back. This
+is architectural in the search commit, not a one-line save/restore, and touches all PE AOT size-opt
+output (verify: full exec-search-emit{size,iso} + no regression on normal AOT). Reverted all probes;
+main clean. **Source.** win-x64, 2026-08-17.
