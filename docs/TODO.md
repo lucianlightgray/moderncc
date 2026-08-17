@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30012   | 2026-08-17T03:35Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30013   | 2026-08-17T03:40Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T01:41Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50029   | 2026-08-17T03:34Z |
 
@@ -20,6 +20,9 @@
 - [ ] T-lin-10007 [S] Parse `__float128` / `_Float128` (28 cells)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 41d9b6bc | TS: 2026-08-16T02:10Z | NOTE: SLICE 1 LANDED (844b9abf, DETAILS#t-lin-10007-float128-slice-1-arm64-implemented-verified-vs-gcc16). __float128 works on arm64 (VT_FLOAT128=17, gated MCC_HAVE_FLOAT128=arm64||riscv64), BYTE-IDENTICAL to gcc-16 across arith/cmp/neg/conversions; new tests/exec/types/float128.c; fixed 3 dormant bugs (float128.c f128_t guard, arith type-combine demote-to-float, unprototyped 2nd-16B-arg). x86_64/i386/arm still REFUSE (honest). SLICE 2 (lin): add __*tf* tokens + SysV binary128 ABI on x86_64 + the 28 gated float128 cells; riscv64 wired-but-UNVERIFIED. CONTRACT lin: bank o0-baseline cross keys (x86_64 + 4 win32) for BOTH tests/exec/types/bf16.c AND float128.c — the -gated o0 cells are red until then (bf16.c was left unbanked since T-lin-10005). HEARTBEAT INTENTIONALLY STALE — TTL-eligible for any session to resume: mac's slice 1 (arm64 __float128) is DONE + landed; the remaining slice 2 (x86_64 SysV binary128 ABI + __*tf* tokens + the 28 gated cells) is x86_64 work best owned by lin. Not actively locked by mac.
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
+- [ ] T-mac-30012 [S] T-win-50028 slice B (arm64): un-gate the inline bswap on arm64 via native REV/REV16 so the sso byte-swap replays faithfully
+      OWNER: mac-arm64 | STATE: CLAIMED | SHA: 1058f958 | TS: 2026-08-17T03:40Z | Q: — | DEPS: T-win-50028 slice A (lin, 1058f958, LANDED)
+      REF: DETAILS.md#t-win-50028-arm64-gap-inline-bswap-is-x86_64-gated | NOTE: CLAIMED per lin's division (fc6de0b4). arm64 slice B of T-win-50028: gen_sso_bswap's inline gen_bswap→AST_OP_BSWAP path is #if MCC_TARGET_X86_64-gated (mccgen.c:5819), so arm64 falls to the __builtin_bswap helper call (AST_Invoke) which lin's slice A doesn't make replay-faithful → sso.c forced-replay FAILs O0-O3 on arm64. FIX: add an arm64 gen_bswap(size) emitter (native REV/REV16/REV32) in arm64-gen.c + un-gate the inline block for arm64, turning the swap into the AST_OP_BSWAP node slice A already handles (capture/replay is arch-generic via MCC_IR_HAVE_X86_PRIMS=1). Bonus: drops a libcall from every arm64 __builtin_bswap. VERIFY (lin's heads-up): MCC_FORCE_REPLAY=1 -fno-replay-fallback sso.c OK AND normal mode, at O0-O3 (O0-only green is not enough — the plumbing can pass O0 yet fail -O1); + exec/sso + o0-baseline no regression. rir-nofb-probe stays honestly-red until B + lin's C (x86_64 bit-field) both land.
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
