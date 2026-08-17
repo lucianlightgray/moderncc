@@ -49971,3 +49971,29 @@ state consistent with the committed .text; fix = commit rodata/data coherently (
 winner into fresh sections). Verify: `fps.exe` runs and matches the `-O0` output; the 4
 exec-search-emit{size,iso} cells green. Repro is deterministic (3/3). **Source.** win-x64,
 2026-08-17.
+
+<a id="t-win-50028-slice-c-x86_64-bitfield-minimal-repro"></a>
+
+### T-win-50028 slice C (x86_64 bit-field) — minimal repro + confirmation it is the STORE byte layout (win-x64, 2026-08-17)
+
+After lin's slice A (1058f958) built into the win mcc: every ISOLATED sso shape now replays
+faithfully on win x86_64 — scalar int, float/double, int/long-long array, nested aggregate, AND
+even a plain wide bit-field READ (`sso_wbf.c`: a:4,b:12,c:17,d:31 read-back = OK under forced
+replay). But full `tests/exec/types/sso.c` still FAILs O0-O3 under
+`MCC_FORCE_REPLAY=1 -fno-replay-fallback`. Bisected by truncation: the divergence is entirely in
+the **SBF reverse-SO bit-field section (lines 129-147)**, and specifically the STORE byte layout,
+not the read-back. Minimal repro (`sso_wbfb.c`):
+```
+struct __attribute__((scalar_storage_order("big-endian"))) SBF{unsigned a:4;unsigned b:12;int c:17;unsigned d:31;};
+struct SBF bf; memset(&bf,0,sizeof bf); bf.a=0x5;bf.b=0x123;bf.c=-12345;bf.d=0x2ABCDEF;
+unsigned char bb[sizeof bf]; memcpy(bb,&bf,sizeof bf);  // print bb[0],bb[1],bb[4],bb[11]
+```
+base (correct big-endian): `51 23 e7 de`; forced replay: **`35 12 c7 02`** — the bytes come out
+LITTLE-endian, i.e. the reverse-SO bit-field STORE drops its swap under replay. This is a DISTINCT
+path from slice A: reverse-SO bit-fields don't use `gen_sso_bswap`; they use slice-2d's unit-swap +
+bit_pos-flip (adjust_bf / store_packed_bf, DETAILS#t-lin-10010-slice-2d-...), and that path's
+reverse-SO handling is not reconstructed on replay even though slice A re-applies VT_REVSO to the
+plain member. So slice C must preserve the reverse-SO bit-field store/load (not just the VT_REVSO
+r-flag) across AST replay. This is what keeps `rir-nofb-probe` (and exec/sso forced-replay) red on
+x86_64/PE — independent of the T-win-50026 VLA crash. Verify: `sso_wbfb.c` prints `51 23 e7 de`
+under forced replay + full sso.c OK O0-O3 in BOTH modes. **Source.** win-x64, 2026-08-17.
