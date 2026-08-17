@@ -50036,3 +50036,26 @@ needs a raw dump/diff of the two binaries' import descriptors + hint-name tables
 fix lands in the PE writer's idata layout vs the emit-size final rodata size, OR in making the
 emit-size commit not perturb the section the import table is laid out against. **Source.** win-x64,
 2026-08-17.
+
+### T-win-50003 emit-size — ROOT CAUSE PINPOINTED (win-x64, 2026-08-17): import directory loses its null terminator (overlaps hint-name table)
+
+Decisive: parsing both binaries' PE import tables. WORKS (fp0.exe): import dir at RVA 0x33f0,
+size 60 = exactly 3 descriptors (msvcrt.dll, kernel32.dll, + a ZERO terminator). CRASH (fps.exe):
+import dir at 0x31f0, size 60, first two descriptors valid (msvcrt, kernel32) BUT the 3rd
+descriptor slot — which MUST be all-zero to terminate — instead contains GARBAGE
+(ILT=0xe0000000, Name=0x405147ae, IAT=0x8f8e0597); reading on, the following bytes are the
+hint-name table (`memset` etc.) misread as descriptors. So under emit-size the idata sub-layout
+DESYNCED: the import-descriptor array's terminating zero descriptor is gone / overwritten by the
+adjacent hint-name table (they OVERLAP). The Windows loader iterates import descriptors until it
+hits a zero one; with the terminator clobbered it follows the wild RVA 0xe0000000 and faults in
+`LdrInitializeThunk` — the exact pre-entry crash observed.
+
+So the emit-size rodata/constant-pool compaction (−512 B) shifts the idata within .rdata and the
+PE writer's idata sub-layout (descriptor array length / terminator position vs where the ILT +
+hint-name + IAT blocks are placed) is computed inconsistently for the smaller rodata — the
+terminator ends up inside the hint-name region. **Fix locus: the PE writer's idata layout
+(src/objfmt/mccpe.c), specifically the import-descriptor-array size / terminator vs the
+rodata-dependent section base** — not the search itself; the search just changes the rodata size
+that exposes the layout bug. Size-dependent because a small constant pool doesn't shift idata
+enough to overlap. VERIFY a fix: `fps.exe` loads+runs = `-O0` output; the 4 exec-search-emit
+cells green. **Source.** win-x64, 2026-08-17.
