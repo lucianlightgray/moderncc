@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30027   | 2026-08-17T20:14Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30030   | 2026-08-17T20:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10395   | 2026-08-17T15:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T20:15Z |
 
@@ -60,6 +60,15 @@
 - [ ] T-win-50030 [S] int256/bitint128/bitint256 `test_float` reds on win are float-print platform quirks (long double==double, msvcrt `e+060`/`1.#INF`), not miscompiles — guard/win-expect them
       OWNER: — | STATE: OPEN | SHA: e3a7cfc8 | TS: 2026-08-17T20:15Z
       REF: DETAILS.md#t-win-50030-int256-bitint-float-print-win | DEPS: — | NOTE: ~66 of the T-lin-10092/win NOTE-8 102 reds. Only the test_float sections differ (hex-integer sections byte-identical, layout correct); win long double==double (64-bit) + msvcrt printf exponent/inf format. Fix like T-win-50029: `#ifndef _WIN32`-guard the long-double-precision/exponent-sensitive asserts (or win-expected lines) in tests/exec/types/{int256,bitint128,bitint256}.c — coordinate, these are lin/mac's freshly-merged wide-int tests. Verified NOT a wideint-unify regression (fails on pre-merge baseline c49270b2).
+- [ ] T-mac-30027 [S] Investigate: driver/CLI option semantics — `-imacros` is a wrong silent alias of `-include` (`libmcc.c:3070`), `-fstack-protector` help understates targets (`mcc.c:150`), plain `char` unsigned on x86/i386 (undoc ABI deviation), Mach-O `-undefined dynamic_lookup`/`-flat_namespace` silently ignored, several parsed-but-undocumented options
+      OWNER: — | STATE: OPEN | SHA: 85483b94 | TS: 2026-08-17T20:20Z
+      REF: INVESTIGATIONS.md#driver-cli-semantics | DEPS: —
+- [ ] T-mac-30028 [S] Investigate: linker resolution/archive divergences across formats — Mach-O silently ignores `-e`/`--entry` (`mccmacho.c:2551`), Mach-O undef diagnosis stricter than ELF/PE, lib search order deviates from GNU ld (.so-before-.a across dirs), no `SHF_MERGE` dedup, `.bss`==COMMON conflation (`mccelf.c:647`)
+      OWNER: — | STATE: OPEN | SHA: 85483b94 | TS: 2026-08-17T20:20Z
+      REF: INVESTIGATIONS.md#linker-resolution | DEPS: —
+- [ ] T-mac-30029 [S] Investigate: arm64/PE `long double` ABI (16-byte on every OS, should be 8 on Apple/Win arm64 — `arm64-gen.h:27`; system-libc interop break) + host-vs-target ld-constant hi-word (`mccast.c:2735`) + `__SIZEOF_WINT_T__`/`__WINT_TYPE__` PE mismatch + missing `__ARM_*`/i386 SSE feature predefines; family of x86_64-PE ld (T-lin-10394)
+      OWNER: — | STATE: OPEN | SHA: 85483b94 | TS: 2026-08-17T20:20Z
+      REF: INVESTIGATIONS.md#longdouble-cross-target | DEPS: —
 - [ ] T-mac-30023 [S] Investigate (SECURITY): object-file readers trust untrusted input — COFF reloc offset unbounded → OOB heap write (`mccpe.c:2616`; Mach-O guards the same op), archive `nsyms` unvalidated → OOB read (`mccelf.c:3815`), Mach-O dylib export bounds + NULL-deref, DLL export count truncation; add bounds checks
       OWNER: — | STATE: OPEN | SHA: 9cf26f48 | TS: 2026-08-17T20:14Z
       REF: INVESTIGATIONS.md#objreader-bounds | DEPS: —
