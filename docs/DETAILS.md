@@ -50059,3 +50059,26 @@ rodata-dependent section base** — not the search itself; the search just chang
 that exposes the layout bug. Size-dependent because a small constant pool doesn't shift idata
 enough to overlap. VERIFY a fix: `fps.exe` loads+runs = `-O0` output; the 4 exec-search-emit
 cells green. **Source.** win-x64, 2026-08-17.
+
+### T-win-50003 emit-size — DECISIVE: FP constants overlap the import descriptor array (rodata/idata overlap)
+
+Raw descriptor dump nails it. CRASH fps.exe import descriptors:
+```
+desc@0x31f0: ILT=000032ac TDS=00000000 FC=147ae148 Name=0000332c IAT=0000322c
+desc@0x3204: ILT=0000331c TDS=a0000000 FC=3fcbd178 Name=000033c5 IAT=0000329c
+desc@0x3218: e0000000 c0463851 00000000 405147ae 8f8e0597   (terminator = all garbage)
+```
+vs WORKS fp0.exe (TDS/FC = 0, terminator = 0). The ILT/Name/IAT fields (descriptor offsets 0,3,4)
+are CORRECT and 512-adjusted; only TimeDateStamp/ForwarderChain (offsets 1,2) and the terminator
+are garbage — and that garbage is **IEEE-754 double bytes** (`0x3fcbd178`, `0x405147ae`,
+`0xc0463851` = doubles ~0.2–70, i.e. floating_point.c's constants). Mechanism: `pe_build_imports`
+(mccpe.c:949) WRITES FirstThunk/OriginalFirstThunk/Name (offsets 0,3,4) but leaves
+TimeDateStamp/ForwarderChain (offsets 1,2) and the terminator descriptor to zero-init. The FP
+constant pool (rodata) was laid into the SAME bytes as the import-descriptor array, so those
+un-written fields kept the constant bytes → the loader reads a non-zero terminator (ILT
+0xe0000000) and faults. **This is a rodata/idata section OVERLAP: the emit-size search changes the
+rodata size, but the idata (pe->thunk) placement / the .rdata merge uses a stale rodata extent, so
+the two overlap by ~512 B.** Fix: order the PE writer so idata is placed AFTER the final
+(post-emit-size) rodata size is known, or re-drive `pe_build_imports`/section merge with the
+committed rodata extent. NOT a search bug — the search legitimately changes rodata size; the PE
+writer must not overlap idata onto it. **Source.** win-x64, 2026-08-17.
