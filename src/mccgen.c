@@ -2556,9 +2556,11 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 		vtop->r &= ~VT_REVSO;
 		gv(rc);
 		if (isf) { MCC_TRACE("br\n");
-			/* float/double member: swap the bit-pattern -- reinterpret as an
-			 * integer, byte-swap, reinterpret back to the float type (slice 2a). */
-			int ibt = sz == 8 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
+			/* float/double/half member: swap the bit-pattern -- reinterpret as an
+			 * integer of the same width, byte-swap, reinterpret back (slice 2a; the
+			 * 2-byte half formats need a 16-bit carrier, not a 32-bit one). */
+			int ibt = sz == 8 ? (VT_LLONG | VT_UNSIGNED)
+							: sz == 2 ? (VT_SHORT | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
 			sso_bitcast(ibt, sz, a);
 			gen_sso_bswap(sz);
 			sso_bitcast(fbt, sz, a);
@@ -6120,7 +6122,8 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 		if (vtop[-1].r & VT_REVSO) { MCC_TRACE("br\n");
 			int a2, sz2 = type_size(&vtop[-1].type, &a2);
 			if (is_float(vtop[-1].type.t)) { MCC_TRACE("br\n");
-				int ibt = sz2 == 8 ? (VT_LLONG | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
+				int ibt = sz2 == 8 ? (VT_LLONG | VT_UNSIGNED)
+								: sz2 == 2 ? (VT_SHORT | VT_UNSIGNED) : (VT_INT | VT_UNSIGNED);
 				int fbt = vtop[-1].type.t & VT_BTYPE;
 				sso_bitcast(ibt, sz2, a2);
 				gen_sso_bswap(sz2);
@@ -6736,9 +6739,13 @@ static int sso_member_supported(CType *t) { MCC_TRACE("enter\n");
 					 (t->t & VT_BTYPE) == VT_SHORT || (t->t & VT_BTYPE) == VT_BYTE ||
 					 (t->t & VT_BTYPE) == VT_BOOL;
 	}
-	if (is_float(t->t) && (t->t & VT_BTYPE) != VT_FLOAT &&
-			(t->t & VT_BTYPE) != VT_DOUBLE)
-		{ MCC_TRACE("br\n"); return 0; }
+	if (is_float(t->t)) { MCC_TRACE("br\n");
+		int bt = t->t & VT_BTYPE;
+		/* float/double/half-float swap through a same-width integer carrier;
+		 * long double (80-bit x87) and __float128 do not (T-lin-10394). */
+		return bt == VT_FLOAT || bt == VT_DOUBLE ||
+					 bt == VT_FLOAT16 || bt == VT_BF16;
+	}
 	return 1;
 }
 

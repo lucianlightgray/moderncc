@@ -192,6 +192,30 @@ int main(void) {
 	cbf.c += 4;
 	ok = ok && cbf.a == 0x5 && cbf.b == 0xD && cbf.c == -7;
 
+	/* T-lin-10394 sub-item (3): half-float scalar members swap their 16-bit
+	 * bit-pattern through a 16-bit integer carrier, byte-identical to gcc-16.
+	 * (long double is `double` here and already covered by SF above; the 80-bit
+	 * x87 form and __float128 stay refused.) */
+	struct __attribute__((scalar_storage_order("big-endian"))) SH {
+		_Float16 f;
+		__bf16 g;
+		unsigned int w;
+	} hf;
+	memset(&hf, 0, sizeof hf);
+	hf.f = 1.5f;
+	hf.g = (__bf16)2.5f;
+	hf.w = 0xAABBCCDDu;
+	unsigned char hb[sizeof hf];
+	memcpy(hb, &hf, sizeof hf);
+	ok = ok &&
+			/* 1.5 _Float16 = 0x3E00 big-endian; 2.5 __bf16 = 0x4020 big-endian */
+			hb[0] == 0x3e && hb[1] == 0x00 && hb[2] == 0x40 && hb[3] == 0x20 &&
+			hb[4] == 0xAA && hb[7] == 0xDD &&
+			hf.f == (_Float16)1.5f && hf.g == (__bf16)2.5f && hf.w == 0xAABBCCDDu;
+	hf.f = hf.f + (_Float16)0.5f;
+	ok = ok && hf.f == (_Float16)2.0f &&
+			(memcpy(hb, &hf, sizeof hf), hb[0] == 0x40 && hb[1] == 0x00);
+
 	printf("%s\n", ok ? "OK" : "FAIL");
 	return 0;
 }
