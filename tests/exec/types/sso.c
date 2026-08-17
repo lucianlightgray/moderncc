@@ -216,6 +216,41 @@ int main(void) {
 	ok = ok && hf.f == (_Float16)2.0f &&
 			(memcpy(hb, &hf, sizeof hf), hb[0] == 0x40 && hb[1] == 0x00);
 
+	/* T-lin-10394 sub-item (4): packed bit-fields that SPAN their storage unit are
+	 * laid out big-endian (MSB in the lowest address), byte-identical to gcc-16. */
+#pragma pack(1)
+	struct __attribute__((scalar_storage_order("big-endian"))) SPKu {
+		unsigned char pad : 4;
+		unsigned int v : 30;    /* spans bytes 0..4, crosses byte boundaries */
+	} pku;
+	struct __attribute__((scalar_storage_order("big-endian"))) SPKs {
+		int s : 24;             /* signed spanning field, exactly 3 bytes */
+		unsigned char pad2 : 3; /* non-spanning packed field at a byte offset */
+	} pks;
+#pragma pack()
+	memset(&pku, 0, sizeof pku);
+	pku.pad = 0xA;
+	pku.v = 0x2ABCDEF1;
+	unsigned char pbu[sizeof pku];
+	memcpy(pbu, &pku, sizeof pku);
+	ok = ok && sizeof pku == 5 &&
+			pbu[0] == 0xaa && pbu[1] == 0xaf && pbu[2] == 0x37 &&
+			pbu[3] == 0xbc && pbu[4] == 0x40 &&
+			pku.pad == 0xA && pku.v == 0x2ABCDEF1;
+	pku.v += 0x10;
+	ok = ok && pku.v == 0x2ABCDF01 && pku.pad == 0xA;
+
+	memset(&pks, 0, sizeof pks);
+	pks.s = -123456;
+	pks.pad2 = 5;
+	unsigned char pbs[sizeof pks];
+	memcpy(pbs, &pks, sizeof pks);
+	ok = ok && sizeof pks == 4 &&
+			pbs[0] == 0xfe && pbs[1] == 0x1d && pbs[2] == 0xc0 && pbs[3] == 0xa0 &&
+			pks.s == -123456 && pks.pad2 == 5;
+	pks.s += 456;
+	ok = ok && pks.s == -123000 && pks.pad2 == 5;
+
 	printf("%s\n", ok ? "OK" : "FAIL");
 	return 0;
 }

@@ -2497,6 +2497,92 @@ static void store_packed_bf(int bit_pos, int bit_size) { MCC_TRACE("enter\n");
 	vpop(), vpop();
 }
 
+/* Reverse scalar_storage_order variants of the packed-bitfield load/store
+ * (T-lin-10394 sub-item 4): a bit-field that spans its storage unit is stored
+ * big-endian, i.e. the field's bits are laid out MSB-first from the lowest
+ * address.  Byte k of the nbytes-byte span holds the next chunk down from the
+ * MSB: the first byte its top (8-p) bits at byte positions [0..8-p), full middle
+ * bytes, and the last byte its bottom bits at the high end [8-lastn..8).  The
+ * vstack choreography is identical to the little-endian versions above; only the
+ * per-byte width `n`, the in-byte offset `lo` and the value shift `vshift` differ
+ * (LE walks LSB-first with `bits`/`bit_pos`; these walk MSB-first).  Verified
+ * byte-identical to gcc-16. */
+static void packed_bf_rev_span(int bit_pos, int bit_size, int k, int nbytes,
+															 int *n, int *lo, int *vshift, int *placed) { MCC_TRACE("enter\n");
+	int p = bit_pos & 7, total = (bit_pos & 7) + bit_size;
+	if (nbytes == 1)
+		{ MCC_TRACE("br\n"); *n = bit_size; *lo = 8 - p - bit_size; }
+	else if (k == 0)
+		{ MCC_TRACE("br\n"); *n = 8 - p; *lo = 0; }
+	else if (k == nbytes - 1)
+		{ MCC_TRACE("br\n"); *n = total - 8 * (nbytes - 1); *lo = 8 - *n; }
+	else
+		{ MCC_TRACE("br\n"); *n = 8; *lo = 0; }
+	*vshift = bit_size - *placed - *n;
+}
+
+static void load_packed_bf_rev(CType *type, int bit_pos, int bit_size) { MCC_TRACE("enter\n");
+	int n, o, k, nbytes, lo, vshift, placed = 0;
+	save_reg_upstack(vtop->r, 1);
+	vpush64(type->t & VT_BTYPE, 0);
+	o = bit_pos >> 3;
+	nbytes = ((bit_pos & 7) + bit_size + 7) >> 3;
+	for (k = 0; k < nbytes; k++) { MCC_TRACE("br\n");
+		vswap();
+		incr_bf_adr(o);
+		vdup();
+		packed_bf_rev_span(bit_pos, bit_size, k, nbytes, &n, &lo, &vshift, &placed);
+		if (lo)
+			{ MCC_TRACE("br\n"); vpushi(lo), gen_op(TOK_SHR); }
+		if (n < 8)
+			{ MCC_TRACE("br\n"); vpushi((1 << n) - 1), gen_op('&'); }
+		gen_cast(type);
+		if (vshift)
+			{ MCC_TRACE("br\n"); vpushi(vshift), gen_op(TOK_SHL); }
+		vrotb(3);
+		gen_op('|');
+		placed += n, o = 1;
+	}
+	vswap(), vpop();
+	if (!(type->t & VT_UNSIGNED)) { MCC_TRACE("br\n");
+		n = ((type->t & VT_BTYPE) == VT_LLONG ? 64 : 32) - bit_size;
+		vpushi(n), gen_op(TOK_SHL);
+		vpushi(n), gen_op(TOK_SAR);
+	}
+}
+
+static void store_packed_bf_rev(int bit_pos, int bit_size) { MCC_TRACE("enter\n");
+	int n, o, m, c, k, nbytes, lo, vshift, placed = 0;
+	c = (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
+	vswap();
+	save_reg_upstack(vtop->r, 1);
+	o = bit_pos >> 3;
+	nbytes = ((bit_pos & 7) + bit_size + 7) >> 3;
+	for (k = 0; k < nbytes; k++) { MCC_TRACE("br\n");
+		incr_bf_adr(o);
+		vswap();
+		c ? vdup() : gv_dup();
+		vrott(3);
+		packed_bf_rev_span(bit_pos, bit_size, k, nbytes, &n, &lo, &vshift, &placed);
+		if (vshift)
+			{ MCC_TRACE("br\n"); vpushi(vshift), gen_op(TOK_SHR); }
+		if (lo)
+			{ MCC_TRACE("br\n"); vpushi(lo), gen_op(TOK_SHL); }
+		if (n < 8) { MCC_TRACE("br\n");
+			m = ((1 << n) - 1) << lo;
+			vpushi(m), gen_op('&');
+			vpushv(vtop - 1);
+			vpushi(m & 0x80 ? ~m & 0x7f : ~m);
+			gen_op('&');
+			gen_op('|');
+		}
+		vdup(), vtop[-1] = vtop[-2];
+		vstore(), vpop();
+		placed += n, o = 1;
+	}
+	vpop(), vpop();
+}
+
 static int adjust_bf(SValue *sv, int bit_pos, int bit_size) { MCC_TRACE("enter\n");
 	int t;
 	if (0 == sv->type.ref)
@@ -2598,18 +2684,20 @@ ST_FUNC int (gv)(int rc) { MCC_TRACE_IF("enter rc=%#x top(r=%#x t=%#x c=%lld)\n"
 		rir_hook_bfgv(type.t);
 		if (r == VT_STRUCT) { MCC_TRACE("br\n");
 			if (rev)
-				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a bit-field spanning "
-													"its storage unit is not implemented"); }
-			load_packed_bf(&type, bit_pos, bit_size);
+				{ MCC_TRACE("br\n"); load_packed_bf_rev(&type, bit_pos, bit_size); }
+			else
+				{ MCC_TRACE("br\n"); load_packed_bf(&type, bit_pos, bit_size); }
 		} else { MCC_TRACE("br\n");
 			int bits = (type.t & VT_BTYPE) == VT_LLONG ? 64 : 32;
-			/* The reverse-SO placement flip is over the member's real storage unit
-			 * (16 for short, 8 for char/bool), not the load register width; int/long
-			 * long already match `bits`.  The sign-extend SHL/SAR below still run at
-			 * the register width `bits` (T-lin-10394). */
+			/* The reverse-SO placement flip is over the member's real storage unit:
+			 * when adjust_bf narrowed the access (a packed field at a byte offset) `r`
+			 * is that unit, else the declared type (16 short, 8 char/bool, 32 int).
+			 * The sign-extend SHL/SAR below still run at the register width `bits`
+			 * (T-lin-10394). */
 			if (rev) { MCC_TRACE("br\n");
-				int ubits = decl_bt == VT_SHORT ? 16
-									: (decl_bt == VT_BYTE || decl_bt == VT_BOOL) ? 8 : bits;
+				int ubt = (r != -1 && r != VT_STRUCT) ? r : decl_bt;
+				int ubits = (ubt == VT_BYTE || ubt == VT_BOOL) ? 8
+									: ubt == VT_SHORT ? 16 : ubt == VT_LLONG ? 64 : 32;
 				bit_pos = ubits - bit_pos - bit_size;
 			}
 			gen_cast(&type);
@@ -6051,22 +6139,23 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 			gen_cast(&vtop[-1].type);
 			dbt = vtop[-1].type.t & VT_BTYPE;
 		}
-		if (rev) { MCC_TRACE("br\n");
-			/* Flip over the field's declared storage unit (short=16, char/bool=8),
-			 * matching the load path; int/long long already match the register width
-			 * (T-lin-10394). */
-			int fbt = ft & VT_BTYPE;
-			int ubits = fbt == VT_SHORT ? 16
-								: (fbt == VT_BYTE || fbt == VT_BOOL) ? 8
-								: (dbt == VT_LLONG ? 64 : 32);
-			bit_pos = ubits - bit_pos - bit_size;
-		}
 		if (r == VT_STRUCT) { MCC_TRACE("br\n");
+			/* The packed (unit-spanning) rev path lays the field out big-endian from
+			 * the original bit_pos itself, so it must NOT get the aligned flip below. */
 			if (rev)
-				{ MCC_TRACE("br\n"); mcc_error("scalar_storage_order on a bit-field spanning "
-													"its storage unit is not implemented"); }
-			store_packed_bf(bit_pos, bit_size);
+				{ MCC_TRACE("br\n"); store_packed_bf_rev(bit_pos, bit_size); }
+			else
+				{ MCC_TRACE("br\n"); store_packed_bf(bit_pos, bit_size); }
 		} else { MCC_TRACE("br\n");
+			if (rev) { MCC_TRACE("br\n");
+				/* Flip over the field's real storage unit: when adjust_bf narrowed the
+				 * access (a packed field at a byte offset) `r` is that unit, else the
+				 * declared type (short=16, char/bool=8, int=32) (T-lin-10394). */
+				int ubt = (r != -1 && r != VT_STRUCT) ? r : (ft & VT_BTYPE);
+				int ubits = (ubt == VT_BYTE || ubt == VT_BOOL) ? 8
+									: ubt == VT_SHORT ? 16 : ubt == VT_LLONG ? 64 : 32;
+				bit_pos = ubits - bit_pos - bit_size;
+			}
 			unsigned long long mask = bit_size >= 64 ? ~0ULL : (1ULL << bit_size) - 1;
 			if (dbt != VT_BOOL) { MCC_TRACE("br\n");
 				if (dbt == VT_LLONG)
@@ -6772,9 +6861,9 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
 		if (ad->a.reverse_so && !sso_member_supported(&f->type)) { MCC_TRACE("br\n");
 			mcc_error("scalar_storage_order on a struct with an unsupported member: a "
-								"reversed scalar leaf must be int/float/double, and a bit-field "
+								"reversed scalar leaf must be int/float/double/half, and a bit-field "
 								"int/long long/short/char (variable-length arrays, _BitInt "
-								"bit-fields, long double and half-float are not implemented); "
+								"bit-fields, long double and __float128 are not implemented); "
 								"nested structs keep their own storage order");
 		}
 		/* A whole _BitInt(N) member carries VT_BITFIELD for its masked access
