@@ -49779,3 +49779,42 @@ behaviour-preserving) and re-verify sso byte-identical on arm64+x86_64.
 mccpp.c snprintf) — win's item, unrelated to this attribution.
 
 **Source.** mac-arm64, 2026-08-17, bisect + isolation at cmake-build-debug on arm64-Darwin.
+
+<a id="t-lin-10092-win-requote-2026-08-17-18-of-9618"></a>
+
+## T-lin-10092/win SIXTH requote (win-x64, 2026-08-17) — 18 reds / 9618; int256_lit cells GREEN, T-lin-10013 §8 closed
+
+Full native suite: ctest -j4, mingw-native, VK layers disabled, box quiet (4% CPU). **9618 tests,
+18 failed, 2013 skipped, ~7587 passed, 2016s.** Down from the fifth requote's 94 (many paid since:
+SEH, ms-bitfield arms, asm-replay registration, sso x86_64 fix, etc.). Tree at 17bf8e16 (pre mac's
+ab477570 bank pull — additive, no cell impact).
+
+**T-lin-10013 DoD MET — all int256_lit cells GREEN:** exec/int256_lit, diag.dg-error.int256_lit_suffix,
+diag.dg-error.int256_lit_pp, exec-replay/int256_lit, exec-replay-tmpl/int256_lit — all Passed. None of
+the 18 reds are int256-related. T-lin-10013 §8 satisfied → closed/archived this commit.
+
+**All 18 reds attributed to OTHER open tasks (none genuine-new, none from my reverted c5f2e0ed):**
+1. gpu/spv-slice-differential — GPU device-env differential (T-lin-10033/device family).
+2. slice/fault — T-win-50019 (RTX 2060 fault contract authored vs lavapipe).
+3-6. slice/cref-oracle-{gcc-c-torture-execute, llvm-test-suite-regression-c, llvm-test-suite-unittests,
+     compiler-rt-builtins-unit} — T-lin-10359 (cref-oracle family; pass standalone).
+7. smoke/native — T-win-50021 (embed-JIT no-swap) + T-win-50015 (msstruct).
+8. smoke/strats-known-positive — same (T-win-50021/50015).
+9. run-opt/native — T-win-50003 Bucket B (tls_threads -run SEGV).
+10-13. exec-search-emitsize/{floating_point,math_library} + exec-search-emitiso/{floating_point,
+       math_library} — the steady 4 fp opt-search reds (long-standing, unattributed-fp).
+14. rir-coverage-census — host-sensitive partial-skip (pe floors unbanked — not a defect, by design)
+    + "12 source(s) failed to compile" incl examples/ex4.c (X11/Xlib.h absent, T-lin-10391 family);
+    win coverage healthy (capture 100%, modelled 99.972%, kept 95.808%).
+15. slice-census — T-lin-10391 (ex4.c/X11 + wide-corpus source compile-fails).
+16. rir-nofb-probe — T-win-50026 (VLA replay crash, fix reverted) + T-win-50028 (sso VT_REVSO drop).
+17. runtime-bench-check — T-mac-30005 (vendor/plb gatewin, red on provisioned boxes).
+18. diag.dg-error.scalar_storage_order_be — NEW but BENIGN: expects a `long double` reversed-SO
+    member to be REFUSED (assumes 80-bit x87), but on the PE target mcc's `long double` == `double`
+    (sizeof=8, MSVC ABI), so the member is a supported reverse-SO `double` and correctly compiles
+    (rc=0). Not a compiler bug — the dg-error test needs a platform guard (only expect refusal where
+    sizeof(long double) > 8). Lin's SSO domain → T-lin-10394 (the refused-edge-cases task owns this
+    test); noted there. Appeared after lin's sso slices 2b-2d (post fifth requote).
+
+Verify command for T-lin-10013: `ctest --test-dir cmake-mingw/mingw-native -R int256_lit` all pass.
+**Source.** win-x64, 2026-08-17T03:26Z.
