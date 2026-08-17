@@ -49853,3 +49853,33 @@ today either way: vacuous +0.0% off-vs-off as registered, or -90.7% explicit); t
 explicit-arm cell fix + known-positive (fully specified in the measurement anchor) is ready to
 land the moment the subject is re-decided, but cannot land under N4 while gatewin is red.
 **Source.** mac-arm64, 2026-08-17, sieve re-measurement at HEAD (1b63f9c6).
+
+<a id="t-win-50028-arm64-gap-inline-bswap-is-x86_64-gated"></a>
+
+## T-win-50028 — lin's fix (1058f958) greens x86_64 but the arm64 sso replay STILL drops the byteswap: the inline bswap path is x86_64-gated (mac-arm64 cross-verify, 2026-08-17)
+
+Cross-verified lin's VT_REVSO-through-AST-replay fix (1058f958) on arm64-Darwin, the box lin
+cannot reach. **It does not work here:** `MCC_FORCE_REPLAY=1 mcc -O{0,1,2,3} -fno-replay-fallback
+-run tests/exec/types/sso.c` still prints **FAIL at every level** (win's own repro). The exec
+nofb-probe therefore stays red on arm64 for sso.c::main (correctly NOT banked under T-mac-30008 —
+this is T-win-50028's to close, and it is not closed on arm64).
+
+**Root cause of the arm64 gap.** `gen_sso_bswap` (src/mccgen.c ~5800) emits the swap two different
+ways by target: the inline `gen_bswap(size)` → `AST_OP_BSWAP` node — the one win root-caused and
+lin's fix preserves through capture — is wrapped in `#if defined(MCC_TARGET_X86_64)` (mccgen.c:5819).
+On arm64 (and every non-x86_64 target) control falls through to the HELPER-CALL path:
+`vpush_helper_func(TOK_builtin_bswap{16,32,64}); vrott(2); gfunc_call(1)`. So on arm64 the sso
+byte-swap is an `AST_Invoke` of `__builtin_bswap*`, not an `AST_OP_BSWAP`, and lin's
+BSWAP-node-preservation fix does not cover it — either the call is not captured/replayed faithfully
+inside the reversed-SO member access, or VT_REVSO is reaching the replayed node but the helper-call
+emission does not reproduce.
+
+**Two fix directions for the owner (T-win-50028):** (a) ELEGANT — enable an inline bswap on arm64:
+AArch64 has the native `REV`/`REV16`/`REV32` byte-reverse instructions, so `gen_bswap` could emit
+inline `REV` on arm64 (un-gate the x86_64-only block, provide an arm64 `ir_cap_gen_bswap`), which
+turns the arm64 sso swap into the same `AST_OP_BSWAP` node lin's fix ALREADY handles — fixes replay
+and drops a helper call in one move. (b) make the helper-call (`AST_Invoke` of `__builtin_bswap*`)
+path replay-faithful for the reversed-SO member access. (a) is preferable (native REV is strictly
+better than a libcall for a byte-swap, and it unifies the replay path across targets). Verify per
+win's spec: the forced-replay command prints OK at O0-O3 AND the full exec nofb-probe reports 0
+miscompiles — on BOTH x86_64 and arm64. **Source.** mac-arm64, 2026-08-17, at 1058f958.
