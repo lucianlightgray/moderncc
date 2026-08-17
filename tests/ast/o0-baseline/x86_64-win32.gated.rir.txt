@@ -1,9 +1,9 @@
 key=x86_64-win32
 opt=-O0
-files=319
-objects=308
-rirok=308
-rirfiles=308
+files=321
+objects=310
+rirok=310
+rirfiles=310
 extra=0
 rirextra=0
 fn=1429
