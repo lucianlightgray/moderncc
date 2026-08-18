@@ -443,3 +443,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - (correction) T-mac-30132 code SHA is e9fb7b85 (the record above had a `<code>` placeholder).
 - T-mac-30137 Fix #ifdef/#elifdef __has_embed (+ #elifdef __has_include) not recognized vs defined() | DONE 2026-08-18T08:40Z | SHA 991556ae | REF DETAILS.md#t-mac-30137-has-embed-ifdef
 - (correction) T-mac-30137 code SHA is caf123f8 (the record above cited the claim commit 991556ae).
+- T-mac-30124 Fix _Generic elaborated enum-tag association misparsed as C23 fixed-underlying-type (unget ':' when not a type) | DONE 2026-08-18T09:10Z | SHA 0ed7ccf5 | REF DETAILS.md#t-mac-30124-generic-enum-tag
