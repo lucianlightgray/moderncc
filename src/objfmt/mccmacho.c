@@ -386,6 +386,7 @@ struct nlist_64 {
 #define N_UNDF 0x0
 #define N_ABS 0x2
 #define N_EXT 0x1
+#define N_PEXT 0x10
 #define N_SECT 0xe
 
 #define N_WEAK_REF 0x0040
@@ -1032,6 +1033,15 @@ static void convert_symbol(MCCState *s1, struct macho *mo, struct nlist_64 *pn) 
 	else if (ELFW(ST_BIND)(sym->st_info) == STB_WEAK) { MCC_TRACE("br\n");
 		n.n_desc |= (n.n_type != N_UNDF ? N_WEAK_DEF : N_WEAK_REF);
 		n.n_type |= N_EXT;
+	}
+	/* T-mac-30157: hidden/internal visibility on a DEFINED external symbol maps
+	 * to a Mach-O private_extern (N_PEXT|N_EXT) — visible while linking this
+	 * object but not exported into the final image (matches clang/gcc). An
+	 * undefined ref (SHN_UNDEF/SHN_FROMDLL) can't be private_extern. */
+	if ((n.n_type & N_EXT) && sym->st_shndx != SHN_UNDEF && sym->st_shndx != SHN_FROMDLL) { MCC_TRACE("br\n");
+		unsigned vis = ELFW(ST_VISIBILITY)(sym->st_other);
+		if (vis == STV_HIDDEN || vis == STV_INTERNAL)
+			{ MCC_TRACE("br\n"); n.n_type |= N_PEXT; }
 	}
 	n.n_strx = pn->n_strx;
 	n.n_value = sym->st_value;

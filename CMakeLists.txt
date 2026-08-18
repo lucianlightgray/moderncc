@@ -9213,6 +9213,19 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     endif()
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        # T-mac-30157: hidden/internal visibility → Mach-O private_extern.
+        add_test(NAME macho-visibility
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/visibility.sh"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-visibility-work" "-B${CMAKE_BINARY_DIR}")
+        set_tests_properties(macho-visibility PROPERTIES
+            FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" LABELS "macho" SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(macho-visibility
+            "checking private_extern via nm -m needs a linked Mach-O image on a Darwin host")
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         add_test(NAME macho-clanglink
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/clanglink.sh"
                     "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
