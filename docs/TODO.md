@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30127   | 2026-08-18T06:55Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30131   | 2026-08-18T07:45Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -73,6 +73,18 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30127 [S] Fix: [HIGH] `__attribute__((naked))` unsupported → full prologue emitted → stack corruption (arm64+x86_64) — `naked` is no token (hits attr default: `mccgen.c:6682`, ignored under -w) + `gfunc_prolog` always emits the frame (`arm64-gen.c:1500`, `x86_64-gen.c:983/1958`); a naked asm body's `ret` runs with sp never restored (runtime garbage). Sub: [MED] return-check on naked body → spurious "might return no value"; [LOW] non-asm naked body silently accepted. File-scope `asm()` is correct. Fix: add naked token + f.naked; skip prologue/epilogue/param-spill/return-check both backends; reject non-asm naked body.
+      OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
+      REF: INVESTIGATIONS.md#r23-naked | DEPS: —
+- [ ] T-mac-30128 [S] Fix: [MED] `#pragma pack(N)` + member `aligned(K<natural)` silently UNDER-aligns the member → ABI mismatch — `#pragma pack(8) struct{char c;int x __attribute__((aligned(2)));}` → mcc 6/2/2 vs gcc/clang 8/4/4 (aligned only RAISES). Root: member-align guard `if(a && (a>align||...||pragma_pack)) align=a;` (`mccgen.c:6910-6912`) fires on `||pragma_pack` even when a≤align → LOWERS below natural. Distinct from no-pack LOW note INVESTIGATIONS:436. Fix: only apply explicit aligned when it raises (a>align); drop `||pragma_pack`/`||packed` disjuncts. Correct rule min(pack,max(natural,K)).
+      OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
+      REF: INVESTIGATIONS.md#r23-pack-underalign | DEPS: —
+- [ ] T-mac-30129 [S] Fix: [MED] `typeof`/`typeof_unqual` of a bit-field accepted → bit-field-typed object miscompiles — TOK_TYPEOF* arm (`mccgen.c:9260-9282`) strips storage/quals but not VT_BITFIELD, so `typeof(s.bf) x` (int bf:5) makes a 5-bit-field variable → bogus masking, garbage + "shift count>=width" warnings; `sizeof(typeof(s.bf))` then errors (made a var of a type it won't size). clang/gcc reject typeof-of-bitfield. `__auto_type` already handles it (`:18382-18387`). Fix: `if(type1.t&VT_BITFIELD) mcc_error("'typeof' applied to a bit-field");`.
+      OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
+      REF: INVESTIGATIONS.md#r23-typeof-bitfield | DEPS: —
+- [ ] T-mac-30130 [S] Fix: [LOW cluster] (1) `-Wunused-label` entirely missing for ordinary defined-but-unreferenced labels (`mccgen.c:1508` warns only LABEL_DECLARED; option unrecognized) — gcc/clang warn under -Wall; add the group + warn LABEL_DEFINED&&!a.used. (2) duplicate `__label__` in one block silently accepted (`mccgen.c:16027-16036` no dup check) — gcc/clang error. (3) unmatched `#pragma pack(pop)` hard-errors (`mccpp.c:2642-2646`) while gcc/clang + mcc's own align=reset (`:2792`) only warn — downgrade to warning. (4) malformed `#pragma pack` (non-pow2/>16/named) warns only under -Wunknown-pragmas (`mccpp.c:2662/2813`) — route always-on. (5) C23 `constexpr` pointer object unconditionally rejected (`mccgen.c:18300`) — support null/address-constant.
+      OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
+      REF: INVESTIGATIONS.md#r23-low-cluster | DEPS: —
 - [ ] T-mac-30122 [S] Fix: [HIGH] volatile access defects — (1) a `volatile` lvalue read whose value is DISCARDED emits NO load (-O0+-O2): `x;`/`(void)x;`/comma-left/`*p;` (discard sites w/o gv(): `mccgen.c:16415` stmt [+:16412 suppresses the unused warning], `:5263-5264` cast-to-void, `:14922` comma) → breaks read-to-clear MMIO (clang emits `ldr wzr`); fix: gv() a VT_LVAL|VT_VOLATILE before dropping. (2) volatile struct/union assignment lowered to `memmove` (`:6098-6138`, no VT_VOLATILE guard) → volatility lost + a call; fix: inline element/word-wise volatile copy when either operand is VT_VOLATILE. Negatives: no CSE-merge/loop-hoist/DCE, ordering preserved.
       OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
       REF: INVESTIGATIONS.md#r22-volatile | DEPS: —
