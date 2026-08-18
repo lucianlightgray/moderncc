@@ -81,7 +81,7 @@
       OWNER: — | STATE: OPEN | SHA: c35c291e | TS: 2026-08-18T11:45Z
       REF: INVESTIGATIONS.md#r26-cleanup-diag | DEPS: —
 - [ ] T-mac-30153 [S] Fix: [MED, missing macros] `__TIMESTAMP__` (GNU) + `__FILE_NAME__` (clang/GCC-12 basename of __FILE__) not registered — `mccpp.c:5878-5883` pushes only __LINE__/__FILE__/__DATE__/__TIME__/__COUNTER__/__INCLUDE_LEVEL__ (__BASE_FILE__ synth at `:5763`). Both provided by BOTH oracles; in mcc the tokens pass through undefined + `#ifdef __TIMESTAMP__`/`#ifdef __FILE_NAME__` false → guarded code takes the wrong branch. Fix: register __TIMESTAMP__ (main-file mtime, honor SOURCE_DATE_EPOCH) + __FILE_NAME__ (basename of current file).
-      OWNER: — | STATE: OPEN | SHA: c35c291e | TS: 2026-08-18T11:45Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 061c23d1 | TS: 2026-08-18T14:00Z
       REF: INVESTIGATIONS.md#r26-missing-loc-macros | DEPS: —
 - [ ] T-mac-30154 [S] Fix: [MED] `#line`/`__LINE__` beyond INT_MAX — (1) `#line N` with N>2147483647 silently accepted + clamped to 2147483647, NO default diagnostic (`mccpp.c:3053-3062`, overflow warns only under -pedantic); clang errors, gcc warns by default (C11/C23 6.10.4p3 constraint → diagnostic required). (2) `__LINE__` past line 2147483647 WRAPS to -2147483648 (`int line_num` `mcc.h:439`, inc at `mccpp.c:5345-5346`/`3076`); clang/gcc yield 2147483648 → any use (assert/logging) sees a negative line. Fix: default diagnostic on the #line overflow; widen/saturate the line counter so __LINE__ never goes negative.
       OWNER: — | STATE: OPEN | SHA: c35c291e | TS: 2026-08-18T11:45Z
