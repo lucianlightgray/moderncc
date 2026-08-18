@@ -51635,3 +51635,13 @@ A hex (or octal) escape is a RAW code unit, not a scalar value to be UTF-16 surr
 Root cause: `parse_escape_string` (`src/mccpp.c`) stored hex escapes and UCNs indistinguishably as raw `nwchar_t` values, so the `u""` lowering loop (which surrogate-splits any code point >= 0x10000) split the hex escape too. The `is_ucn` flag that already distinguishes `\x` (false) from `\u`/`\U` (true) was in scope at the escape site but lost by the time the lowering ran. Fix: thread the string `prefix` into `parse_escape_string` and, at the hex-escape store site for `is_long` strings, mask a non-UCN escape to the `u""` element width (`n &= 0xFFFF`) with the out-of-range warning when `prefix == 'u'` and `n > 0xFFFF`. The masked value never reaches the surrogate-split; UCNs (is_ucn true) and literal characters are untouched and still split correctly, and `U""`/`L""` (32-bit elements) keep the full value. Octal escapes are naturally bounded (<= 0777) and need no masking.
 
 Blast radius: zero on the x86_64 o0-baseline — the fixed build's `x86_64.obj.txt`/`x86_64.rir.txt` boards are byte-identical to a build of the immediately-prior main HEAD (no `tests/exec` corpus file uses an over-range hex escape in a `u""` string).
+
+<a id="t-mac-30244-u32-no-surrogate-combine"></a>
+
+## T-mac-30244 U"" combined adjacent hex-escape surrogate values into one code point (RESOLVED, lin-x64)
+
+**Type** `[S]` — **State** DONE — minted by mac-arm64, fixed on lin-x64 (native repro). Verification: `u32-no-surrogate-combine-run` (self-checking against gcc-16).
+
+`U"\xD800\xDC00"` (char32_t) fused into the single code point 0x10000 (n=2) where gcc-16/clang keep the two independent units 0xD800 0xDC00 (n=3). In a char32_t string a UTF-16 surrogate value can only originate from a hex (or octal) escape: a surrogate UCN is rejected in `parse_escape_string`, and a literal astral source character is UTF-8-decoded to a single code point, never a surrogate pair. Since both oracles keep hex-escape units independent, the surrogate-pair combining loop in the `U""` lowering (`src/mccpp.c`) was essentially always wrong. Fix: remove the surrogate-combine from the char32_t path so each stored code unit is emitted as one independent char32_t; a genuine astral UCN (`\U0001F600`) is already stored as a single code point and is unaffected. The u16/`u""` path still surrogate-splits genuine UCNs/literal astral characters (that lowering is correct and unchanged; hex escapes there are masked to the element width per T-mac-30243).
+
+Blast radius: zero on the x86_64 o0-baseline (fixed board byte-identical to the immediately-prior main HEAD; no corpus file uses surrogate hex escapes in a `U""` string).
