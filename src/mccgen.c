@@ -6410,6 +6410,14 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			ad->alias_target = tok_alloc_const(astr);
 			skip(')');
 			break;
+		case TOK_WEAKREF1:
+		case TOK_WEAKREF2:
+			skip('(');
+			astr = parse_mult_str("weakref(\"target\")")->data;
+			ad->alias_target = tok_alloc_const(astr);
+			ad->a.weak = 1;
+			skip(')');
+			break;
 		case TOK_VISIBILITY1:
 		case TOK_VISIBILITY2:
 			skip('(');

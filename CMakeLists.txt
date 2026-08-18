@@ -4895,6 +4895,13 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/static-assert-false" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
+        add_test(NAME "attr/weakref-defined"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/attr/weakref_defined.c")
+        set_tests_properties("attr/weakref-defined" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "weakref=42")
+
         add_test(NAME "ext/extension-declspec"
             COMMAND ${_mcc_exe} -std=c89 -pedantic-errors -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/ext/extension_declspec.c"
