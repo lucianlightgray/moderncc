@@ -101,7 +101,7 @@
       OWNER: — | STATE: OPEN | SHA: 08d945ce | TS: 2026-08-18T06:05Z
       REF: INVESTIGATIONS.md#r21-tls-initial-exec | DEPS: —
 - [ ] T-mac-30118 [S] Fix: [MED] `&__thread_var` accepted as a load-time-constant static initializer → wrong pointer (all backends) — `init_putv` guard (`mccgen.c:16907`) doesn't reject VT_TLS, emits an absolute reloc against the TLS symbol (`:17002`/`:17016` → R_X86_64_64/R_RISCV_64/R_AARCH64_ABS64) giving the link-time section offset not the TP-relative runtime addr (verified `p!=&t`). clang/gcc reject ("initializer element is not a compile-time constant"). Fix: if symbol is VT_TLS, raise the not-a-constant error.
-      OWNER: — | STATE: OPEN | SHA: 08d945ce | TS: 2026-08-18T06:05Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 08d945ce | TS: 2026-08-18T07:25Z
       REF: INVESTIGATIONS.md#r21-tls-addr-staticinit | DEPS: —
 - [ ] T-mac-30119 [S] Fix: [MED] arm32 `_Alignas(N>=512)` local drops the realignment mask (NOP) → under-aligned + no stack reserved — `arm-gen.c:2354` `bic sp,r0,#(align-1)` via `stuff_const` which returns 0 for non-encodable immediates (align>256), assembling to `andeq r0,r0,r0` NOP; that instruction is the only one that aligns AND writes sp, so sp isn't decremented and the stored local ptr aliases live frame data. Threshold 256 ok, 512 NOP. Fix: materialize mask in a reg (like riscv64) or stuff_const_harder; at minimum diagnose (arm64 errors).
       OWNER: — | STATE: OPEN | SHA: 08d945ce | TS: 2026-08-18T06:05Z
