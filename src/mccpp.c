@@ -3537,6 +3537,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 			b = 8;
 		}
 	}
+	char *radix_digits_start = q;
 	while (1) { MCC_TRACE("br\n");
 		if (ch >= 'a' && ch <= 'f')
 			{ MCC_TRACE("br\n"); t = ch - 'a' + 10; }
@@ -3554,6 +3555,10 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 		}
 		*q++ = ch;
 		ch = *p++;
+	}
+	if (b != 10 && q == radix_digits_start && ch != '.' && ch != 'p' && ch != 'P') { MCC_TRACE("br\n");
+		mcc_error("invalid suffix '%c' on integer constant",
+							b == 16 ? 'x' : b == 2 ? 'b' : 'o');
 	}
 	if (ch == '.' ||
 			((ch == 'e' || ch == 'E') && b == 10) ||

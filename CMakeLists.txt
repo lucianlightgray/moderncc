@@ -5025,6 +5025,21 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("lexical/widestr-valid" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30213: a radix prefix (0x/0b/0o) with zero following digits is
+        # invalid (clang/gcc "invalid suffix"); mcc silently made it 0. Reject
+        # it, and keep every well-formed radix literal (incl. hex floats).
+        add_test(NAME "lexical/empty-radix-rejected"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/lexical/empty_radix.c"
+                    -o "${CMAKE_BINARY_DIR}/empty-radix.o")
+        set_tests_properties("lexical/empty-radix-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "lexical/empty-radix-valid"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/lexical/empty_radix_valid.c")
+        set_tests_properties("lexical/empty-radix-valid" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"
