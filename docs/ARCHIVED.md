@@ -436,3 +436,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-mac-30092 Fix too-long string-initializer warning ungated → route through -Wexcess-initializers | DONE 2026-08-18T07:05Z | SHA 61281d1c | REF DETAILS.md#t-mac-30092-30093-diag-gate
 - T-mac-30093 Fix implicit-int variable declarator ungated → -Wimplicit-int + C99 permerror (mccgen.c:18557) | DONE 2026-08-18T07:05Z | SHA 61281d1c | REF DETAILS.md#t-mac-30092-30093-diag-gate
 - T-mac-30114 Fix static inline __attribute__((used)) not emitted (used attr now sets a.used; emit predicate honors it) | DONE 2026-08-18T07:20Z | SHA b48d3ec9 | REF DETAILS.md#t-mac-30114-static-inline-used
+- T-mac-30118 Fix &__thread_var accepted as a static initializer (emitted a wrong absolute reloc) → reject as not-a-compile-time-constant | DONE 2026-08-18T07:35Z | SHA bd28228e | REF DETAILS.md#t-mac-30118-tls-addr-staticinit
