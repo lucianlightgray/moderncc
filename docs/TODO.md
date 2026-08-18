@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T22:36Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:34Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:38Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T22:39Z |
 
 ## Contracts — blocking, highest priority
@@ -318,8 +318,8 @@
       OWNER: — | STATE: OPEN | SHA: 155147eb | TS: 2026-08-18T21:56Z
       REF: DETAILS.md#t-mac-30139-atomic-implicit-spike | DEPS: — | NOTE: SPIKED (lin-x64) — bug + one-line fix CONFIRMED (guard flip `size < 1 || size > 8 || nonpow2`), values correct vs gcc, store→`call __atomic_store_4`/load→`__atomic_load_4`. BUT activating the previously-DEAD scalar helpers breaks x86_64 RIR self-verify: faithful 1333→1331, diverge 0→2 (`rdiverge:vpop@79` in worker + `@423` in main), bar=FAIL — a T-lin-10057-class replay-faithfulness gap in the atomic-scalar lowering (adding the missing rir_hook_call_begin/end to gen_atomic_store_scalar did NOT clear it). Also needs a fleet-wide o0 rebank for 3 files (atomic_inlang_rmw/atomic_ptr/feature_macros). Reverted to baseline (board diverge=0 OK). Needs a focused RIR pass (lin domain) to make gen_atomic_{load,store}_scalar replay-faithful, then land+rebank. Full evidence in DETAILS anchor.
 - [ ] T-mac-30141 [S] Fix: [MED, rejects-valid] `switch` on `_BitInt(N>64)` → `error: switch value not an integer` (`mccgen.c:16261`, gate `!is_integer_btype`; `is_integer_btype :701-704` lists only BYTE/BOOL/SHORT/INT/LLONG/INT128). Wide `_BitInt` is VT_STRUCT+`a.is_bitint` so fails the test even though gcase/case_cmp carry wide values; cutoff exactly N>64 (N≤64 as VT_LLONG works). clang/gcc `-std=c23` accept. Fix: treat `is_bitint_type` as integer in the switch controlling-type gate. SCOPE NOTE (mac-arm64): NOT a gate-only fix — a wide `_BitInt(N>64)` controlling value is a VT_STRUCT, so the case-comparison codegen (gcase/case_cmp compare sw->sv against each case const via gen_op) needs the wide-bitint compare path, not the plain integer compare; "gcase carries wide values" refers to VT_LLONG (64-bit), not the >64-bit struct rep. Needs the bitint comparison helper wired into the switch dispatch — a real feature, dedicated pass (do not land a gate-only change: it would crash/miscompile).
-      OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
-      REF: INVESTIGATIONS.md#r25-switch-bitint | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS (SUBSUMED by T-mac-30248 — x86_64 65<=N<=128 DONE cc9e8d15 via __int128 widen; same non-__int128/N>128 residual) | SHA: cc9e8d15 | TS: 2026-08-18T22:38Z | HEARTBEAT INTENTIONALLY STALE — TTL-resumable; track residual on T-mac-30248.
+      REF: DETAILS.md#t-mac-30248-switch-bitint-wide | DEPS: —
 - [ ] T-mac-30142 [S] Fix: [MED, accepts-invalid] C23 `()` == `(void)` breaking change not honored — empty `()` func declarator treated as unspecified-params (K&R) under EVERY -std; `mccgen.c:9529-9530` (`if(tok==')'){l=0;}`) has no cversion gate (unlike adjacent C23-gated TOK_DOTS `:9531`); `ad->f.func_type=l` `:9641`. Under -std=c23: `int g();g(1,2)` no diag (clang/gcc error too many args); `int(*p)()=&proto` accepts (clang/gcc incompatible-fnptr); `int g();int g(int){}` accepts (clang/gcc conflicting-types). C23 6.7.6.3. Fix: cversion>=202311 → empty `()` = prototyped-void.
       OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
       REF: INVESTIGATIONS.md#r25-c23-empty-paren | DEPS: —
