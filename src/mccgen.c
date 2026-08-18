@@ -16148,6 +16148,13 @@ again:
 				next();
 				if (tok < TOK_UIDENT)
 					{ MCC_TRACE("br\n"); expect("label identifier"); }
+				{
+					Sym *dup;
+					for (dup = local_label_stack; dup != o.llstk; dup = dup->prev)
+						{ MCC_TRACE("br\n"); if (dup->v == tok)
+							{ MCC_TRACE("br\n"); mcc_error("duplicate label declaration '%s'",
+										get_tok_str(tok, NULL)); } }
+				}
 				label_push(&local_label_stack, tok, LABEL_DECLARED);
 				next();
 			} while (tok == ',');

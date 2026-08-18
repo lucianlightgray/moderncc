@@ -5147,6 +5147,18 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/used-label-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30130 slice-2: duplicate __label__ in one block is an error;
+        # distinct names and nested-block shadowing stay valid.
+        add_test(NAME "diag/dup-label-rejected" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/dup_label_decl.c"
+                    -o "${CMAKE_BINARY_DIR}/dup-label.o")
+        set_tests_properties("diag/dup-label-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "diag/dup-label-ok" COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/dup_label_ok.c")
+        set_tests_properties("diag/dup-label-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"
