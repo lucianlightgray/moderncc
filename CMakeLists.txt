@@ -5092,6 +5092,20 @@ if(MCC_BUILD_TESTS)
                 PASS_REGULAR_EXPRESSION "different signedness")
         endif()
 
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cleanup_nonauto.c")
+            add_test(NAME "diag/cleanup-nonauto-warn"
+                COMMAND ${_mcc_exe} -Wall -Werror -run
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cleanup_nonauto.c")
+            set_tests_properties("diag/cleanup-nonauto-warn" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT
+                PASS_REGULAR_EXPRESSION "'cleanup' attribute ignored")
+            add_test(NAME "diag/cleanup-auto-ok"
+                COMMAND ${_mcc_exe} -Wall -run
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cleanup_auto_ok.c")
+            set_tests_properties("diag/cleanup-auto-ok" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+        endif()
+
         # T-mac-30184: a _Noreturn function that can fall off the end must warn
         # "'noreturn' function does return"; one ending in an unconditional
         # noreturn call stays clean (even under -Werror).

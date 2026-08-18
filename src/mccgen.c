@@ -18981,6 +18981,12 @@ static int decl(int l) {
 					{ MCC_TRACE("br\n"); mcc_error("'constexpr' applied to a function"); }
 			}
 
+			if (ad.cleanup_func && (type.t & VT_BTYPE) != VT_FUNC &&
+					(l == VT_CONST || (type.t & (VT_STATIC | VT_EXTERN | VT_TYPEDEF)))) { MCC_TRACE("br\n");
+				mcc_warning_c(warn_attributes)("'cleanup' attribute ignored");
+				ad.cleanup_func = NULL;
+			}
+
 			if (gnu_ext && (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3)) { MCC_TRACE("br\n");
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
 					{ MCC_TRACE("br\n"); mcc_pedantic("'asm' is a GNU extension"); }
