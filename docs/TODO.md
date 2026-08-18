@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30233 [S] Fix: [HIGH] `__has_builtin` false-negative for name-recognized builtins mcc implements (mem/str/alloca/offsetof/abs family) — make pp_has_builtin_arg mirror the parser's real recognition set
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T13:52Z
-      REF: DETAILS.md#t-mac-30233-has-builtin-name-recognized | DEPS: —
 
 
 
