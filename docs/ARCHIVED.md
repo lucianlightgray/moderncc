@@ -441,3 +441,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-mac-30129 Fix typeof/typeof_unqual of a bit-field accepted → reject (was miscompiling a bit-field-typed object) | DONE 2026-08-18T08:05Z | SHA c0a44d92 | REF DETAILS.md#t-mac-30125-30129-intrinsics
 - T-mac-30132 Fix _Static_assert controlling constant capped at 32 bits (use expr_const64_pub) | DONE 2026-08-18T08:20Z | SHA <code> | REF DETAILS.md#t-mac-30132-static-assert-wide
 - (correction) T-mac-30132 code SHA is e9fb7b85 (the record above had a `<code>` placeholder).
+- T-mac-30137 Fix #ifdef/#elifdef __has_embed (+ #elifdef __has_include) not recognized vs defined() | DONE 2026-08-18T08:40Z | SHA 991556ae | REF DETAILS.md#t-mac-30137-has-embed-ifdef
