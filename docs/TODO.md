@@ -188,7 +188,7 @@
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-riscv-stackslot | DEPS: —
 - [ ] T-mac-30089 [S] Fix: [MED] `#if`/`#elif` fatally rejects valid controlling constants >32 bits — `expr_preprocess` uses 32-bit `expr_const` (`mccpp.c:2394`) which errors "constant exceeds 32 bit" (`mccgen.c:14987-14993`) → fatal "bad preprocessor expression" (`mccpp.c:2403`); `#if 0x100000000`, `#if 1LL<<40`, `#if ADDR_BASE`, `#elif 0x200000000` all die though clang/gcc accept. Same root as array-size cap (INVESTIGATIONS:470) but distinct worse-impact consumer (breaks portable-header conditional compilation). Fix: evaluate via `expr_const64()`, test full 64-bit non-zero.
-      OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 86c665d8 | TS: 2026-08-18T06:25Z
       REF: INVESTIGATIONS.md#r16-pp-if64 | DEPS: —
 - [ ] T-mac-30090 [S] Fix: [LOW cluster] (1) COFF silently clamps section align >8192 (`mccpe.c:2093`) while Mach-O caps 4096 WITH warning (`mccmacho.c:2057-2058`) → `_Alignas(16384)` silently under-aligned on COFF; (2) `__BIGGEST_ALIGNMENT__ 16` (`mccdefs.h:247`) vs `MCC_MAX_ALIGN 8` on i386/arm (`i386-gen.h:41`/`arm-gen.h:96`, used `mccgen.c:6432`) → bare `__attribute__((aligned))` gives 8 not 16; (3) riscv64 raw `==VT_UNION` (`riscv64-gen.c:542`) vs arm64 masked `IS_UNION` (`:987`) — brittle; (4) arm64-Darwin K&R `double` args in v0 not stack (`arm64-gen.c:1328/1268`, speculative). Fix each per anchor.
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
