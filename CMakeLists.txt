@@ -4824,6 +4824,13 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "if64 checks=7 ok=5")
 
+        add_test(NAME "pp/has-embed-ifdef"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/cond/has_embed_ifdef.c")
+        set_tests_properties("pp/has-embed-ifdef" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "has_embed_ifdef a=1 b=1 c=1 d=1")
+
         add_test(NAME "builtins/clz-ctz-zero"
             COMMAND ${_mcc_exe} -run
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/builtins/clz_ctz_zero.c")

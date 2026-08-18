@@ -2945,7 +2945,8 @@ redo:
 				file->ifndef_macro = tok;
 			}
 		}
-		if (define_find(tok) || tok == TOK___HAS_INCLUDE || tok == TOK___HAS_INCLUDE_NEXT)
+		if (define_find(tok) || tok == TOK___HAS_INCLUDE || tok == TOK___HAS_INCLUDE_NEXT ||
+				tok == TOK___HAS_EMBED)
 			{ MCC_TRACE("br\n"); c ^= 1; }
 		next_nomacro();
 	do_if:
@@ -2996,7 +2997,8 @@ redo:
 			next_nomacro();
 			if (tok < TOK_IDENT || tok == TOK_DEFINED || tok == TOK___VA_ARGS__)
 				{ MCC_TRACE("br\n"); mcc_error("macro name must be an identifier"); }
-			c = !!define_find(tok);
+			c = define_find(tok) || tok == TOK___HAS_INCLUDE ||
+					tok == TOK___HAS_INCLUDE_NEXT || tok == TOK___HAS_EMBED;
 			if (want_ndef)
 				{ MCC_TRACE("br\n"); c ^= 1; }
 			next_nomacro();
