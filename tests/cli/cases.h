@@ -412,6 +412,13 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'X\\n' > {W}/u.c && {MCC} -B{B} -DX=1 -UX -E -P {W}/u.c",
 		 "X\n"},
 
+		{"std_last_wins_trigraphs", "",
+		 "printf 'char *s = \"x?" "?=y\";\\n' > {W}/tg.c && "
+		 "printf 'c99=%s gnu=%s\\n' "
+		 "$({MCC} -B{B} -std=c99 -E -P {W}/tg.c | grep -Fc 'x#y') "
+		 "$({MCC} -B{B} -std=c99 -std=gnu99 -E -P {W}/tg.c | grep -Fc 'x#y')",
+		 "c99=1 gnu=0\n"},
+
 		{"dM_dump_macros", "",
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},
