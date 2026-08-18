@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30220 [S] Fix: [MED] `#warning` ungated — add default-on warn_cpp flag ("cpp") + gate #warning so -Wno-cpp suppresses, -Werror=cpp escalates
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:38Z
-      REF: DETAILS.md#t-mac-30220-warn-cpp | DEPS: —
 
 - [ ] T-mac-30183 [S] Fix: [MED] nonnull/returns_nonnull/sentinel warn "attribute ignored" -> fail under -Werror; accept them silently (extend attr_ignore_silently). RESIDUAL: the -Wnonnull/missing-sentinel call-site diagnostics.
       OWNER: lin-x64 | STATE: IN_PROGRESS (accept-slice DONE 9e97f027; misuse-diagnostic residual) | SHA: 9e97f027 | TS: 2026-08-18T16:30Z
