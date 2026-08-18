@@ -92,7 +92,7 @@
       OWNER: — | STATE: OPEN | SHA: 08d945ce | TS: 2026-08-18T06:05Z
       REF: INVESTIGATIONS.md#r21-inline-emission | DEPS: —
 - [ ] T-mac-30114 [S] Fix: [MED] `static inline __attribute__((used))` unreferenced silently not emitted — `gen_inline_functions` emit predicate (`mccgen.c:18162-18163`) checks only `sym->c` (referenced), never `sym->a.used`, so a used static-inline helper is dropped (mcc nm absent, gcc/clang `t _used_si`) → link failure for asm-only/debugger-kept helpers. mcc honors `used` for non-inline statics. Fix: add `|| sym->a.used` (+force emit) to the predicate.
-      OWNER: — | STATE: OPEN | SHA: 08d945ce | TS: 2026-08-18T06:05Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 08d945ce | TS: 2026-08-18T07:10Z
       REF: INVESTIGATIONS.md#r21-static-inline-used | DEPS: —
 - [ ] T-mac-30115 [S] Fix: [HIGH] riscv64 aborts (SIGABRT) returning a mixed int+float struct from any non-local lvalue — `arch_transfer_ret_regs` asserts `vtop->r==(VT_LOCAL|VT_LVAL)` (`riscv64-gen.c:1001`), handling only a plain local; `{float;int;}`/`{double;long;}`/etc. returned from a global/`*p`/call-result/ternary → `Assertion failed …:1001` exit 134 (-O0/-O1, -S+-c; asserts shipped). Classification correct (`gfunc_sret` -1 marker :982-985); only materialization missing (x86_64 :1424-1490 + arm64 handle it). Fix: port x86_64 address-materialization into riscv64 arch_transfer_ret_regs (or spill to scratch local), relax the assert.
       OWNER: — | STATE: OPEN | SHA: 08d945ce | TS: 2026-08-18T06:05Z
