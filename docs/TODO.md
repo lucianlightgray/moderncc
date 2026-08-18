@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T21:45Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T21:48Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T21:56Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T21:44Z |
 
 ## Contracts — blocking, highest priority
@@ -323,8 +323,8 @@
       OWNER: — | STATE: OPEN | SHA: c35c291e | TS: 2026-08-18T11:45Z
       REF: INVESTIGATIONS.md#r26-low-cluster | DEPS: —
 - [ ] T-mac-30139 [S] Fix: [HIGH] implicit `_Atomic` scalar load/store emitted as a plain UNORDERED access (no seq_cst) — `int x=g;`/`g=v;` on `_Atomic int g` lowers to plain `ldr`/`str` (arm64) or `mov` (x86-64), NO `ldar`/`stlr`/`dmb`; atomicity survives for aligned ≤8B scalars but C11 seq_cst ordering is silently dropped. Root: `atomic_store_needs_libcall()` (`mccgen.c:10627-10638`, called from load gate `:5206` + store gate `:14926`) returns nonzero only when `size>MCC_PTR_SIZE && size<=8` → empty set `(8,8]` on 64-bit → the ordered `gen_atomic_load_scalar`/`gen_atomic_store_scalar` (`:10734`/`:10640`, emit `__atomic_load_N`/`__atomic_store_N`) are DEAD CODE. clang/gcc emit `ldar`/`stlr`. Explicit atomic_load/store + all RMW/compound-assign ARE correct — only implicit object access. Fix: route scalars `size<=MCC_PTR_SIZE` through the ordered helpers (comparison inverted). C11 6.5.2.3/6.5.16.2p3/5.1.2.4. NOTE possible o0-baseline shift if any corpus file has implicit _Atomic access.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 4ab799ba | TS: 2026-08-18T21:52Z
-      REF: INVESTIGATIONS.md#r25-atomic-implicit-unordered | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 155147eb | TS: 2026-08-18T21:56Z
+      REF: DETAILS.md#t-mac-30139-atomic-implicit-spike | DEPS: — | NOTE: SPIKED (lin-x64) — bug + one-line fix CONFIRMED (guard flip `size < 1 || size > 8 || nonpow2`), values correct vs gcc, store→`call __atomic_store_4`/load→`__atomic_load_4`. BUT activating the previously-DEAD scalar helpers breaks x86_64 RIR self-verify: faithful 1333→1331, diverge 0→2 (`rdiverge:vpop@79` in worker + `@423` in main), bar=FAIL — a T-lin-10057-class replay-faithfulness gap in the atomic-scalar lowering (adding the missing rir_hook_call_begin/end to gen_atomic_store_scalar did NOT clear it). Also needs a fleet-wide o0 rebank for 3 files (atomic_inlang_rmw/atomic_ptr/feature_macros). Reverted to baseline (board diverge=0 OK). Needs a focused RIR pass (lin domain) to make gen_atomic_{load,store}_scalar replay-faithful, then land+rebank. Full evidence in DETAILS anchor.
 - [ ] T-mac-30141 [S] Fix: [MED, rejects-valid] `switch` on `_BitInt(N>64)` → `error: switch value not an integer` (`mccgen.c:16261`, gate `!is_integer_btype`; `is_integer_btype :701-704` lists only BYTE/BOOL/SHORT/INT/LLONG/INT128). Wide `_BitInt` is VT_STRUCT+`a.is_bitint` so fails the test even though gcase/case_cmp carry wide values; cutoff exactly N>64 (N≤64 as VT_LLONG works). clang/gcc `-std=c23` accept. Fix: treat `is_bitint_type` as integer in the switch controlling-type gate. SCOPE NOTE (mac-arm64): NOT a gate-only fix — a wide `_BitInt(N>64)` controlling value is a VT_STRUCT, so the case-comparison codegen (gcase/case_cmp compare sw->sv against each case const via gen_op) needs the wide-bitint compare path, not the plain integer compare; "gcase carries wide values" refers to VT_LLONG (64-bit), not the >64-bit struct rep. Needs the bitint comparison helper wired into the switch dispatch — a real feature, dedicated pass (do not land a gate-only change: it would crash/miscompile).
       OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
       REF: INVESTIGATIONS.md#r25-switch-bitint | DEPS: —
