@@ -527,6 +527,7 @@ static void bitint_init_putv(void *ptr, SValue *sv);
 static void gen_complex_cast(CType *type);
 static int is_compatible_unqualified_types(CType *type1, CType *type2);
 static inline int64_t expr_const64(void);
+static uint64_t expr_const64_wide(uint64_t *hi);
 static void vpush64(int ty, unsigned long long v);
 static void vpush(CType *type);
 static int gvtst(int inv, int t);
@@ -7518,6 +7519,7 @@ do_decl:
 		ps = &s->next;
 		if (u == VT_ENUM) { MCC_TRACE("br\n");
 			long long ll = 0, pl = 0, nl = 0;
+			int u64 = 0, eneg = 0;
 			CType t;
 			t.ref = s;
 			s->sym_scope = local_scope;
@@ -7534,7 +7536,18 @@ do_decl:
 				if (tok == '=') { MCC_TRACE("br\n");
 					next();
 					ice_float_op = ice_nonconst = 0;
-					ll = expr_const64();
+					{
+						uint64_t ehi;
+						ll = (long long)expr_const64_wide(&ehi);
+						if (ehi != 0 && ehi != (uint64_t)((int64_t)ll >> 63))
+							{ MCC_TRACE("br\n"); mcc_error("integer constant expression does not fit in 64 bits"); }
+						if (ll < 0) { MCC_TRACE("br\n");
+							if (ehi == 0)
+								{ MCC_TRACE("br\n"); u64 = 1; }
+							else
+								{ MCC_TRACE("br\n"); eneg = 1; }
+						}
+					}
 					if (ice_float_op || ice_nonconst)
 						{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids an enumerator value that is "
 												 "not an integer constant expression"); }
@@ -7556,6 +7569,8 @@ do_decl:
 					{ MCC_TRACE("br\n"); break; }
 				next();
 				ll++;
+				if (ll < 0 && !eneg)
+					{ MCC_TRACE("br\n"); u64 = 1; }
 				if (tok == '}') { MCC_TRACE("br\n");
 					if (mcc_state->cversion < 199901)
 						{ MCC_TRACE("br\n"); mcc_pedantic("trailing comma in enumerator list is a "
@@ -7577,7 +7592,9 @@ do_decl:
 			}
 
 			t.t = VT_INT;
-			if (nl >= 0) { MCC_TRACE("br\n");
+			if (u64 && !eneg) { MCC_TRACE("br\n");
+				t.t = (LONG_SIZE == 8 ? VT_LLONG | VT_LONG : VT_LLONG) | VT_UNSIGNED;
+			} else if (nl >= 0) { MCC_TRACE("br\n");
 				if (pl != (unsigned)pl)
 					{ MCC_TRACE("br\n"); t.t = (LONG_SIZE == 8 ? VT_LLONG | VT_LONG : VT_LLONG); }
 				t.t |= VT_UNSIGNED;
