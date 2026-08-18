@@ -5261,6 +5261,9 @@ again:
 		dbt_bt = dbt & VT_BTYPE;
 		sbt_bt = sbt & VT_BTYPE;
 		if (dbt_bt == VT_VOID) { MCC_TRACE("br\n");
+			/* T-mac-30122: (void)volatile_lval must still read the location. */
+			if ((vtop->r & VT_LVAL) && (vtop->type.t & VT_VOLATILE))
+				gv_cast_rvalue();
 			goto done;
 		}
 		if (sbt_bt == VT_VOID) { MCC_TRACE("br\n");
@@ -14958,6 +14961,10 @@ ST_FUNC void gexpr(void) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids a comma operator "
 									 "in a constant expression"); }
 		do { MCC_TRACE("br\n");
+			/* T-mac-30122: the discarded left operand of a comma, if a volatile
+			 * lvalue, must still be read. */
+			if ((vtop->r & VT_LVAL) && (vtop->type.t & VT_VOLATILE))
+				{ MCC_TRACE("br\n"); gv_cast_rvalue(); }
 			vpop();
 			next();
 			seqp_flush();
@@ -16451,6 +16458,11 @@ again:
 					if ((mcc_state->warn_unused_value & WARN_ON) && !expr_has_effect && !(vtop->type.t & VT_VOLATILE))
 						{ MCC_TRACE("br\n"); mcc_warning_c(warn_unused_value)(
 								"value computed is not used"); }
+					/* T-mac-30122: a discarded volatile lvalue read must still
+					 * emit the load (read-to-clear MMIO); gv_cast_rvalue() no-ops
+					 * under nocode_wanted and skips struct/void/complex. */
+					if ((vtop->r & VT_LVAL) && (vtop->type.t & VT_VOLATILE))
+						{ MCC_TRACE("br\n"); gv_cast_rvalue(); }
 					vpop();
 				}
 				seqp_check();

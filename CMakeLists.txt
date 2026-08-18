@@ -4945,6 +4945,16 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("debug/lexblock-nest" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
             PASS_REGULAR_EXPRESSION "nested")
+
+        # T-mac-30122(1): a discarded volatile lvalue read must still emit the
+        # load (read-to-clear MMIO); a non-volatile discard must not (bite).
+        add_test(NAME "volatile/discard-read"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/volatile/discard-read.sh"
+                    ${_mcc_exe}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/volatile/discard_read.c")
+        set_tests_properties("volatile/discard-read" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "fix is volatile-specific")
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"
