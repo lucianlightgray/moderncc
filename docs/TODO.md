@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30251   | 2026-08-18T22:52Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10405   | 2026-08-18T14:35Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10405   | 2026-08-18T14:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T14:01Z |
 
 ## Contracts — blocking, highest priority
@@ -51,6 +51,10 @@
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+
+- [ ] T-mac-30184 [S] Fix: [MED] `_Noreturn`/`noreturn` function that falls off the end isn't diagnosed — warn "'noreturn' function does return" at fall-off (explicit-return case already warns)
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:40Z
+      REF: DETAILS.md#t-mac-30184-noreturn-falloff | DEPS: —
 
 
 
@@ -263,9 +267,6 @@
 - [ ] T-mac-30183 [S] Fix: [MED, missing diagnostic] `nonnull`/`returns_nonnull`/`sentinel` ignored — no token/case → default: "attribute ignored" (`mccgen.c:6698`; -Wnonnull also "unsupported option"). `nonnull(1,2); f(0,0)` → mcc no warning, clang/gcc `null passed to a callee that requires a non-null argument`. `sentinel; g(1,"a","b")` → mcc silent, clang/gcc `missing sentinel`. Fix: record nonnull arg-mask + sentinel, warn at the call site on literal-NULL / missing-terminator.
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-nonnull-sentinel | DEPS: —
-- [ ] T-mac-30184 [S] Fix: [MED, missing diagnostic] `_Noreturn`/`noreturn` function that can return — no -Winvalid-noreturn — f.func_noreturn stored+used for codegen (`mccgen.c:6568`) but no fall-off diagnostic. `_Noreturn void bad(int x){if(x)die();}` → mcc silent; clang `function declared 'noreturn' should not return`, gcc `'noreturn' function does return`. A noreturn fn that returns is UB → missed diag hides a real bug class. Fix: warn on a reachable fall-off/return in a noreturn fn.
-      OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
-      REF: INVESTIGATIONS.md#r29-noreturn-falloff | DEPS: —
 - [ ] T-mac-30185 [S] Fix: [MED, missing diagnostic] `deprecated` not honored on struct/union/enum tags or enumerators — the use-site check (`mccgen.c:14204-14206`) fires only on ordinary-identifier lookup (fns/objects/typedefs), not tag/enumerator uses. `enum E{A [[deprecated]]} __attribute__((deprecated)); struct S{} __attribute__((deprecated)); enum E e=A; struct S s;` → mcc warns on NONE; clang/gcc warn on all. Also deprecated("msg") text not echoed. (fns/vars/typedefs ARE honored.) Fix: extend deprecated check to tag+enumerator uses + echo the message.
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-deprecated-tags | DEPS: —
