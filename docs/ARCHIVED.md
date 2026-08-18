@@ -435,3 +435,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-mac-30110 Fix runtime clz/ctz(0) disagreeing with the const-fold path (guard x==0 to return the bit width in CLZI/CLZL/CTZI/CTZL) | DONE 2026-08-18T06:45Z | SHA aafecdb4 | REF DETAILS.md#t-mac-30110-clz-ctz-zero
 - T-mac-30092 Fix too-long string-initializer warning ungated → route through -Wexcess-initializers | DONE 2026-08-18T07:05Z | SHA 61281d1c | REF DETAILS.md#t-mac-30092-30093-diag-gate
 - T-mac-30093 Fix implicit-int variable declarator ungated → -Wimplicit-int + C99 permerror (mccgen.c:18557) | DONE 2026-08-18T07:05Z | SHA 61281d1c | REF DETAILS.md#t-mac-30092-30093-diag-gate
+- T-mac-30114 Fix static inline __attribute__((used)) not emitted (used attr now sets a.used; emit predicate honors it) | DONE 2026-08-18T07:20Z | SHA b48d3ec9 | REF DETAILS.md#t-mac-30114-static-inline-used
