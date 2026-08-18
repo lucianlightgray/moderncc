@@ -11,7 +11,9 @@
 typedef _Atomic struct { char a, b; }   A_cc;   /* size 2  -> align 2  */
 typedef _Atomic struct { char x[8]; }    A_c8;   /* size 8  -> align 8  */
 typedef _Atomic struct { int a, b; }     A_ii;   /* size 8  -> align 8  */
-typedef _Atomic struct { long a, b; }    A_ll;   /* size 16 -> align 16 */
+typedef _Atomic struct { long long a, b; } A_ll; /* size 16 -> align 16 (long long
+                                                  * is 8 bytes on LP64 and LLP64;
+                                                  * plain long is 4 on win LLP64) */
 
 struct nest { char c; A_ll s; };                 /* size 32, off(s)=16  */
 
