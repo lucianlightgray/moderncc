@@ -2267,7 +2267,8 @@ static int pp_builtin_value(int v, const int *args) { MCC_TRACE("enter\n");
 }
 
 static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
-	int c, t;
+	int t;
+	int64_t c;
 	int t0 = tok;
 	TokenString *str;
 
@@ -2391,7 +2392,7 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 	t = tok;
 	begin_macro(str, 1);
 	next();
-	c = expr_const();
+	c = expr_const64_pub();
 	if (tok != TOK_EOF)
 		{ MCC_TRACE("br\n"); mcc_error("..."); }
 	pp_expr = 0;

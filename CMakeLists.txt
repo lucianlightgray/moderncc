@@ -4817,6 +4817,13 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_SWITCH_JUMPTABLE=1"
             WILL_FAIL TRUE)
 
+        add_test(NAME "pp/if-64bit"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/cond/if64.c")
+        set_tests_properties("pp/if-64bit" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "if64 checks=7 ok=5")
+
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
