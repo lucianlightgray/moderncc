@@ -4779,6 +4779,18 @@ if(MCC_BUILD_TESTS)
     # (per-type IEEE boundary sweep, conversion sweep, three _Complex widths)
     # took it 6,772,291 -> 12,875,605.
     if(NOT CMAKE_CROSSCOMPILING)
+        add_test(NAME "bitint/scast-signext"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/bitint/scast_signext.c")
+        set_tests_properties("bitint/scast-signext" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "bitint-scast checks=80 fails=0")
+        add_test(NAME "bitint/scast-signext-known-positive"
+            COMMAND ${_mcc_exe} -DMCC_SCAST_MUTATE -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/bitint/scast_signext.c")
+        set_tests_properties("bitint/scast-signext-known-positive" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")

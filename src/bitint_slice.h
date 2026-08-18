@@ -131,6 +131,8 @@ static void wide_to_bitint(int uns, int n, SValue *out) { MCC_TRACE("enter\n");
 		int sh = anl * 64 - n;
 		vpushi(sh);
 		gen_wideint_op(TOK_SHL);
+		if (!uns)
+			mk_wideint_type(&vtop->type, 0, wideint_nlimbs(&vtop->type));
 		vpushi(sh);
 		gen_wideint_op(uns ? TOK_SHR : TOK_SAR);
 	}
