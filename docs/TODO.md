@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30160 [S] Fix: [MED] `#pragma GCC poison ident` ignored — implement: record poisoned idents, error on their use during tokenization
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:12Z
+      REF: DETAILS.md#t-mac-30160-pragma-poison | DEPS: —
+
 
 
 
@@ -308,9 +312,6 @@
 - [ ] T-mac-30159 [S] Fix: [MED] `#pragma GCC diagnostic push/pop/ignored/error` is a no-op — no handler in `pragma_parse` (`mccpp.c:2601`), falls to catch-all `else` (`:2807`) warn-as-unknown. `#pragma GCC diagnostic ignored "-Wsign-compare"` does NOT suppress + `... error "-Wunused-variable"` does NOT escalate (clang/gcc honor push/pop regions). Widely used to locally silence a warning. Fix: push/pop stack of per-warning overrides keyed off the -W name.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-diagnostic | DEPS: —
-- [ ] T-mac-30160 [S] Fix: [MED, accepts-invalid] `#pragma GCC poison ident` ignored — banned identifiers compile (`mccpp.c:2807` catch-all); subsequent use of a poisoned id compiles clean, clang/gcc `error: attempt to use a poisoned identifier`. Same via `_Pragma("GCC poison ...")`. Fix: record poisoned idents, error on their use during tokenization.
-      OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
-      REF: INVESTIGATIONS.md#r27-pragma-poison | DEPS: —
 - [ ] T-mac-30161 [S] Fix: [MED] `#pragma GCC warning/error "msg"` ignored — `#pragma GCC error "msg"` + `#pragma GCC warning "msg"` silently dropped (`mccpp.c:2807`); build continues, clang/gcc emit error(rc=1)/warning with the text. mcc handles only bare `#pragma message`, not the GCC warning/error forms. Fix: route GCC warning/error to mcc_warning/mcc_error with the string operand.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-warning-error | DEPS: —
