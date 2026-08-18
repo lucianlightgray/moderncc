@@ -2833,6 +2833,23 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 			}
 			return 1;
 		}
+		if (tok >= TOK_IDENT && (!strcmp(get_tok_str(tok, NULL), "warning") ||
+														 !strcmp(get_tok_str(tok, NULL), "error"))) { MCC_TRACE("br\n");
+			int is_err = !strcmp(get_tok_str(tok, NULL), "error");
+			char *msg = NULL;
+			next_nomacro();
+			if (tok == TOK_STR)
+				{ MCC_TRACE("br\n"); msg = mcc_strdup((char *)tokc.str.data); }
+			while (tok != TOK_LINEFEED && tok != TOK_EOF)
+				{ MCC_TRACE("br\n"); next_nomacro(); }
+			if (is_err)
+				{ MCC_TRACE("br\n"); mcc_error("%s", msg ? msg : "#pragma GCC error"); }
+			else
+				{ MCC_TRACE("br\n"); mcc_warning("%s", msg ? msg : "#pragma GCC warning"); }
+			if (msg)
+				{ MCC_TRACE("br\n"); mcc_free(msg); }
+			return 1;
+		}
 		while (tok != TOK_LINEFEED && tok != TOK_EOF)
 			{ MCC_TRACE("br\n"); next_nomacro(); }
 		return 1;

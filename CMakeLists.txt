@@ -5134,6 +5134,20 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("pp/pragma-poison-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30161: #pragma GCC error stops the compile; #pragma GCC warning
+        # emits the message.
+        add_test(NAME "pp/pragma-gcc-error" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_gcc_error.c"
+                    -o "${CMAKE_BINARY_DIR}/pragma-gcc-error.o")
+        set_tests_properties("pp/pragma-gcc-error" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "pp/pragma-gcc-warning" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_gcc_warning.c"
+                    -o "${CMAKE_BINARY_DIR}/pragma-gcc-warning.o")
+        set_tests_properties("pp/pragma-gcc-warning" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "diagnostic message here")
+
         # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
         # unreferenced label; goto'd / address-taken labels stay clean.
         add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c
