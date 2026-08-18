@@ -13215,8 +13215,7 @@ tok_next:
 		}
 		break;
 
-	case TOK_builtin_expect: {
-		CType lt;
+	case TOK_builtin_expect:
 		next();
 		skip('(');
 		expr_eq();
@@ -13226,11 +13225,7 @@ tok_next:
 		vpop();
 		nocode_wanted--;
 		skip(')');
-		lt.t = (LONG_SIZE == 8) ? (VT_LLONG | VT_LONG) : (VT_INT | VT_LONG);
-		lt.ref = NULL;
-		gen_cast(&lt);
 		break;
-	}
 	case TOK_builtin_assume:
 		next();
 		skip('(');
