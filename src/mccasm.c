@@ -458,6 +458,10 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		tok1 = tok;
 		next();
 		n = asm_int_expr(s1);
+#ifdef MCC_TARGET_ARM64
+		if (tok1 == TOK_ASMDIR_align)
+			{ MCC_TRACE("br\n"); tok1 = TOK_ASMDIR_p2align; }
+#endif
 		if (tok1 == TOK_ASMDIR_p2align) { MCC_TRACE("br\n");
 			if (n < 0 || n > 30)
 				{ MCC_TRACE("br\n"); mcc_error("invalid p2align, must be between 0 and 30"); }
