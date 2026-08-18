@@ -52,8 +52,8 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30227 [S] Fix: [MED cluster, driver] SLICE-1: stdin input named `-` not `<stdin>` (__FILE__/-E marker) — fix mcc_open to pass the renamed filename to mcc_open_bf. RESIDUAL: other driver cluster items.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:08Z
+- [ ] T-mac-30227 [S] Fix: [MED cluster, driver] SLICE-1 DONE (4f87ab9c): stdin named <stdin> not - in __FILE__/-E (DETAILS#t-mac-30227-stdin-filename). TTL-resumable. RESIDUAL: -E marker line # 1 vs gcc # 0; other driver-cluster items.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 4f87ab9c | TS: 2026-08-18T16:08Z
       REF: DETAILS.md#t-mac-30227-stdin-filename | DEPS: —
 
 - [ ] T-mac-30185 [S] Fix: [MED] deprecated on tags — SLICE DONE (4f686892): leading-attr struct/union/enum tags warn on use (DETAILS#t-mac-30185-deprecated-tag). TTL-resumable. RESIDUAL: enumerators, typedef-name uses, trailing-attr form.
