@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30161 [S] Fix: [MED] `#pragma GCC warning/error "msg"` ignored — emit mcc_warning/mcc_error with the message (extends the GCC pragma arm added for poison)
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:42Z
-      REF: DETAILS.md#t-mac-30161-pragma-gcc-warning-error | DEPS: —
 
 
 - [ ] T-mac-30130 [S] Fix: [LOW cluster] SLICE-1 DONE (fec2f992: -Wunused-label, DETAILS#t-mac-30130-unused-label) + SLICE-2 DONE (bab5c86d: dup __label__ errors via block-boundary label-stack scan, DETAILS#t-mac-30130-dup-label) + (3) DONE earlier (pack-pop-warn). HEARTBEAT INTENTIONALLY STALE — TTL-resumable. RESIDUAL: (4) malformed #pragma pack always-on — the clean fix is warn_unknown_pragmas default-on (matching gcc -Wpragmas), a broader change (an always-on warning breaks the cli/malformed_pragma_is_not_fatal -Wno-unknown-pragmas-suppressible contract); (5) further minor items
