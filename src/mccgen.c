@@ -17189,14 +17189,19 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 		t1 = pointed_type(type);
 		size1 = type_size(t1, &align1);
 
+		/* T-mac-30147: the wide-char array element must match the string
+		 * literal's element type in SIGNEDNESS too — wchar_t (L"") is signed int
+		 * on non-PE (unsigned short on PE), char32_t (U"") is unsigned int,
+		 * char16_t (u"") is unsigned short. Without the signedness check
+		 * `int a[]=U"a"` and `unsigned b[]=L"a"` were wrongly accepted. */
 		if ((tok == TOK_LSTR &&
 #ifdef MCC_TARGET_PE
 				 (t1->t & VT_BTYPE) == VT_SHORT && (t1->t & VT_UNSIGNED)
 #else
-				 (t1->t & VT_BTYPE) == VT_INT
+				 (t1->t & VT_BTYPE) == VT_INT && !(t1->t & VT_UNSIGNED)
 #endif
 						 ) ||
-				(tok == TOK_U32STR && (t1->t & VT_BTYPE) == VT_INT) || (tok == TOK_U16STR && (t1->t & VT_BTYPE) == VT_SHORT && (t1->t & VT_UNSIGNED)) || ((tok == TOK_STR || tok == TOK_U8STR) && (t1->t & VT_BTYPE) == VT_BYTE)) { MCC_TRACE("br\n");
+				(tok == TOK_U32STR && (t1->t & VT_BTYPE) == VT_INT && (t1->t & VT_UNSIGNED)) || (tok == TOK_U16STR && (t1->t & VT_BTYPE) == VT_SHORT && (t1->t & VT_UNSIGNED)) || ((tok == TOK_STR || tok == TOK_U8STR) && (t1->t & VT_BTYPE) == VT_BYTE)) { MCC_TRACE("br\n");
 			len = 0;
 			cstr_reset(&initstr);
 			{

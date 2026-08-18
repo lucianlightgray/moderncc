@@ -5009,6 +5009,21 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/lexical/ucn_valid_wide.c")
         set_tests_properties("lexical/ucn-valid-wide" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
+
+        # T-mac-30147: a 4-byte wide-string init must match the array element in
+        # signedness (int[]=U"" / unsigned[]=L"" are cross-type, both oracles
+        # error); correctly-signed inits still work (known-positive).
+        add_test(NAME "lexical/widestr-signedness-rejected"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/lexical/widestr_signedness.c"
+                    -o "${CMAKE_BINARY_DIR}/widestr-sign.o")
+        set_tests_properties("lexical/widestr-signedness-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "lexical/widestr-valid"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/lexical/widestr_valid.c")
+        set_tests_properties("lexical/widestr-valid" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"
