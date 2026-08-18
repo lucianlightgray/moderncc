@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30191 [S] Fix: [MED] `return;` (no value) in a K&R `int f()` silently returns 0 with no diagnostic — emit the same return-type diagnostic the prototyped form does (error-by-default, matches gcc/clang)
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T13:42Z
-      REF: DETAILS.md#t-mac-30191-knr-return-no-value | DEPS: —
 
 
 
