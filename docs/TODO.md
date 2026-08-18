@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30222 [S] Fix: [MED] codegen-hint attributes (hot/cold/flatten/no_reorder/no_stack_protector/no_icf) warn "attribute ignored" → fail under -Werror; accept silently like gcc
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:20Z
+      REF: DETAILS.md#t-mac-30222-codegen-hint-attrs | DEPS: —
+
 
 
 
@@ -163,9 +167,6 @@
 - [ ] T-mac-30221 [S] Fix: [MED, feature gap + inconsistency] profiling flags unsupported + handled with opposite severities — no profiling codegen exists (no cyg_profile/mcount/finstrument). `-finstrument-functions` is warned-and-ignored (clean; hooks never fire; oracles emit __cyg_profile_func_enter/exit) while `-pg` HARD-ERRORS (`libmcc.c:2732` "invalid option", exit 1, breaks builds; clang accepts). No false claim of support, no miscompile. Fix: at minimum make -pg warn-and-ignore like -finstrument-functions (consistent, non-build-breaking); optionally implement __cyg_profile/mcount hooks.
       OWNER: — | STATE: OPEN | SHA: 9717e3cd | TS: 2026-08-18T19:45Z
       REF: INVESTIGATIONS.md#r34-profiling | DEPS: —
-- [ ] T-mac-30222 [S] Fix: [MED, rejects-valid under -Werror] well-known codegen-hint attributes warn "attribute ignored" → fail under -Werror — `hot`/`cold`/`flatten`/`optimize`/`no_stack_protector` hit the default: arm of parse_one_attribute (`mccgen.c:6702-6703`, warn_attributes) → `mcc -Werror` REJECTS the file (exit 1); clang/gcc accept silently (gcc warns none; clang only `optimize`). Behavior never changes (identical -O0/-O2); -Wno-attributes silences. Positive: aligned(N) on a FUNCTION honored; C23 [[gnu::…]] + #pragma GCC optimize/unroll/target accepted. Fix: recognize+ignore the common hint attributes without a warning.
-      OWNER: — | STATE: OPEN | SHA: 9717e3cd | TS: 2026-08-18T19:45Z
-      REF: INVESTIGATIONS.md#r34-hint-attrs | DEPS: —
 - [ ] T-mac-30223 [S] Fix: [LOW cluster] driver/diagnostic-quality — (1) `-fstack-protector`/`-strong` promoted to `-all` (protect EVERY fn; `libmcc.c:3142-3144` + unconditional prolog gate) — over-protect, errs safe (bloat vs oracles' per-fn heuristic); default-off on Darwin (matches gcc; Apple clang defaults -strong). (2) `#error`/`#warning` message truncated at 1023 chars (`mccpp.c:2856` char buf[1024]; distinct buffer from T-mac-30163). (3) `#error`/`#warning` caret column at end-of-line not the directive (line/file correct). (4) `mcc -g -S` carries no `.loc`/`.debug_*` (the -g -S|-c loop still runs; mcc's ELF debug isn't llvm-parseable either → no measurable regression). (5) `-p` hard-errors (matches clang, borderline).
       OWNER: — | STATE: OPEN | SHA: 9717e3cd | TS: 2026-08-18T19:45Z
       REF: INVESTIGATIONS.md#r34-low-cluster | DEPS: —
