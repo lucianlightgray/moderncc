@@ -3444,13 +3444,6 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 		cstr_reset(&tokcstr);
 		for (i = 0; i < ncp; i++) { MCC_TRACE("br\n");
 			unsigned int cp = (unsigned int)cps[i] & 0xFFFFFFFFu;
-			if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < ncp) { MCC_TRACE("br\n");
-				unsigned int lo = (unsigned int)cps[i + 1] & 0xFFFFu;
-				if (lo >= 0xDC00 && lo <= 0xDFFF) { MCC_TRACE("br\n");
-					cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-					i++;
-				}
-			}
 			cstr_ccat(&tokcstr, cp & 0xff);
 			cstr_ccat(&tokcstr, (cp >> 8) & 0xff);
 			cstr_ccat(&tokcstr, (cp >> 16) & 0xff);
