@@ -75,7 +75,7 @@
 
 ## Open — claimable
 - [ ] T-mac-30156 [S] Fix: [HIGH, rejects-valid] `<stdckdint.h>` unusable on aarch64-apple-darwin — `runtime/include/stdckdint.h` hardcodes `__int128`/`unsigned __int128` in every ckd_add/sub/mul + __mcc_ckd_min/max as the wide intermediate, but mcc rejects the `__int128` TYPE on this target in all -std modes → `#include <stdckdint.h>`+any ckd_* → `error: '__int128' is not supported on this target`. clang/gcc compile+run. The overflow BUILTINS are __int128-free (__mcc_ov_gen/ull) and work. Fix: rewrite the header to reuse the __int128-free __mcc_ov_* path (or _BitInt) instead of __int128. C23 §7.20. Related to #r12-bitint-cast but independently fixable at the header.
-      OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: d40b4f64 | TS: 2026-08-18T15:00Z
       REF: INVESTIGATIONS.md#r27-stdckdint | DEPS: —
 - [ ] T-mac-30157 [S] Fix: [HIGH, linkage leak] hidden/internal visibility leaked as external on Mach-O — `convert_symbol` (`mccmacho.c:995-1038`) sets N_EXT for every STB_GLOBAL/WEAK sym but never consults st_other visibility; N_PEXT (0x10 private_extern) is NEVER emitted (computed `vis` at :966 used only in a dprintf). So visibility("hidden"/"internal"), -fvisibility=hidden, AND #pragma GCC visibility all leave the sym a plain external T/D; clang/gcc emit `private external`. TU-private syms exported → dup-symbol clashes, missed dead-strip, wrong two-level-namespace. Fix: set N_PEXT (+ adjust N_EXT per private_extern semantics) when visibility is hidden/internal. ELF STV_* path + -fvisibility= on ELF are CORRECT — only Mach-O leaks.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
