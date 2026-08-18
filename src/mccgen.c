@@ -9448,12 +9448,15 @@ the_end:
 		if ((t & VT_BTYPE) == VT_FUNC)
 			{ MCC_TRACE("br\n"); mcc_error("_Atomic cannot be applied to a function type"); }
 	}
+	int ext_active = ext_seen;
 	if (!type_found && ext_seen && tok != TOK_STATIC_ASSERT) { MCC_TRACE("br\n");
 		while (ext_seen--)
 			{ MCC_TRACE("br\n"); unget_tok(TOK_EXTENSION); }
+		ext_active = 0;
 	}
 	mcc_state->warn_pedantic = pb_save_pedantic;
 	mcc_state->pedantic_errors = pb_save_pedantic_errors;
+	ad->ext_seen = (ext_active != 0);
 	return type_found;
 }
 
@@ -18470,18 +18473,30 @@ static int decl(int l) {
 	Sym *sym, *sa;
 	AttributeDef ad, adbase;
 	ElfSym *esym;
+	unsigned char decl_save_pedantic = mcc_state->warn_pedantic;
+	unsigned char decl_save_pedantic_errors = mcc_state->pedantic_errors;
 
 	while (1) { MCC_TRACE("br\n");
 		uint32_t cst_dm = CST_MARK();
 
+		mcc_state->warn_pedantic = decl_save_pedantic;
+		mcc_state->pedantic_errors = decl_save_pedantic_errors;
 		oldint = 0;
 		auto_type_allowed = l == VT_CONST || l == VT_LOCAL || l == VT_JMP;
-		if (parse_btype(&btype, &adbase, l == VT_LOCAL)) { MCC_TRACE("br\n");
+		int decl_had_btype = parse_btype(&btype, &adbase, l == VT_LOCAL);
+		if (adbase.ext_seen) { MCC_TRACE("br\n");
+			mcc_state->warn_pedantic = 0;
+			mcc_state->pedantic_errors = 0;
+		}
+		if (decl_had_btype) { MCC_TRACE("br\n");
 			if (adbase.implicit_int)
 				{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_int)("type defaults to 'int' in declaration"); }
 		} else { MCC_TRACE("br\n");
-			if (l == VT_JMP)
-				{ MCC_TRACE("br\n"); return 0; }
+			if (l == VT_JMP) { MCC_TRACE("br\n");
+				mcc_state->warn_pedantic = decl_save_pedantic;
+				mcc_state->pedantic_errors = decl_save_pedantic_errors;
+				return 0;
+			}
 			if (tok == ';' && l != VT_CMP) { MCC_TRACE("br\n");
 				if (l == VT_CONST && !adbase.had_attr) { MCC_TRACE("br\n");
 					mcc_pedantic("ISO C does not allow an empty declaration");
@@ -18535,8 +18550,11 @@ static int decl(int l) {
 				{ MCC_TRACE("br\n"); ; }
 			else
 				{ MCC_TRACE("br\n"); mcc_warning("useless type defines no instances"); }
-			if (l == VT_JMP)
-				{ MCC_TRACE("br\n"); return 1; }
+			if (l == VT_JMP) { MCC_TRACE("br\n");
+				mcc_state->warn_pedantic = decl_save_pedantic;
+				mcc_state->pedantic_errors = decl_save_pedantic_errors;
+				return 1;
+			}
 			next();
 			continue;
 		}
@@ -18940,6 +18958,8 @@ static int decl(int l) {
 			}
 		}
 	}
+	mcc_state->warn_pedantic = decl_save_pedantic;
+	mcc_state->pedantic_errors = decl_save_pedantic_errors;
 	return 0;
 }
 

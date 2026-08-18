@@ -482,6 +482,7 @@ typedef struct AttributeDef {
 	int attr_tok;
 	char auto_type;
 	char auto_seen;
+	char ext_seen;
 } AttributeDef;
 
 typedef struct InlineFunc {
