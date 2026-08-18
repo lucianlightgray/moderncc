@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30160 [S] Fix: [MED] `#pragma GCC poison ident` ignored — implement: record poisoned idents, error on their use during tokenization
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:12Z
-      REF: DETAILS.md#t-mac-30160-pragma-poison | DEPS: —
 
 
 
