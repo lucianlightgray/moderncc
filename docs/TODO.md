@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30237 [S] Fix: [MED] `__has_cpp_attribute` unregistered as a pp-builtin (returns 0 in C mode) — register it like __has_c_attribute; handler already returns the std value
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:56Z
+      REF: DETAILS.md#t-mac-30237-has-cpp-attribute | DEPS: —
+
 
 
 
@@ -148,9 +152,6 @@
 - [ ] T-mac-30236 [S] Fix: [MED, wrong value] `#line` near INT_MAX corrupts `__LINE__` — `#line 2147483647` then 2 lines → mcc `__LINE__` 2147483647 then **-2147483648** (signed wrap); clang+gcc-16 give …2147483648. `#line 2147483648` → mcc silently clamps to 2147483647 (`n = line_ovf ? 2147483647 : (int)nn` `mccpp.c:3063`); oracles carry 2147483648. Cause: `file->line_num` is `int` (`mccpp.c:149`, stored `:3077`) → post-#line `line_num++` (`:862`) overflows. Contrived but a negative `__LINE__` is a genuine wrong value diverging from both. Fix: widen line_num + the __LINE__ emission path to 64-bit, or saturate the increment.
       OWNER: — | STATE: OPEN | SHA: 99a5df23 | TS: 2026-08-18T21:30Z
       REF: INVESTIGATIONS.md#r36-line-overflow | DEPS: —
-- [ ] T-mac-30237 [S] Fix: [MED, only-behavior-neither-oracle-has] `#if __has_cpp_attribute(<std-attr>)` silently 0 in C mode — `#if __has_cpp_attribute(nodiscard)` under -std=c23: mcc `NO`/exit 0 (silently false for a valid attr); clang hard-errors (undefined function-like macro, exit 1); gcc-16 `YES` (202311). mcc alone accepts-and-returns-0. `mccpp.c:2013` lists it in `pp_builtin_func` so `expr_preprocess` (`:2346-2377`) enters the target-builtin branch but `pp_target_kind` returns 0 → `c` stays 0 (`:2350`); it is NOT a registered MACRO_FUNC (absent `:5910-5936`) unlike `__has_c_attribute`. Fix: route through `pp_attr_std_value` like __has_c_attribute (return version, gcc behavior) OR drop from pp_builtin_func so it errors like clang. (-E text position already matches clang: left literal.)
-      OWNER: — | STATE: OPEN | SHA: 99a5df23 | TS: 2026-08-18T21:30Z
-      REF: INVESTIGATIONS.md#r36-has-cpp-attr | DEPS: —
 - [ ] T-mac-30238 [S] Fix: [MED, C23 conformance] `_BitInt(N>64)` bitfields wrongly rejected — `struct S { _BitInt(128) a:100; unsigned _BitInt(128) b:80; };` → mcc `error: bitfields must have scalar type`; clang+gcc-16 accept (sign-extend/mask correct, sizeof 32). Boundary exactly N>64 (`_BitInt(64):64` and narrower work). `mccgen.c:7564-7569` base-type whitelist permits only VT_INT/VT_BYTE/VT_SHORT/VT_BOOL/VT_LLONG; `_BitInt(N>64)` has btype VT_BITINT → error. Fix requires: allow VT_BITINT through `:7564` AND extend `load_packed_bf`/`store_packed_bf`/`adjust_bf` (+ aligned paths ~`:2657/:6143`) to >64-bit containers, plus clamp/validate `type1.bs` (unsigned char, `:7579`, caps width at 255).
       OWNER: — | STATE: OPEN | SHA: 99a5df23 | TS: 2026-08-18T21:30Z
       REF: INVESTIGATIONS.md#r36-bitint-bitfield | DEPS: —
