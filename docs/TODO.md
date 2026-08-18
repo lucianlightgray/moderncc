@@ -108,7 +108,7 @@
       OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
       REF: INVESTIGATIONS.md#r22-enum-u64 | DEPS: —
 - [ ] T-mac-30124 [S] Fix: [MED] `_Generic` association with an elaborated `enum TAG` misparsed as C23 fixed-underlying-type → valid C11 rejected — `_Generic((enum E)A, enum E:2, default:9)` errors "enum type expected": `struct_decl_nested` VT_ENUM branch (`mccgen.c:7303-7308`, via `:14037-14038`→parse_btype) reads the tag, sees the association `:`, misreads it as `enum E:underlying`, next()s past + parse_btype on `2`. struct/union/typedef-name assocs unaffected; clang/gcc select 2. Fix: only consume `enum TAG :` as fixed-underlying in a decl context (or peek post-`:` starts a type-specifier). Reconfirms INVESTIGATIONS:218 _Generic robust set.
-      OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: c8083b21 | TS: 2026-08-18T09:05Z
       REF: INVESTIGATIONS.md#r22-generic-enum | DEPS: —
 - [ ] T-mac-30126 [S] Fix: [MED] `u8` character constant accepts a non-ASCII/multibyte char with a spec-violating self-inconsistent value — `u8'é'`/`u8'€'`/`u8'😀'`/`u8'ab'` silently accepted: u8 char path (`mccpp.c:3365-3366`, char_size=1) falls into the non-U accumulation (`:3386-3400`) w/ no single-code-unit check → `c=0xc3a9` typed char8_t (sizeof 1, `mccgen.c:12849`); `(int)u8'é'`=0xc3a9 but `char8_t v=u8'é'`=0xa9 (contradiction). C23 6.4.4.4: single UTF-8 code unit; gcc/clang error. Fix: when prefix=='8', error if decoded >1 byte / >0x7F. Distinct from T-mac-30040.
       OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
