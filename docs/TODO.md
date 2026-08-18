@@ -80,7 +80,7 @@
       OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
       REF: INVESTIGATIONS.md#r23-pack-underalign | DEPS: —
 - [ ] T-mac-30129 [S] Fix: [MED] `typeof`/`typeof_unqual` of a bit-field accepted → bit-field-typed object miscompiles — TOK_TYPEOF* arm (`mccgen.c:9260-9282`) strips storage/quals but not VT_BITFIELD, so `typeof(s.bf) x` (int bf:5) makes a 5-bit-field variable → bogus masking, garbage + "shift count>=width" warnings; `sizeof(typeof(s.bf))` then errors (made a var of a type it won't size). clang/gcc reject typeof-of-bitfield. `__auto_type` already handles it (`:18382-18387`). Fix: `if(type1.t&VT_BITFIELD) mcc_error("'typeof' applied to a bit-field");`.
-      OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: ab8456ce | TS: 2026-08-18T07:50Z
       REF: INVESTIGATIONS.md#r23-typeof-bitfield | DEPS: —
 - [ ] T-mac-30130 [S] Fix: [LOW cluster] (1) `-Wunused-label` entirely missing for ordinary defined-but-unreferenced labels (`mccgen.c:1508` warns only LABEL_DECLARED; option unrecognized) — gcc/clang warn under -Wall; add the group + warn LABEL_DEFINED&&!a.used. (2) duplicate `__label__` in one block silently accepted (`mccgen.c:16027-16036` no dup check) — gcc/clang error. (3) unmatched `#pragma pack(pop)` hard-errors (`mccpp.c:2642-2646`) while gcc/clang + mcc's own align=reset (`:2792`) only warn — downgrade to warning. (4) malformed `#pragma pack` (non-pow2/>16/named) warns only under -Wunknown-pragmas (`mccpp.c:2662/2813`) — route always-on. (5) C23 `constexpr` pointer object unconditionally rejected (`mccgen.c:18300`) — support null/address-constant.
       OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
@@ -95,7 +95,7 @@
       OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
       REF: INVESTIGATIONS.md#r22-generic-enum | DEPS: —
 - [ ] T-mac-30125 [S] Fix: [MED] intrinsic-builtin defects — (1) `__builtin_expect(e,c)` result keeps e's type not `long` (`mccgen.c:13214-13224`, e left uncast) → `sizeof(__builtin_expect((char)1,0))`=1 not 8, `_Generic` char not long (diverges from clang+gcc); fix: gen_cast result to VT_LLONG. (2) [LOW-MED] `__builtin_assume` is a no-op macro `((void)0)` (`mccdefs.h:1056`, no TOK_) → operand never parsed/typechecked + no opt hint; fix: real intrinsic parsing operand under nocode_wanted. (3) [LOW] spurious `-Wunused-value` on `__builtin_unreachable()`/`__builtin_trap()` stmts (`:13295-13300`/`:13419-13426` push VT_VOID w/o expr_has_effect; `:16412` no VT_VOID exclusion). Negatives: choose_expr/types_compatible_p/constant_p/assume_aligned/prefetch all match both oracles.
-      OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: c8083b21 | TS: 2026-08-18T07:50Z
       REF: INVESTIGATIONS.md#r22-intrinsic-builtins | DEPS: —
 - [ ] T-mac-30126 [S] Fix: [MED] `u8` character constant accepts a non-ASCII/multibyte char with a spec-violating self-inconsistent value — `u8'é'`/`u8'€'`/`u8'😀'`/`u8'ab'` silently accepted: u8 char path (`mccpp.c:3365-3366`, char_size=1) falls into the non-U accumulation (`:3386-3400`) w/ no single-code-unit check → `c=0xc3a9` typed char8_t (sizeof 1, `mccgen.c:12849`); `(int)u8'é'`=0xc3a9 but `char8_t v=u8'é'`=0xa9 (contradiction). C23 6.4.4.4: single UTF-8 code unit; gcc/clang error. Fix: when prefix=='8', error if decoded >1 byte / >0x7F. Distinct from T-mac-30040.
       OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
