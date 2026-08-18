@@ -5106,6 +5106,15 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cleanup_argcheck_err.c")
+            add_test(NAME "diag/cleanup-argcheck-err"
+                COMMAND ${_mcc_exe} -run
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cleanup_argcheck_err.c")
+            set_tests_properties("diag/cleanup-argcheck-err" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT
+                PASS_REGULAR_EXPRESSION "'cleanup' argument has incompatible pointer type")
+        endif()
+
         # T-mac-30184: a _Noreturn function that can fall off the end must warn
         # "'noreturn' function does return"; one ending in an unconditional
         # noreturn call stays clean (even under -Werror).

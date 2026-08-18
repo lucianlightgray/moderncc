@@ -19005,6 +19005,19 @@ static int decl(int l) {
 				mcc_warning_c(warn_attributes)("'cleanup' attribute ignored");
 				ad.cleanup_func = NULL;
 			}
+			if (ad.cleanup_func && ad.cleanup_func->type.ref) { MCC_TRACE("br\n");
+				Sym *cfp = ad.cleanup_func->type.ref->next;
+				if (cfp && (cfp->type.t & VT_BTYPE) == VT_PTR) { MCC_TRACE("br\n");
+					CType *pointee = pointed_type(&cfp->type);
+					if ((pointee->t & VT_BTYPE) != VT_VOID) { MCC_TRACE("br\n");
+						int pa, va, psz = type_size(pointee, &pa), vsz = type_size(&type, &va);
+						if (psz > 0 && vsz > 0 && psz != vsz)
+							{ MCC_TRACE("br\n"); mcc_error("'cleanup' argument has incompatible "
+								"pointer type (points to a %d-byte object, variable is %d bytes)",
+								psz, vsz); }
+					}
+				}
+			}
 
 			if (gnu_ext && (tok == TOK_ASM1 || tok == TOK_ASM2 || tok == TOK_ASM3)) { MCC_TRACE("br\n");
 				if (tok == TOK_ASM1 && mcc_state->std_strict_ansi)
