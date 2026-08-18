@@ -51473,3 +51473,11 @@ Regression-free: diagnostics + `ast/o0-baseline` + init/decl exec (34 cells) gre
 **Type** `[S]` — **State** DONE — investigation `INVESTIGATIONS.md#r24-embed-ifdef`.
 
 `#ifdef __has_embed` was false while `#if defined(__has_embed)` was true: the ifdef guard (`src/mccpp.c:2948`) whitelisted only `TOK___HAS_INCLUDE`/`TOK___HAS_INCLUDE_NEXT`, omitting `TOK___HAS_EMBED`; the `#elifdef`/`#elifndef` path (`:2999`) used bare `define_find(tok)` whitelisting none of the `__has_*` builtins (so `#elifdef __has_include` was also wrongly false). Real code guarded by `#ifdef __has_embed` silently took the no-embed fallback though mcc fully supports `#embed`. Fix: added `|| tok == TOK___HAS_EMBED` to the ifdef guard, and gave the `#elifdef` path the full `__has_include`/`__has_include_next`/`__has_embed` whitelist — matching `defined()`. Verification: `pp/has-embed-ifdef` (`mcc -run tests/cond/has_embed_ifdef.c` → `has_embed_ifdef a=1 b=1 c=1 d=1`, i.e. `#ifdef`/`#if defined`/`#elifdef __has_embed` and `#elifdef __has_include` all agree). pp-only change; preprocess + o0-baseline green.
+
+<a id="t-mac-30124-generic-enum-tag"></a>
+
+## T-mac-30124 _Generic elaborated enum-tag association misparsed (RESOLVED, mac-arm64)
+
+**Type** `[S]` — **State** DONE — investigation `INVESTIGATIONS.md#r22-generic-enum`. Code SHA 0ed7ccf5.
+
+`struct_decl_nested`'s VT_ENUM path (`src/mccgen.c:7305`) saw the `:` after an enum tag and unconditionally treated it as the C23 fixed-underlying-type introducer — `next()` past `:`, then `parse_btype` on the following token, `expect("enum type")` on failure. In a `_Generic` association (`_Generic((enum E)A, enum E: 2, default: 9)`) the `:` is the association separator, so `2` was fed to parse_btype and hard-errored (valid C11 rejected; clang/gcc select `2`). Fix: attempt `parse_btype` after `:`; if it yields a type, use it as the fixed-underlying-type (unchanged behavior); otherwise `unget_tok(':')` so the caller re-reads the separator. The enum-bitfield `:` comes after the member name (`enum E b : 2`), not the tag, so struct_decl_nested never sees it — unaffected. Verification: `diag/generic-enum-tag` — the _Generic enum-tag case selects 2 (matches clang), and fixed-underlying (`enum F : unsigned char` sz1/X=200, `enum G : long` sz8/Y=-1) + enum bit-field still work. o0-baseline + enum/generic exec green.
