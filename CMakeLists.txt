@@ -5106,6 +5106,14 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_region.c")
+            add_test(NAME "diag/pragma-region"
+                COMMAND ${_mcc_exe} -Wall -Werror -run
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_region.c")
+            set_tests_properties("diag/pragma-region" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+        endif()
+
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cleanup_argcheck_err.c")
             add_test(NAME "diag/cleanup-argcheck-err"
                 COMMAND ${_mcc_exe} -run

@@ -2922,6 +2922,11 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		while (tok != TOK_LINEFEED && tok != TOK_EOF)
 			{ MCC_TRACE("br\n"); next_nomacro(); }
 		return 1;
+	} else if (tok >= TOK_IDENT && (!strcmp(get_tok_str(tok, NULL), "region") ||
+									!strcmp(get_tok_str(tok, NULL), "endregion"))) { MCC_TRACE("br\n");
+		while (tok != TOK_LINEFEED && tok != TOK_EOF)
+			{ MCC_TRACE("br\n"); next_nomacro(); }
+		return 1;
 	} else { MCC_TRACE("br\n");
 		mcc_warning_c(warn_unknown_pragmas)("#pragma %s ignored",
 																				get_tok_str(tok, &tokc));
