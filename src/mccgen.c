@@ -5931,6 +5931,9 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids conversion between a function "
 											 "pointer and 'void *'"); }
 			} else if (dbt == sbt && is_integer_btype(sbt & VT_BTYPE) && IS_ENUM(type1->t) + IS_ENUM(type2->t) + !!((type1->t ^ type2->t) & VT_UNSIGNED) < 2) { MCC_TRACE("br\n");
+				if (((type1->t ^ type2->t) & VT_UNSIGNED) && !IS_ENUM(type1->t) && !IS_ENUM(type2->t))
+					{ MCC_TRACE("br\n"); mcc_warning_c(warn_pointer_sign)(
+							"pointer targets in assignment differ in signedness"); }
 			} else { MCC_TRACE("br\n");
 				incompatible_ptr_diag();
 				break;

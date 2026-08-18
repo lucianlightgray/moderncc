@@ -5085,6 +5085,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/noreturn-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30193: -Wpointer-sign — integer pointers differing only in target
+        # signedness warn under -Wall; same-sign / explicit-cast stay clean.
+        add_test(NAME "diag/pointer-sign" COMMAND ${_mcc_exe} -Wall -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pointer_sign.c"
+                    -o "${CMAKE_BINARY_DIR}/pointer-sign.o")
+        set_tests_properties("diag/pointer-sign" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "differ in signedness")
+        add_test(NAME "diag/pointer-sign-ok" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pointer_sign_ok.c")
+        set_tests_properties("diag/pointer-sign-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"
