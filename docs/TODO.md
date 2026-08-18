@@ -52,8 +52,8 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-lin-10405 [S] Formalize + implement the CPU<->GPU transaction in the JIT (user-directed) — a documented protocol by which a JIT'd C program packages live-in frame state, executes a statement/frame slice on the GPU, and reads live-out state back to continue on the CPU, with a demonstrable end-to-end C program running across both slices. Concretizes T-lin-10404 (frame executor into the JIT).
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:12Z
+- [ ] T-lin-10405 [S] Formalize + implement the CPU<->GPU transaction in the JIT (user-directed). DELIVERED: formal design + grounded marshalling ABI + gap analysis (DETAILS#t-lin-10405-cpu-gpu-transaction), and Phase A/B DEMONSTRATION (e91e4218): tools/slicerun.c suite_txn / ctest slice/txn — CPU seeds live-in, GPU runs { c=a+b; a=c*a; }, CPU consumes live-out c=17 a=170 (a transaction, not an oracle). Mechanism validated by slice/real+src green on RTX 5070 Ti; slice/txn run-verification deferred (user gaming on GPU). RESIDUAL: Phase C (frame-equivalence gate) + Phase D (inline into JIT-generated bodies, gaps 4-6). TTL-resumable.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: e91e4218 | TS: 2026-08-18T16:12Z
       REF: DETAILS.md#t-lin-10405-cpu-gpu-transaction | DEPS: — | NOTE: subagent mapping the frame-executor/marshalling interface; design spec being written
 
 - [ ] T-mac-30227 [S] Fix: [MED cluster, driver] SLICE-1 DONE (4f87ab9c): stdin named <stdin> not - in __FILE__/-E (DETAILS#t-mac-30227-stdin-filename). TTL-resumable. RESIDUAL: -E marker line # 1 vs gcc # 0; other driver-cluster items.
