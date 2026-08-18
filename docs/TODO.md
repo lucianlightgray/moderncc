@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T22:09Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:14Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T22:11Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T22:20Z |
 
 ## Contracts — blocking, highest priority
 
@@ -128,9 +128,9 @@
 - [ ] T-mac-30059 [S] Fix: make dependency-file generation — [HIGH] SLICE DONE (2e290ddc): `escape_target_dep` now escapes `#`→`\#` and `$`→`$$` (was space-only) so prereq paths with `#`/`$` no longer break make; TDD cli/depfile_escapes_hash_dollar, depfile-text-only (no o0 impact). TTL-resumable. RESIDUAL: [MED] `-MG` still hard-errors (needs the #include-not-found path to tolerate a missing header under gen_deps, not just accept the flag); [LOW] depfile not written on compile failure.
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 2e290ddc | TS: 2026-08-18T22:11Z
       REF: DETAILS.md#t-mac-30059-depfile-escape | DEPS: —
-- [ ] T-mac-30097 [S] Fix: [LOW cluster] doing sub-item (4): `set_output_type` warns "overriding compiler action" for same-type flags (`-c -c`/`-c -r`, both MCC_OUTPUT_OBJ) — only warn when the action actually changes. RESIDUAL: (1) array-size-overflow msg, (2) DWARF llong-bitfield-as-int, (3) mccdis 256-byte name buf.
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: d2141b72 | TS: 2026-08-18T22:13Z
-      REF: INVESTIGATIONS.md#r17-low-cluster | DEPS: —
+- [ ] T-mac-30097 [S] Fix: [LOW cluster] sub-item (4) SLICE DONE (465978e1): `set_output_type` now warns only when the action actually changes (`s->output_type != x`), so same-type flags `-c -c`/`-c -r` no longer spurious-warn; `-c -S` still warns. TDD cli/output_type_same_action_no_warn (driver-only, no o0 impact). TTL-resumable. RESIDUAL: (1) array-size-overflow reported "incomplete type elements", (2) DWARF llong-bitfield≤32b as int, (3) mccdis 256-byte name buf.
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 465978e1 | TS: 2026-08-18T22:20Z
+      REF: DETAILS.md#t-mac-30097-output-type-warn | DEPS: —
 
 ## Open — claimable
 - [ ] T-mac-30251 [S] Fix: [treegate red] `ci/gate-contract` — 3 orphaned known-positives that no gate-contract row claims: `bitint/scast-signext-known-positive` (T-mac-30063), `fold/int64-float-known-positive` (T-mac-30082), `switch/jumptable-falloff-known-positive` (T-mac-30099). Base cells + known-positives are `if(NOT CMAKE_CROSSCOMPILING)`-gated → absent on cross, so naive rows break `cmake-cross`; fix needs `else() mcc_skip_test` echo-stubs + must-run.txt entries + real intrinsic floors (ratchets maxed). NOT mac-only-verifiable (needs a cmake-cross gate-contract run). Found landing T-mac-30169.
