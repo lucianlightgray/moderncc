@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30048   | 2026-08-18T00:18Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30052   | 2026-08-18T00:32Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -69,6 +69,18 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30048 [S] Investigate: diagnostic source-position (parser→error1 handoff; pp line/`#line`/`__LINE__`/include-stack all ROBUST) — [HIGH] diagnostics report the LOOKAHEAD token's line not the offending token's → drifts across newlines onto valid code (`error1` reads live `file->line_num`/`buf_ptr` `libmcc.c:702/590/618`; `tok_line_num` captured `mccpp.c:22` but unused + overwritten by lookahead lex); [MED] caret column tracks the live cursor not the diagnosed token; [MED] `'X' expected (got 'Y')` blames the got-token's line (missing-`;` reported one line late, `mccpp.c:100`); [LOW] no `expanded from macro`/`defined here` notes. Empirically diffed vs clang
+      OWNER: — | STATE: OPEN | SHA: ef7e016a | TS: 2026-08-18T00:32Z
+      REF: INVESTIGATIONS.md#r9-diag-location | DEPS: —
+- [ ] T-mac-30049 [S] Investigate: `-run` in-memory loader page-protection (reloc/TLS/external-calls ROBUST) — [MED] `.rodata` NEVER protected read-only (`mccrun.c:758-763` guard only ever protects exec class) → reproduced AOT divergence (const-store prints OK under -run, SIGSEGVs AOT) + const writable for the run; [MED] Linux `-run` maps code RWX (non-hardened → non-dual malloc path, `f=HOST_PROT_RWX`; `mccrun.c:761`, `mcchost.c:1656`; distinct from embed-JIT `#jit-rwx-mapjit`); [LOW/latent] dual-map skips icache flush (arm64 I/D hazard); [LOW] uninit inter-section padding on malloc path
+      OWNER: — | STATE: OPEN | SHA: ef7e016a | TS: 2026-08-18T00:32Z
+      REF: INVESTIGATIONS.md#r9-run-loader | DEPS: —
+- [ ] T-mac-30050 [S] Investigate: type compatibility/qualifiers — [MED] `_Atomic` swept into `VT_QUALIFY` (`mcc.h:1213`) so it's stripped by the unqualified param compare (`mccgen.c:4481`) → `void f(_Atomic int); void f(int);` silently accepted (clang: conflicting types); `_Atomic` is a distinct type not a mere qualifier, unlike the deliberately-ignored top-level const/volatile params (DETAILS:10328); [LOW/latent] enum→underlying substitution in `compare_types` drops the enum operand's own const/volatile (`mccgen.c:4452/4454`). const-discard/`const char**`/func/tag/array compat all ROBUST
+      OWNER: — | STATE: OPEN | SHA: ef7e016a | TS: 2026-08-18T00:32Z
+      REF: INVESTIGATIONS.md#r9-type-compat | DEPS: —
+- [ ] T-mac-30051 [S] Investigate: i386 call-site frame alignment + `get_reg` fail-safe (arm64/x86_64 spill/frame ROBUST, differential-verified) — [MED] i386 frame rounds only 4-byte (`(-loc+3)&-4`, `i386-gen.c:826`) + `gfunc_call` cleanup does no 16/8-byte outgoing-frame alignment (unconditional, incl. non-leaf) → violates 16-byte SysV/Darwin i386 call-site ABI, non-leaf into SSE-aligned code can fault (contrast arm32=8/x86_64/arm64=16); [LOW/latent] `get_reg` returns -1 on class exhaustion, 11 call sites use it unchecked (`mccgen.c:2140` → `load(-1)`/`reg_classes[-1]`) — unreachable today (promote-locals only pins callee-saved), should hard-error to fail safe
+      OWNER: — | STATE: OPEN | SHA: ef7e016a | TS: 2026-08-18T00:32Z
+      REF: INVESTIGATIONS.md#r9-i386-frame-align | DEPS: —
 - [ ] T-mac-30043 [S] Investigate: linkage/visibility/TLS-model emission — [HIGH] x86_64 ELF emits ONLY local-exec `R_X86_64_TPOFF32` (no `gen_tls_addr`, no GD/IE), ignoring `-fPIC`/`-shared`/visibility → `mcc -fPIC -shared` with `__thread` rejected by `ld` / bogus TP offset internally (`x86_64-gen.c:310/326/417/444/556/576`; broader than i386-only T-lin-10020); [MED] Mach-O drops `STV_HIDDEN`/`-fvisibility=hidden`, never sets `N_PEXT` → hidden syms leak into dylib exports (`mccmacho.c:995-1038`); [LOW] `VT_INLINE`→LOCAL tested before `a.weak` (`mccgen.c:1204`). C99-inline emission all ROBUST
       OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z
       REF: INVESTIGATIONS.md#r8-x86_64-tls-model | DEPS: —
