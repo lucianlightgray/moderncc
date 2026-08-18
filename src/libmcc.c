@@ -824,6 +824,8 @@ ST_FUNC int mcc_open(MCCState *s1, const char *filename) { MCC_TRACE("enter\n");
 	int fd = _mcc_open(s1, filename, 0);
 	if (fd < 0)
 		{ MCC_TRACE("br\n"); return -1; }
+	if (strcmp(filename, "-") == 0)
+		{ MCC_TRACE("br\n"); filename = "<stdin>"; }
 	mcc_open_bf(s1, filename, 0);
 	file->fd = fd;
 	return 0;
@@ -1608,6 +1610,8 @@ ST_FUNC int mcc_add_file_internal(MCCState *s1, const char *filename, int flags)
 			{ MCC_TRACE("br\n"); mcc_error_noabort("file '%s' not found", filename); }
 		return FILE_NOT_FOUND;
 	}
+	if (!(flags & AFF_TYPE_BIN) && strcmp(filename, "-") == 0)
+		{ MCC_TRACE("br\n"); filename = "<stdin>"; }
 
 	if (flags & AFF_TYPE_BIN)
 		{ MCC_TRACE("br\n"); return mcc_add_binary(s1, flags, filename, fd); }

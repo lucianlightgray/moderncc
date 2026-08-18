@@ -7558,6 +7558,13 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     -c "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/xpreprocessor_forward.c"
                     -DFOO=1 -o "${CMAKE_BINARY_DIR}/xpp-fwd.o")
         set_tests_properties(driver/save-temps-accepted PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
+        # T-mac-30227 slice-1: stdin input is named <stdin> (not -) in __FILE__
+        # and -E line markers, matching gcc/clang.
+        add_test(NAME driver/stdin-filename
+            COMMAND sh -c "printf 'int x;\n' | '$<TARGET_FILE:mcc>' -E -")
+        set_tests_properties(driver/stdin-filename PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT PASS_REGULAR_EXPRESSION "\"<stdin>\"")
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_vla.c")
