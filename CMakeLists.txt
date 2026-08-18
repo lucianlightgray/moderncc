@@ -7516,6 +7516,13 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(u32-no-surrogate-combine-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/has_cpp_attribute_c.c")
+        add_test(NAME has-cpp-attribute-c COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/has_cpp_attribute_c.c"
+                    -o "${CMAKE_BINARY_DIR}/has_cpp_attribute_c.o")
+        set_tests_properties(has-cpp-attribute-c PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/has_builtin_name_recognized.c")
         add_test(NAME has-builtin-name-recognized COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/has_builtin_name_recognized.c"

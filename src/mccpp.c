@@ -36,6 +36,7 @@ static int pp_is_poisoned(int t) { MCC_TRACE("enter\n");
 
 static int tok_has_attribute;
 static int tok_has_c_attribute;
+static int tok_has_cpp_attribute;
 static int tok_has_builtin;
 static int tok_has_feature;
 static int tok_has_extension;
@@ -2236,6 +2237,7 @@ static int pp_has_feature_arg(int v, int strict) { MCC_TRACE("enter\n");
 
 static int pp_builtin_macro(int v) { MCC_TRACE("enter\n");
 	return v == tok_has_attribute || v == tok_has_c_attribute ||
+				 v == tok_has_cpp_attribute ||
 				 v == tok_has_builtin || v == tok_has_feature ||
 				 v == tok_has_extension;
 }
@@ -5962,6 +5964,7 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 
 	tok_has_attribute = tok_alloc_const("__has_attribute");
 	tok_has_c_attribute = tok_alloc_const("__has_c_attribute");
+	tok_has_cpp_attribute = tok_alloc_const("__has_cpp_attribute");
 	tok_has_builtin = tok_alloc_const("__has_builtin");
 	tok_has_feature = tok_alloc_const("__has_feature");
 	tok_has_extension = tok_alloc_const("__has_extension");
@@ -5984,6 +5987,7 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 	define_push(TOK___TIMESTAMP__, MACRO_OBJ, NULL, NULL);
 	define_push(tok_has_attribute, MACRO_FUNC, NULL, NULL);
 	define_push(tok_has_c_attribute, MACRO_FUNC, NULL, NULL);
+	define_push(tok_has_cpp_attribute, MACRO_FUNC, NULL, NULL);
 	define_push(tok_has_builtin, MACRO_FUNC, NULL, NULL);
 	define_push(tok_has_feature, MACRO_FUNC, NULL, NULL);
 	define_push(tok_has_extension, MACRO_FUNC, NULL, NULL);
