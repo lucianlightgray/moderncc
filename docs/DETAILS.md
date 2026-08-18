@@ -51573,3 +51573,17 @@ The bundled C23 `<stdckdint.h>` implemented `ckd_add`/`ckd_sub`/`ckd_mul` with i
 **Type** `[S]` — **State** DONE — investigation `INVESTIGATIONS.md#r27-macho-visibility`. Code SHA 416d9d1c.
 
 `convert_symbol` (`src/objfmt/mccmacho.c`) set `N_EXT` for every defined `STB_GLOBAL`/`STB_WEAK` symbol but never consulted the ELF `st_other` visibility, and `N_PEXT` (private_extern, 0x10) was never defined or emitted anywhere in the Mach-O writer (the computed `vis` was used only in a `dprintf`). So `__attribute__((visibility("hidden")))`/`("internal")`, `-fvisibility=hidden`, and `#pragma GCC visibility` were all no-ops on Mach-O — TU-private symbols leaked into the image as plain external `T`/`D` (duplicate-symbol clashes, missed dead-strip, wrong two-level-namespace), where clang/gcc emit `private external`. Fix: define `N_PEXT 0x10` and, for a DEFINED external symbol (not `SHN_UNDEF`/`SHN_FROMDLL`) whose visibility is `STV_HIDDEN` or `STV_INTERNAL`, OR in `N_PEXT` alongside `N_EXT`. Verified on the linked Mach-O image via `nm -m`: `hidden`/`internal` functions AND variables → `private external`, `default`/plain → `external` (byte-for-byte matching clang); runtime unchanged. Test `macho-visibility` (Darwin-gated). o0-baseline + macho-structural/weakdef/clanglink green. NOTE: mcc's `-c` intermediate object is ELF (Mach-O is produced only at link/image time), so the fix is observable on the linked image, not the `.o`. The ELF `STV_*` path and `-fvisibility=` on ELF were already correct — this closes only the Mach-O leak; `#pragma GCC visibility` (T-mac-30164) is still unimplemented and now benefits from this mapping once wired.
+
+<a id="t-mac-30170-30171-macos-mem"></a>
+
+## T-mac-30170 / T-mac-30171 macOS mem-builtin defects (RESOLVED, mac-arm64)
+
+**Type** `[S]` — **State** DONE — investigation `INVESTIGATIONS.md#r28-mempcpy` / `#r28-bzero`. Code SHA 19862162.
+
+Two defects in `runtime/include/mccdefs.h` on macOS, both found in Round 28.
+
+**T-mac-30171 (HIGH, data corruption):** `__builtin_bzero(p, n)` zeroed only `sizeof(*p)` bytes — the Apple-only macro was `#define __builtin_bzero(p, ignored_size) bzero(p, sizeof(*(p)))`, discarding the count and zeroing 1 byte for a `char*`. `__builtin_bzero(z, 8)` left 7 of 8 bytes non-zero (clang/gcc zero all 8), and the bare `bzero(...)` expansion also required `<strings.h>`. Fixed to `#define __builtin_bzero(p, n) __builtin_memset((p), 0, (n))` — correct count via a working redirect that needs no extra header.
+
+**T-mac-30170 (HIGH, link failure):** `__builtin_mempcpy` was declared as a plain prototype whose `__asm__` redirect targeted `_mempcpy`, a GNU extension absent from macOS libc → `error: unresolved reference to '_mempcpy'` (and the same break in `__builtin___mempcpy_chk` / the `mempcpy` `_FORTIFY` paths). Fixed by providing an inline definition on `__APPLE__` — `static __inline void *__builtin_mempcpy(d,s,n){ __builtin_memcpy(d,s,n); return (char*)d+n; }` (the GNU semantics) — while keeping the libc redirect on glibc Linux (which has the symbol).
+
+Verified: `builtins/macos-mem` — bzero zeros exactly n bytes (incl. n=0), mempcpy copies n and returns `dst+n`, and the `_mempcpy_chk` path works. o0-baseline byte-identical (header-only; the copy is regenerated at build from `runtime/include/`). The rest of the mem/str builtin surface was already runtime-robust (Round 28 strong negative).
