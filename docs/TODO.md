@@ -86,7 +86,7 @@
       OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
       REF: INVESTIGATIONS.md#r24-ifunc | DEPS: —
 - [ ] T-mac-30137 [S] Fix: [MED] `#ifdef`/`#elifdef __has_embed` report not-defined while `#if defined(__has_embed)` is true (self-contradiction) → code guarded by `#ifdef __has_embed` silently takes the no-embed fallback though mcc supports `#embed` — ifdef guard (`mccpp.c:2948`) whitelists only __has_include/__has_include_next; `#elifdef` (`:2999`) whitelists none (so `#elifdef __has_include` also wrongly false). Fix: add TOK___HAS_EMBED to `:2948` + give `:2999` the __has_include/_next/__has_embed whitelist. (#embed itself ROBUST.)
-      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 9cd4fb3c | TS: 2026-08-18T08:35Z
       REF: INVESTIGATIONS.md#r24-embed-ifdef | DEPS: —
 - [ ] T-mac-30138 [S] Fix: [MED] block-scope `static` rejects a CONSTANT statement-expression initializer — `int f(void){ static int s=({7;}); }` → mcc "constant expected"; gcc+clang accept (fold the constant-valued stmt-expr). Stmt-expr `'{'` arm of unary (`mccgen.c:13050-13057`) result reaches the static-init constant check which doesn't recognize a folded stmt-expr. Automatic init + non-constant/file-scope rejection are correct. Fix: accept a stmt-expr whose result constant-folded to a literal in the static-init constant path.
       OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
