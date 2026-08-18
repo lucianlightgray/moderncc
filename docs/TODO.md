@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-lin-10398/lin [P] child — measure CPU-vs-GPU ladder-slice coverage on lin (Vulkan RTX 5070 Ti + Radeon 610M) via --jit-always-gpu + ast_ladder_gpu_report
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:40Z
-      REF: DETAILS.md#t-lin-10398-lin-baseline | DEPS: —
 
 
 
