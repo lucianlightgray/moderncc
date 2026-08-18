@@ -17191,7 +17191,7 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 				if (len < nb)
 					{ MCC_TRACE("br\n"); nb = len; }
 				if (len > nb)
-					{ MCC_TRACE("br\n"); mcc_warning("initializer-string for array is too long"); }
+					{ MCC_TRACE("br\n"); mcc_warning_c(warn_excess_initializers)("initializer-string for array is too long"); }
 				if (p->sec && size1 == 1) { MCC_TRACE("br\n");
 					init_assert(p, c + nb);
 					if (!NODATA_WANTED)
@@ -18554,7 +18554,7 @@ static int decl(int l) {
 					ad.a.weak = 1;
 				}
 			} else if (oldint) { MCC_TRACE("br\n");
-				mcc_warning("type defaults to int");
+				mcc_warning_c(warn_implicit_int)("type defaults to 'int'");
 			}
 
 			if (in_for_init && (type.t & (VT_STATIC | VT_EXTERN | VT_TYPEDEF)))

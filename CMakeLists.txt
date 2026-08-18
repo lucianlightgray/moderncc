@@ -4831,6 +4831,31 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "clzctz0 clz=32 clzll=64 ctz=32 ctzll=64 fails=0")
 
+        add_test(NAME "diag/implicit-int-var"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/implicit_int_var.c"
+                    -o "${CMAKE_BINARY_DIR}/iiv.o")
+        set_tests_properties("diag/implicit-int-var" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "diag/implicit-int-var-c89"
+            COMMAND ${_mcc_exe} -std=c89 -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/implicit_int_var.c"
+                    -o "${CMAKE_BINARY_DIR}/iiv89.o")
+        set_tests_properties("diag/implicit-int-var-c89" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME "diag/excess-string-init-werror"
+            COMMAND ${_mcc_exe} -Werror=excess-initializers -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/excess_string_init.c"
+                    -o "${CMAKE_BINARY_DIR}/esi.o")
+        set_tests_properties("diag/excess-string-init-werror" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "diag/excess-string-init-nowarn"
+            COMMAND ${_mcc_exe} -Wno-excess-initializers -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/excess_string_init.c"
+                    -o "${CMAKE_BINARY_DIR}/esin.o")
+        set_tests_properties("diag/excess-string-init-nowarn" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
