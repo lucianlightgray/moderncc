@@ -1319,7 +1319,7 @@
 	return (__mcc_gu_t)((__w << __k) | (__w >> (__p - __k)));
 	}
 
-	#define __mcc_gprec(x) ((int)(8 * sizeof(x)))
+	#define __mcc_gprec(x) (__builtin_bitprecisionof(x))
 	#define __mcc_gsel(_1, _2, __mcc_gn, ...) __mcc_gn
 	#define __mcc_clzg1(x) __mcc_gclzp((__mcc_gu_t)(x), __mcc_gprec(x))
 	#define __mcc_clzg2(x, f) __mcc_gclzf((__mcc_gu_t)(x), __mcc_gprec(x), (int)(f))

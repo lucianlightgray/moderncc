@@ -13572,6 +13572,24 @@ tok_next:
 		vpushi(cls);
 		break;
 	}
+	case TOK_builtin_bitprecisionof: {
+		int nn, prec, align;
+		next();
+		skip('(');
+		if (parse_btype(&type, &ad, 0)) { MCC_TRACE("br\n");
+			type_decl(&type, &ad, &nn, TYPE_ABSTRACT);
+		} else { MCC_TRACE("br\n");
+			expr_type(&type, gexpr);
+			type.t &= ~(VT_ARRAY | VT_VLA);
+		}
+		skip(')');
+		if (is_bitint_type(&type) || IS_BITINT(type.t))
+			{ MCC_TRACE("br\n"); prec = bitint_prec(&type); }
+		else
+			{ MCC_TRACE("br\n"); prec = 8 * type_size(&type, &align); }
+		vpushi(prec);
+		break;
+	}
 	case TOK_builtin_LINE:
 		next();
 		skip('(');
