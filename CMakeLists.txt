@@ -5219,6 +5219,14 @@ if(MCC_BUILD_TESTS)
             PASS_REGULAR_EXPRESSION "1 / [*]b [+] c"
             FAIL_REGULAR_EXPRESSION "/[*]")
 
+        # T-mac-30205: two '#' tokens from separate arg expansions must not merge
+        # into '##' and be lost under -E -- both must survive as "# #".
+        add_test(NAME "pp/hash-hash-E" COMMAND ${_mcc_exe} -E
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pp_hash_hash.c")
+        set_tests_properties("pp/hash-hash-E" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "# #")
+
         # T-mac-30202: -Wtype-limits (a -Wextra sub-warning, off by default like
         # gcc) flags a comparison whose result is constant because an unsigned
         # operand is compared against 0.
