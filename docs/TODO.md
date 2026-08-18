@@ -158,10 +158,10 @@
       OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
       REF: INVESTIGATIONS.md#r17-elf-loader-oob | DEPS: —
 - [ ] T-mac-30092 [S] Fix: [MED] string-array excess-initializer warning ungated — `char a[3]="hello"` warns via plain `mcc_warning("initializer-string for array is too long")` (`mccgen.c:17187`, only `-w` silences) while the element-list sibling uses `mcc_warning_c(warn_excess_initializers)` (`:16585,17345`); `-Wno-excess-initializers` suppresses one not the other (clang groups both). Fix: route `:17187` through `warn_excess_initializers`.
-      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: d2141b72 | TS: 2026-08-18T06:58Z
       REF: INVESTIGATIONS.md#r17-strinit-gate | DEPS: —
 - [ ] T-mac-30093 [S] Fix: [MED] implicit-int variable declarator ungated + not C99-promoted — the `oldint` var-declarator case uses plain `mcc_warning("type defaults to int")` (`mccgen.c:18550`, `-Wno-implicit-int` can't suppress, no permerror) while siblings `:18443/:18526` are `mcc_warning_c(warn_implicit_int)` + hard errors in C99+ (`libmcc.c:842-844,852-854`). `x;`→warning rc0 but `f(){return 0;}`→error. Also corrects stale INVESTIGATIONS:205 (T-mac-30038) claim that siblings "stay warnings forever". Fix: `:18550`→`mcc_warning_c(warn_implicit_int)`.
-      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: d2141b72 | TS: 2026-08-18T06:58Z
       REF: INVESTIGATIONS.md#r17-implicit-int-var | DEPS: —
 - [ ] T-mac-30094 [S] Fix: [MED] empty-paren function DEFINITION after a prototype merged as a 0-param prototype (accept-invalid, order-dependent) — `is_compatible_func` treats a no-param `FUNC_OLD` as compatible w/ any prototype (`mccgen.c:4406-4412`) and the definition merge adopts the def's empty param list while flagging prototyped (`:1867-1873`). `int f(int,int); int f(){return 42;}` accepted (clang/gcc reject), then `f(1,2)`→spurious "too many arguments"; reverse order merges to 2 params. C 6.7.6.3p14: a def's `()` = 0 params. Fix: diagnose a 0-param def against a prior N-param prototype.
       OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
