@@ -9441,7 +9441,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			u = tok;
 			next();
 			parse_expr_type(&type1);
-			if (type1.t & VT_BITFIELD)
+			if ((type1.t & VT_BITFIELD) && !IS_BITINT(type1.t))
 				{ MCC_TRACE("br\n"); mcc_error("'typeof' applied to a bit-field"); }
 			type1.t &= ~(VT_STORAGE & ~VT_TYPEDEF);
 			if (u == TOK_TYPEOF_UNQUAL) { MCC_TRACE("br\n");
