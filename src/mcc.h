@@ -1689,6 +1689,7 @@ ST_FUNC int gv_cast_rvalue(void);
 ST_FUNC void gv2(int rc1, int rc2);
 ST_FUNC void gen_op(int op);
 ST_FUNC int type_size(CType *type, int *a);
+ST_FUNC int builtin_libm_is(const char *base);
 ST_FUNC void mk_pointer(CType *type);
 ST_FUNC void vstore(void);
 ST_FUNC void inc(int post, int c);

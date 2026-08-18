@@ -2121,7 +2121,11 @@ static int pp_has_builtin_arg(int v) { MCC_TRACE("enter\n");
 		if (!strcmp(n, untokenized[i]))
 			{ MCC_TRACE("br\n"); return 1; }
 	}
-	return define_find(v) != NULL;
+	if (define_find(v) != NULL)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (builtin_libm_is(n + 10))
+		{ MCC_TRACE("br\n"); return 1; }
+	return sym_find(v) != NULL;
 }
 
 static const char *pp_attr_canon(const char *n, char *buf, size_t bufsize) { MCC_TRACE("enter\n");

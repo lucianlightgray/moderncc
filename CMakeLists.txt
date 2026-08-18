@@ -7372,6 +7372,13 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(u32-no-surrogate-combine-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/has_builtin_name_recognized.c")
+        add_test(NAME has-builtin-name-recognized COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/has_builtin_name_recognized.c"
+                    -o "${CMAKE_BINARY_DIR}/has_builtin_name_recognized.o")
+        set_tests_properties(has-builtin-name-recognized PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_vla.c")
         add_test(NAME alignof-vla-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

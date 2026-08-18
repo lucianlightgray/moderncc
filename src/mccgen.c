@@ -12745,6 +12745,20 @@ static int builtin_libm_find(const char *name) { MCC_TRACE("enter\n");
 	return -1;
 }
 
+ST_FUNC int builtin_libm_is(const char *base) { MCC_TRACE("enter\n");
+	char buf[32];
+	size_t len = strlen(base);
+	if (builtin_libm_find(base) >= 0)
+		{ MCC_TRACE("br\n"); return 1; }
+	if (len && len < sizeof buf && (base[len - 1] == 'f' || base[len - 1] == 'l')) { MCC_TRACE("br\n");
+		memcpy(buf, base, len);
+		buf[len - 1] = '\0';
+		if (builtin_libm_find(buf) >= 0)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
+
 static Sym *builtin_libm_alias(int v) { MCC_TRACE("enter\n");
 	const char *name = get_tok_str(v, NULL);
 	char base[32];
