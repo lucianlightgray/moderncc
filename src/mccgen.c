@@ -16150,6 +16150,7 @@ again:
 				vtop--;
 			}
 		} else if (b && func_old && (func_vt.t & VT_BTYPE) == VT_INT) { MCC_TRACE("br\n");
+			mcc_warning_c(warn_return_type)("'return' with no value");
 			vpushi(0);
 		} else if (b) { MCC_TRACE("br\n");
 			mcc_warning_c(warn_return_type)("'return' with no value");

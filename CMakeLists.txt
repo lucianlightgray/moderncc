@@ -5040,6 +5040,21 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("lexical/empty-radix-valid" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30191: `return;` with no value in a non-void K&R `int f()` was
+        # silently synthesized to `return 0`; gcc/clang error. Reject it (error
+        # by default), and keep every well-formed return.
+        add_test(NAME "diag/knr-return-no-value-rejected"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/knr_return_no_value.c"
+                    -o "${CMAKE_BINARY_DIR}/knr-return.o")
+        set_tests_properties("diag/knr-return-no-value-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "diag/knr-return-valid"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/knr_return_valid.c")
+        set_tests_properties("diag/knr-return-valid" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"
