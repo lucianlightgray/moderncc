@@ -7536,6 +7536,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(bool-weak-addr-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/bitint_bool_store.c")
+        add_test(NAME bitint-bool-store-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/bitint_bool_store.c
+            --out ${CMAKE_BINARY_DIR}/bitint_bool_store${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(bitint-bool-store-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/atomic_aggregate_align.c")
         add_test(NAME atomic-aggregate-align-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

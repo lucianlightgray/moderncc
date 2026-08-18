@@ -6102,6 +6102,10 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	} else if (!is_wideint_type(&vtop[-1].type) && is_wideint_type(&vtop->type) && dbt != VT_STRUCT) { MCC_TRACE("br\n");
 		gen_cast(&vtop[-1].type);
 		sbt = vtop->type.t & VT_BTYPE;
+	} else if (!is_bitint_type(&vtop[-1].type) && is_bitint_type(&vtop->type) && dbt != VT_STRUCT) { MCC_TRACE("br\n");
+		gen_cast(&vtop[-1].type);
+		bitint_deconst();
+		sbt = vtop->type.t & VT_BTYPE;
 	} else if (is_complex_type(&vtop[-1].type) && !is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
 		gen_cast(&vtop[-1].type);
 		sbt = vtop->type.t & VT_BTYPE;
@@ -16752,7 +16756,7 @@ static void decl_design_flex(init_params *p, Sym *ref, int index) { MCC_TRACE("e
 			p->flex_warned = 1;
 			if (p->flex_auto) { MCC_TRACE("br\n");
 				mcc_error("non-static initialization of a flexible array member");
-			} else {
+			} else { MCC_TRACE("br\n");
 				mcc_pedantic("initialization of a flexible array member is not "
 										 "allowed in ISO C");
 			}

@@ -2659,7 +2659,7 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 			next();
 			if (s1->pack_stack_ptr <= s1->pack_stack) { MCC_TRACE("br\n");
 				mcc_warning("#pragma pack(pop) without matching push, ignored");
-			} else {
+			} else { MCC_TRACE("br\n");
 				s1->pack_stack_ptr--;
 			}
 		} else { MCC_TRACE("br\n");
