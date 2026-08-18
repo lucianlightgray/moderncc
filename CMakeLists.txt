@@ -5123,6 +5123,17 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/scalar-braces-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30160: #pragma GCC poison bans an identifier; using it errors.
+        add_test(NAME "pp/pragma-poison-rejected" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_poison.c"
+                    -o "${CMAKE_BINARY_DIR}/pragma-poison.o")
+        set_tests_properties("pp/pragma-poison-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "pp/pragma-poison-ok" COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_poison_ok.c")
+        set_tests_properties("pp/pragma-poison-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"

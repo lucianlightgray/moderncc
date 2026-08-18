@@ -23,6 +23,17 @@ static int tok_line_num;
 static struct BufferedFile *tok_line_file;
 static int tok_va_opt;
 
+static int *pp_poison;
+static int pp_npoison;
+
+static int pp_is_poisoned(int t) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < pp_npoison; i++)
+		{ MCC_TRACE("br\n"); if (pp_poison[i] == t)
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static int tok_has_attribute;
 static int tok_has_c_attribute;
 static int tok_has_builtin;
@@ -2808,6 +2819,23 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		while (tok != TOK_LINEFEED && tok != TOK_EOF)
 			{ MCC_TRACE("br\n"); next_nomacro(); }
 		return 1;
+	} else if (tok >= TOK_IDENT && !strcmp(get_tok_str(tok, NULL), "GCC")) { MCC_TRACE("br\n");
+		next_nomacro();
+		if (tok >= TOK_IDENT && !strcmp(get_tok_str(tok, NULL), "poison")) { MCC_TRACE("br\n");
+			for (;;) { MCC_TRACE("br\n");
+				next_nomacro();
+				if (tok < TOK_IDENT)
+					{ MCC_TRACE("br\n"); break; }
+				if (!pp_is_poisoned(tok)) { MCC_TRACE("br\n");
+					pp_poison = mcc_realloc(pp_poison, (pp_npoison + 1) * sizeof(int));
+					pp_poison[pp_npoison++] = tok;
+				}
+			}
+			return 1;
+		}
+		while (tok != TOK_LINEFEED && tok != TOK_EOF)
+			{ MCC_TRACE("br\n"); next_nomacro(); }
+		return 1;
 	} else { MCC_TRACE("br\n");
 		mcc_warning_c(warn_unknown_pragmas)("#pragma %s ignored",
 																				get_tok_str(tok, &tokc));
@@ -4362,6 +4390,8 @@ redo_no_start:
 		}
 		tok_ts = ts;
 		tok = ts->tok;
+		if (pp_npoison && pp_is_poisoned(tok))
+			{ MCC_TRACE("br\n"); mcc_error("attempt to use poisoned identifier '%s'", ts->str); }
 		break;
 	case 'u':
 		if (p[1] == '8' && p[2] == '\"') { MCC_TRACE("br\n");
