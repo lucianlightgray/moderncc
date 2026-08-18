@@ -4895,6 +4895,13 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/static-assert-false" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
+        add_test(NAME "diag/generic-enum-tag"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/generic_enum_tag.c")
+        set_tests_properties("diag/generic-enum-tag" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "generic_enum_tag fails=0")
+
         add_test(NAME "diag/tls-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/tls_addr_static_init.c"

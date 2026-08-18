@@ -7304,9 +7304,13 @@ static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_T
 		ut = VT_INT;
 		if (tok == ':') { MCC_TRACE("br\n");
 			next();
-			if (!parse_btype(&btype, &ad1, 0) || !is_integer_btype(btype.t & VT_BTYPE))
-				{ MCC_TRACE("br\n"); expect("enum type"); }
-			bt = ut = btype.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED | VT_DEFSIGN);
+			if (parse_btype(&btype, &ad1, 0)) { MCC_TRACE("br\n");
+				if (!is_integer_btype(btype.t & VT_BTYPE))
+					{ MCC_TRACE("br\n"); expect("enum type"); }
+				bt = ut = btype.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED | VT_DEFSIGN);
+			} else { MCC_TRACE("br\n");
+				unget_tok(':');
+			}
 		}
 	}
 
