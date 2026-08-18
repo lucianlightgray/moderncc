@@ -4994,6 +4994,21 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("attr/stdcall-ignored" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "'stdcall' attribute ignored")
+
+        # T-mac-30146: a surrogate/out-of-range UCN is invalid in every mode and
+        # for wide as well as narrow literals — reject it (was silently emitted
+        # under C23); valid wide UCNs must still work (known-positive).
+        add_test(NAME "lexical/ucn-surrogate-rejected"
+            COMMAND ${_mcc_exe} -std=c23 -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/lexical/ucn_surrogate.c"
+                    -o "${CMAKE_BINARY_DIR}/ucn-surr.o")
+        set_tests_properties("lexical/ucn-surrogate-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "lexical/ucn-valid-wide"
+            COMMAND ${_mcc_exe} -std=c23 -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/lexical/ucn_valid_wide.c")
+        set_tests_properties("lexical/ucn-valid-wide" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"

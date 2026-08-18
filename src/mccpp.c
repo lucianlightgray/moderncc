@@ -3190,6 +3190,13 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 					n = (unsigned)n * 16 + c;
 					p++;
 				} while (--i);
+				/* T-mac-30146: a surrogate (D800..DFFF) or out-of-range (>10FFFF)
+				 * code point is never a valid universal character, in ANY language
+				 * mode and for wide as well as narrow literals — the narrow/u8 path
+				 * catches it in unicode_to_utf8, but the wide (is_long) path stores
+				 * the raw code unit, so reject it here for both. */
+				if (is_ucn && (((unsigned)n >= 0xD800 && (unsigned)n <= 0xDFFF) || (unsigned)n > 0x10FFFF))
+					{ MCC_TRACE("br\n"); mcc_error("\\U%08x is not a valid universal character", (unsigned)n); }
 				if (is_ucn && mcc_state->warn_pedantic && mcc_state->cversion < 202311 && ((n < 0xA0 && n != 0x24 && n != 0x40 && n != 0x60) || (n >= 0xD800 && n <= 0xDFFF))) { MCC_TRACE("br\n");
 					if (mcc_state->pedantic_errors)
 						{ MCC_TRACE("br\n"); mcc_error("\\u%04x is not a valid universal character", n); }
