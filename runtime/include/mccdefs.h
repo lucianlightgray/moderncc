@@ -368,11 +368,13 @@
 	#define __sync_fetch_and_or(p,v)  __atomic_fetch_or((p),(v),__ATOMIC_SEQ_CST)
 	#define __sync_fetch_and_and(p,v) __atomic_fetch_and((p),(v),__ATOMIC_SEQ_CST)
 	#define __sync_fetch_and_xor(p,v) __atomic_fetch_xor((p),(v),__ATOMIC_SEQ_CST)
+	#define __sync_fetch_and_nand(p,v) __atomic_fetch_nand((p),(v),__ATOMIC_SEQ_CST)
 	#define __sync_add_and_fetch(p,v) (__atomic_fetch_add((p),(v),__ATOMIC_SEQ_CST)+(v))
 	#define __sync_sub_and_fetch(p,v) (__atomic_fetch_sub((p),(v),__ATOMIC_SEQ_CST)-(v))
 	#define __sync_or_and_fetch(p,v)  (__atomic_fetch_or((p),(v),__ATOMIC_SEQ_CST)|(v))
 	#define __sync_and_and_fetch(p,v) (__atomic_fetch_and((p),(v),__ATOMIC_SEQ_CST)&(v))
 	#define __sync_xor_and_fetch(p,v) (__atomic_fetch_xor((p),(v),__ATOMIC_SEQ_CST)^(v))
+	#define __sync_nand_and_fetch(p,v) __atomic_nand_fetch((p),(v),__ATOMIC_SEQ_CST)
 	#define __sync_bool_compare_and_swap(p,o,n) \
 	__extension__ ({ __typeof__(*(p)) __o=(o), __n=(n); \
 	__atomic_compare_exchange((p),&__o,&__n,0,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST); })

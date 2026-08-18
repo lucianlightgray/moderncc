@@ -419,6 +419,10 @@ static const cli_case_t cli_cases[] = {
 		 "$({MCC} -B{B} -std=c99 -std=gnu99 -E -P {W}/tg.c | grep -Fc 'x#y')",
 		 "c99=1 gnu=0\n"},
 
+		{"sync_nand_builtins", "",
+		 "{MCC} -B{B} -I{I} {D}/syncnand.c -o {W}/snd && {W}/snd",
+		 "OK\n"},
+
 		{"dM_dump_macros", "",
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},
