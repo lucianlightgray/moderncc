@@ -5000,10 +5000,22 @@ redo:
 				{ MCC_TRACE("br\n"); gen_cast_s(combtype.t & VT_BTYPE); }
 			if (bf_trunc) { MCC_TRACE("br\n");
 				int sh = 64 - bf_trunc;
+				int bi = op_class == SHIFT_OP
+						? bin1
+						: (bin1 > 0 && bin2 > 0 ? (bin1 > bin2 ? bin1 : bin2) : 0);
 				vpushi(sh);
 				gen_op(TOK_SHL);
 				vpushi(sh);
 				gen_op((t & VT_UNSIGNED) ? TOK_SHR : TOK_SAR);
+				if (bi > 0) { MCC_TRACE("br\n");
+					int uns = op_class == SHIFT_OP
+							? biu1
+							: ((biu1 && bin1 >= bin2) || (biu2 && bin2 >= bin1));
+					vtop->type.t = (vtop->type.t & ~(VT_STRUCT_MASK | VT_UNSIGNED))
+							| VT_BITINT | VT_BITFIELD | (uns ? VT_UNSIGNED : 0);
+					vtop->type.bp = 0;
+					vtop->type.bs = bi;
+				}
 			} else { MCC_TRACE("br\n");
 				/* A _BitInt(N) arithmetic result is itself _BitInt(N) (a shift's is the
 				 * left operand's), so its value must be reduced mod 2^N.  The N > 32 case
@@ -5020,7 +5032,7 @@ redo:
 				int bi = op_class == SHIFT_OP
 						? bin1
 						: (bin1 > 0 && bin2 > 0 ? (bin1 > bin2 ? bin1 : bin2) : 0);
-				if (bi > 0 && (vtop->type.t & VT_BTYPE) != VT_LLONG) { MCC_TRACE("br\n");
+				if (bi > 0) { MCC_TRACE("br\n");
 					int uns = op_class == SHIFT_OP
 							? biu1
 							: ((biu1 && bin1 >= bin2) || (biu2 && bin2 >= bin1));
