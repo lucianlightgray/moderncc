@@ -5049,6 +5049,14 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("builtins/macos-mem" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30192: _Alignof(void) is a GNU void-size extension (value 1),
+        # not a hard error — parity with sizeof(void).
+        add_test(NAME "sizeof/alignof-void"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/sizeof/alignof_void.c")
+        set_tests_properties("sizeof/alignof-void" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30182: unused/maybe_unused suppress -Wunused for the annotated
         # entity; un-annotated ones must still warn (the bite).
         add_test(NAME "attr/unused-suppress"

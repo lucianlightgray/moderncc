@@ -13235,7 +13235,10 @@ tok_next:
 			if (t == TOK_SIZEOF)
 				{ MCC_TRACE("br\n"); mcc_pedantic("'sizeof' applied to a void type"); }
 			else if (t == TOK_ALIGNOF3)
-				{ MCC_TRACE("br\n"); mcc_error("'_Alignof' applied to a void type"); }
+				/* T-mac-30192: _Alignof(void) is the same GNU void-size extension
+				 * as sizeof(void) — pedantic-warn and yield 1, not a hard error
+				 * (matches clang/gcc and mcc's own sizeof(void)). */
+				{ MCC_TRACE("br\n"); mcc_pedantic("'_Alignof' applied to a void type"); }
 		}
 		if (t == TOK_SIZEOF) { MCC_TRACE("br\n");
 			vpush_type_size(&type, &align);
