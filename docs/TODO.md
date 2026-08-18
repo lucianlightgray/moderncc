@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30228 [S] Fix: [MED, driver] `-Xpreprocessor`/`-Xassembler`/`-save-temps` hard-error → both oracles accept; route -Xpreprocessor like -Wp,, accept -Xassembler/-save-temps
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:25Z
-      REF: DETAILS.md#t-mac-30228-driver-x-opts | DEPS: —
 
 - [ ] T-lin-10399 [S] Research: strategies to run AST/RIR slices MAXIMALLY on GPU for a self-hosted mcc-JIT — coverage is the sole objective (wall-clock irrelevant); publish gap taxonomy + ranked strategies + code loci, then taskify per-strategy follow-ups
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:20Z
