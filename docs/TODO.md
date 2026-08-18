@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30220 [S] Fix: [MED] `#warning` ungated — add default-on warn_cpp flag ("cpp") + gate #warning so -Wno-cpp suppresses, -Werror=cpp escalates
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:38Z
+      REF: DETAILS.md#t-mac-30220-warn-cpp | DEPS: —
+
 - [ ] T-mac-30183 [S] Fix: [MED] nonnull/returns_nonnull/sentinel warn "attribute ignored" -> fail under -Werror; accept them silently (extend attr_ignore_silently). RESIDUAL: the -Wnonnull/missing-sentinel call-site diagnostics.
       OWNER: lin-x64 | STATE: IN_PROGRESS (accept-slice DONE 9e97f027; misuse-diagnostic residual) | SHA: 9e97f027 | TS: 2026-08-18T16:30Z
       REF: DETAILS.md#t-mac-30183-30181-accept-attrs | DEPS: —
@@ -204,9 +208,6 @@
 - [ ] T-mac-30219 [S] Fix: [MED, missing diagnostic] no redefinition warning for command-line / builtin macro redefinition — `-D X=1 -D X=2` + `-D __STDC__=0`/`-D __LINE__=5` apply SILENTLY; the injected `<command line>` buffer is marked `file->system_header=1` (`mccpp.c:5842`) → suppresses the -Wmacro-redefined class. clang/gcc warn (`'X' macro redefined` / `redefining builtin macro`). Values correct; in-file redefinition of a -D'd macro DOES warn. Fix: don't treat the cmdline macro buffer as a system header for redefinition warnings (or special-case cmdline redef).
       OWNER: — | STATE: OPEN | SHA: 9717e3cd | TS: 2026-08-18T19:45Z
       REF: INVESTIGATIONS.md#r34-cmdline-redef | DEPS: —
-- [ ] T-mac-30220 [S] Fix: [MED, missing gating] no `-Wcpp`/`-Werror=cpp`/`-Wno-cpp` category → `#warning` ungated — `#warning` emits a plain mcc_warning w/ no warn-class (`mccpp.c:3094`). `mcc -Wno-cpp` → "unsupported option" + STILL emits the #warning (exit 0); `mcc -Werror=cpp` → "unsupported option" + does NOT escalate (exit 0). clang/gcc: -Wno-cpp suppresses, -Werror=cpp → error(1). Global -Werror/-w DO work. Fix: add a `cpp` warning class gating #warning.
-      OWNER: — | STATE: OPEN | SHA: 9717e3cd | TS: 2026-08-18T19:45Z
-      REF: INVESTIGATIONS.md#r34-wcpp | DEPS: —
 - [ ] T-mac-30221 [S] Fix: [MED, feature gap + inconsistency] profiling flags unsupported + handled with opposite severities — no profiling codegen exists (no cyg_profile/mcount/finstrument). `-finstrument-functions` is warned-and-ignored (clean; hooks never fire; oracles emit __cyg_profile_func_enter/exit) while `-pg` HARD-ERRORS (`libmcc.c:2732` "invalid option", exit 1, breaks builds; clang accepts). No false claim of support, no miscompile. Fix: at minimum make -pg warn-and-ignore like -finstrument-functions (consistent, non-build-breaking); optionally implement __cyg_profile/mcount hooks.
       OWNER: — | STATE: OPEN | SHA: 9717e3cd | TS: 2026-08-18T19:45Z
       REF: INVESTIGATIONS.md#r34-profiling | DEPS: —
