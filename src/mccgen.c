@@ -5441,9 +5441,16 @@ again:
 						{ MCC_TRACE("br\n"); vtop->c.ld = -(long double)-(uint32_t)vtop->c.i; }
 				}
 
-				if (dbt == VT_FLOAT)
-					{ MCC_TRACE("br\n"); vtop->c.f = (float)vtop->c.ld; }
-				else if (dbt == VT_DOUBLE)
+				if (dbt == VT_FLOAT) { MCC_TRACE("br\n");
+					if (!sf && (sbt_bt == VT_LLONG ||
+											(MCC_PTR_SIZE == 8 && sbt == VT_PTR))) { MCC_TRACE("br\n");
+						if (sbt & VT_UNSIGNED)
+							{ MCC_TRACE("br\n"); vtop->c.f = (float)(uint64_t)cpre; }
+						else
+							{ MCC_TRACE("br\n"); vtop->c.f = (float)(int64_t)cpre; }
+					} else
+						{ MCC_TRACE("br\n"); vtop->c.f = (float)vtop->c.ld; }
+				} else if (dbt == VT_DOUBLE)
 					{ MCC_TRACE("br\n"); vtop->c.d = (double)vtop->c.ld; }
 			} else if (sf && dbt == VT_BOOL) { MCC_TRACE("br\n");
 				vtop->c.i = (vtop->c.ld != 0);

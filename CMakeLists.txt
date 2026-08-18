@@ -4791,6 +4791,18 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("bitint/scast-signext-known-positive" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
+        add_test(NAME "fold/int64-float"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fold/int64_float.c")
+        set_tests_properties("fold/int64-float" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "i2f checks=9 fails=0")
+        add_test(NAME "fold/int64-float-known-positive"
+            COMMAND ${_mcc_exe} -DMCC_I2F_MUTATE -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fold/int64_float.c")
+        set_tests_properties("fold/int64-float-known-positive" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
