@@ -7649,6 +7649,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(switch-bool-promote-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/switch_bitint_wide.c")
+        add_test(NAME switch-bitint-wide-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/switch_bitint_wide.c
+            --out ${CMAKE_BINARY_DIR}/switch_bitint_wide${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(switch-bitint-wide-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/typeof_bitint.c")
         add_test(NAME typeof-bitint-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

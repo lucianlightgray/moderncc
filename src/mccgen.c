@@ -15253,6 +15253,8 @@ static uint64_t expr_const64_wide(uint64_t *hi) { MCC_TRACE("enter\n");
 	c = vtop->c.i;
 	if ((vtop->type.t & VT_BTYPE) == VT_INT128)
 		{ MCC_TRACE("br\n"); *hi = vtop->c.q.hi; }
+	else if (is_bitint_type(&vtop->type))
+		{ MCC_TRACE("br\n"); *hi = vtop->c.q.hi; }
 	else if (vtop->type.t & VT_UNSIGNED)
 		{ MCC_TRACE("br\n"); *hi = 0; }
 	else
@@ -16512,6 +16514,18 @@ again:
 		skip('(');
 		gexpr_decl();
 		seqp_check();
+		if (is_bitint_type(&vtop->type)) { MCC_TRACE("br\n");
+#if MCC_HAVE_INT128
+			if (bitint_prec(&vtop->type) <= 128) { MCC_TRACE("br\n");
+				CType i128;
+				i128.t = VT_INT128 | (bitint_is_unsigned(&vtop->type) ? VT_UNSIGNED : 0);
+				i128.bp = 0;
+				i128.bs = 0;
+				i128.ref = NULL;
+				gen_cast(&i128);
+			}
+#endif
+		}
 		if (!is_integer_btype(vtop->type.t & VT_BTYPE))
 			{ MCC_TRACE("br\n"); mcc_error("switch value not an integer"); }
 		if ((vtop->type.t & VT_BTYPE) == VT_BOOL)
