@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30184 [S] Fix: [MED] `_Noreturn`/`noreturn` function that falls off the end isn't diagnosed — warn "'noreturn' function does return" at fall-off (explicit-return case already warns)
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:40Z
-      REF: DETAILS.md#t-mac-30184-noreturn-falloff | DEPS: —
 
 
 
