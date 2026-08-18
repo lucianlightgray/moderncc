@@ -1512,6 +1512,9 @@ ST_FUNC void label_pop(Sym **ptop, Sym *slast, int keep) { MCC_TRACE("enter\n");
 			mcc_error("label '%s' used but not defined",
 								get_tok_str(s->v, NULL));
 		} else { MCC_TRACE("br\n");
+			if (s->r == LABEL_DEFINED && !s->a.used)
+				{ MCC_TRACE("br\n"); mcc_warning_c(warn_unused_label)(
+						"label '%s' defined but not used", get_tok_str(s->v, NULL)); }
 			if (s->c) { MCC_TRACE("br\n");
 				put_extern_sym(s, cur_text_section, s->jnext, 1);
 			}
@@ -14091,6 +14094,7 @@ tok_next:
 			if (s->r == LABEL_DECLARED)
 				{ MCC_TRACE("br\n"); s->r = LABEL_FORWARD; }
 		}
+		s->a.used = 1;
 		if ((s->type.t & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
 			s->type.t = VT_VOID;
 			mk_pointer(&s->type);
@@ -16452,6 +16456,7 @@ again:
 				{ MCC_TRACE("br\n"); s = label_push(&global_label_stack, tok, LABEL_FORWARD); }
 			else if (s->r == LABEL_DECLARED)
 				{ MCC_TRACE("br\n"); s->r = LABEL_FORWARD; }
+			s->a.used = 1;
 			lsym = s;
 
 			if (s->r & LABEL_FORWARD) { MCC_TRACE("br\n");

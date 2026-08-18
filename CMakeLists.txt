@@ -5134,6 +5134,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("pp/pragma-poison-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
+        # unreferenced label; goto'd / address-taken labels stay clean.
+        add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/unused_label.c"
+                    -o "${CMAKE_BINARY_DIR}/unused-label.o")
+        set_tests_properties("diag/unused-label" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "label 'dead' defined but not used")
+        add_test(NAME "diag/used-label-ok" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/used_label_ok.c")
+        set_tests_properties("diag/used-label-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"

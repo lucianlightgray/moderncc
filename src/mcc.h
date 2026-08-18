@@ -734,6 +734,7 @@ struct MCCState {
 	unsigned char warn_unused_variable;
 	unsigned char warn_unused_parameter;
 	unsigned char warn_unused_function;
+	unsigned char warn_unused_label;
 	unsigned char warn_fatal_errors;
 	unsigned char warn_shadow;
 	unsigned char warn_unused_value;
