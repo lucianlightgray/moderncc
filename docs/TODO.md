@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30091   | 2026-08-18T03:40Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30098   | 2026-08-18T04:05Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -73,6 +73,27 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30091 [S] Fix: [HIGH, SECURITY] ELF `.o` loader `mcc_load_object_file` indexes `shdr[]`/`sm_table[]` (sized by `e_shnum`, `mccelf.c:3423-3425`) with file-controlled fields never bounded vs `e_shnum` — `e_shstrndx` (`:3427`→feeds `load_data` w/ attacker offset), `sh_link` (`:3449,3554`), `sh_info` (`:3461,3556,3601`), `st_shndx` (`:3570`, only guarded `<0xff00`). Crafted `.o`/`.a`/dylib → OOB heap read (info-disclosure/crash). Mach-O (`mccmacho.c:3116`) + COFF (`mccpe.c:2584,2617`) already bound theirs. Distinct from T-mac-30023/T-lin-10396. Fix: reject `e_shstrndx>=e_shnum` + clamp sh_link/sh_info/st_shndx before every index.
+      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      REF: INVESTIGATIONS.md#r17-elf-loader-oob | DEPS: —
+- [ ] T-mac-30092 [S] Fix: [MED] string-array excess-initializer warning ungated — `char a[3]="hello"` warns via plain `mcc_warning("initializer-string for array is too long")` (`mccgen.c:17187`, only `-w` silences) while the element-list sibling uses `mcc_warning_c(warn_excess_initializers)` (`:16585,17345`); `-Wno-excess-initializers` suppresses one not the other (clang groups both). Fix: route `:17187` through `warn_excess_initializers`.
+      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      REF: INVESTIGATIONS.md#r17-strinit-gate | DEPS: —
+- [ ] T-mac-30093 [S] Fix: [MED] implicit-int variable declarator ungated + not C99-promoted — the `oldint` var-declarator case uses plain `mcc_warning("type defaults to int")` (`mccgen.c:18550`, `-Wno-implicit-int` can't suppress, no permerror) while siblings `:18443/:18526` are `mcc_warning_c(warn_implicit_int)` + hard errors in C99+ (`libmcc.c:842-844,852-854`). `x;`→warning rc0 but `f(){return 0;}`→error. Also corrects stale INVESTIGATIONS:205 (T-mac-30038) claim that siblings "stay warnings forever". Fix: `:18550`→`mcc_warning_c(warn_implicit_int)`.
+      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      REF: INVESTIGATIONS.md#r17-implicit-int-var | DEPS: —
+- [ ] T-mac-30094 [S] Fix: [MED] empty-paren function DEFINITION after a prototype merged as a 0-param prototype (accept-invalid, order-dependent) — `is_compatible_func` treats a no-param `FUNC_OLD` as compatible w/ any prototype (`mccgen.c:4406-4412`) and the definition merge adopts the def's empty param list while flagging prototyped (`:1867-1873`). `int f(int,int); int f(){return 42;}` accepted (clang/gcc reject), then `f(1,2)`→spurious "too many arguments"; reverse order merges to 2 params. C 6.7.6.3p14: a def's `()` = 0 params. Fix: diagnose a 0-param def against a prior N-param prototype.
+      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      REF: INVESTIGATIONS.md#r17-empty-paren-def | DEPS: —
+- [ ] T-mac-30095 [S] Fix: [MED] completed array bound behind a pointer not propagated on redeclaration (reject-valid, order-dependent) — `compare_types` deems `int(*p)[]` compatible w/ `int(*p)[10]` (`mccgen.c:4506,4510-4513`) but `patch_type` completes the bound only for a direct `VT_ARRAY` object (`:1879-1882`); for `VT_PTR` it never reassigns `sym->type.ref` → `extern int(*p)[]; int(*p)[10]; sizeof(*p)`→spurious "unknown type size" (clang 40); reverse order works; any indirection depth. Fix: adopt the completed (nested) ref from whichever redecl supplies it.
+      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      REF: INVESTIGATIONS.md#r17-ptr-array-redecl | DEPS: —
+- [ ] T-mac-30096 [S] Fix: [MED] `-std=gnu*` after `-std=c*`/`-ansi` leaves trigraph mode stuck on (silent mis-preprocessing) — trigraph flag written ONLY in the strict-ISO branch (`s->trigraphs=!(cversion>=202311)`, `libmcc.c:3024`); the gnu branch (`:2985`) never clears it, so `mcc -std=c99 -std=gnu99 -c f.c` leaves trigraphs ON → `"??="`→`"#"` (gcc-16: last -std wins, off). Fix: compute unconditionally every -std: `s->trigraphs=strict_iso && !(cversion>=202311);`.
+      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      REF: INVESTIGATIONS.md#r17-std-trigraph | DEPS: —
+- [ ] T-mac-30097 [S] Fix: [LOW cluster] (1) array-size OVERFLOW misreported "incomplete type elements" (`mccgen.c:9725-9726`) though element type complete — siblings say "unknown type size" (`:5761`)/"invalid array size" (`:9704`); distinguish `type_size()<0` overflow (adjacent T-mac-30070). (2) DWARF describes `long long` bit-field ≤32b as `int` — `struct_layout` btype rewrite `VT_LLONG→VT_INT` (`mccgen.c:6940-6941`) leaks into DWARF member type (`mccdbg.c:2594`); value correct, type name only; carry access width in auxtype. (3) `mccdis.c:27-28` 256-byte unique-name buf truncates long names→disasm label collision. (4) `set_output_type` warns "overriding compiler action" for same-type flags `-c -c`/`-c -r` (`libmcc.c:2929-2931`); only warn when action changes.
+      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      REF: INVESTIGATIONS.md#r17-low-cluster | DEPS: —
 - [ ] T-mac-30080 [S] Fix: [HIGH] arm64-Darwin does NOT pack sub-8-byte FIXED stack args — every fixed stack scalar rounded to an 8-byte slot (`arm64_pcs_aux` float `size=8` `arm64-gen.c:1116`, sub-8 int `:1156`, offset `(ns+7)&~7` `:1147-1148`), but the Apple platform ABI packs fixed stack args to natural size/align → mcc↔clang/libSystem cross-module MISCOMPILE (mcc↔mcc self-consistent so suite is green). EMPIRICALLY CONFIRMED: mcc `main` vs clang dylib returns 9000 not 9042 for the 9th/10th stack arg (int/float/short paths). Fix: under MCC_TARGET_MACHO use natural size/align for NAMED stack args (`:1108/1112/1116/1147-1148/1156`); leave variadic 8-rounded (matches Apple).
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-arm64-darwin-stackpack | DEPS: —
