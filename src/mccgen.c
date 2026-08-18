@@ -7374,6 +7374,9 @@ static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_T
 	if (v) { MCC_TRACE("br\n");
 		s = struct_find(v);
 		if (s && (s->sym_scope == local_scope || (tok != '{' && tok != ';'))) { MCC_TRACE("br\n");
+			if (s->a.deprecated && tok != '{' && tok != ';')
+				{ MCC_TRACE("br\n"); mcc_warning_c(warn_deprecated_declarations)(
+							"'%s' is deprecated", get_tok_str(v, NULL)); }
 			if (u == s->type.t)
 				{ MCC_TRACE("br\n"); goto do_decl; }
 			if (u == VT_ENUM && IS_ENUM(s->type.t))
@@ -7389,6 +7392,7 @@ static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_T
 	type1.ref = NULL;
 	s = sym_push(v | SYM_STRUCT, &type1, 0, bt ? 0 : -1);
 	s->r = 0;
+	s->a.deprecated |= ad.a.deprecated;
 	if (in_func_params && named_tag)
 		{ MCC_TRACE("br\n"); mcc_warning_c(warn_all)(
 				"'%s %s' declared inside parameter list will not be visible "
@@ -7471,6 +7475,7 @@ do_decl:
 			if (ad_out) { MCC_TRACE("br\n");
 				parse_attribute(ad_out);
 				ad.a.packed |= ad_out->a.packed;
+				s->a.deprecated |= ad_out->a.deprecated;
 			}
 
 			if (bt) { MCC_TRACE("br\n");

@@ -5199,6 +5199,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/extern-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30185 slice: a deprecated struct/union/enum tag warns on use;
+        # non-deprecated tags stay clean.
+        add_test(NAME "diag/deprecated-tag" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_tag.c"
+                    -o "${CMAKE_BINARY_DIR}/deprecated-tag.o")
+        set_tests_properties("diag/deprecated-tag" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "'S' is deprecated")
+        add_test(NAME "diag/deprecated-tag-ok" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_tag_ok.c")
+        set_tests_properties("diag/deprecated-tag-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"
