@@ -5024,6 +5024,14 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/lexical/widestr_valid.c")
         set_tests_properties("lexical/widestr-valid" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
+
+        # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
+        # predefined like gcc/clang; pre-fix both were undefined identifiers.
+        add_test(NAME "pp/loc-macros"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/pp/loc_macros.c")
+        set_tests_properties("pp/loc-macros" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"

@@ -2411,7 +2411,8 @@ ST_FUNC void pp_error(CString *cs) { MCC_TRACE("enter\n");
 static int is_predef_macro(int v) { MCC_TRACE("enter\n");
 	const char *n;
 	if (v == TOK___LINE__ || v == TOK___FILE__ || v == TOK___DATE__ || v == TOK___TIME__ ||
-			v == TOK___COUNTER__ || v == TOK___INCLUDE_LEVEL__)
+			v == TOK___COUNTER__ || v == TOK___INCLUDE_LEVEL__ ||
+			v == TOK___FILE_NAME__ || v == TOK___TIMESTAMP__)
 		{ MCC_TRACE("br\n"); return 1; }
 	if (v >= TOK_IDENT) { MCC_TRACE("br\n");
 		n = get_tok_str(v, NULL);
@@ -5359,6 +5360,44 @@ static int macro_subst_tok(
 		} else if (v == TOK___FILE__) { MCC_TRACE("br\n");
 			cstrval = file->filename;
 			goto add_cstr;
+		} else if (v == TOK___FILE_NAME__) { MCC_TRACE("br\n");
+			/* T-mac-30153: basename of the current file (tracks includes). */
+			cstrval = mcc_basename(file->filename);
+			goto add_cstr;
+		} else if (v == TOK___TIMESTAMP__) { MCC_TRACE("br\n");
+			/* T-mac-30153: last-modification time of the current file, ctime
+			 * format "Www Mmm dd hh:mm:ss yyyy"; honor SOURCE_DATE_EPOCH for
+			 * reproducible builds, and fall back to gcc's placeholder when the
+			 * file cannot be stat'd (e.g. <stdin>/<command line>). */
+			struct stat ts_st;
+			time_t ts_ti;
+			struct tm *ts_tm = NULL;
+			const char *sde = getenv("SOURCE_DATE_EPOCH");
+			if (sde && *sde) { MCC_TRACE("br\n");
+				char *end;
+				long long secs = strtoll(sde, &end, 10);
+				if (*end == '\0' && secs >= 0) { MCC_TRACE("br\n");
+					ts_ti = (time_t)secs;
+					ts_tm = gmtime(&ts_ti);
+				}
+			}
+			if (!ts_tm && stat(file->filename, &ts_st) == 0) { MCC_TRACE("br\n");
+				ts_ti = ts_st.st_mtime;
+				ts_tm = localtime(&ts_ti);
+			}
+			if (ts_tm) { MCC_TRACE("br\n");
+				static char const ts_wday[7][4] = {
+						"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+				static char const ts_mon[12][4] = {
+						"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+						"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+				snprintf(buf, sizeof(buf), "%s %s %2d %02d:%02d:%02d %d",
+								 ts_wday[ts_tm->tm_wday], ts_mon[ts_tm->tm_mon], ts_tm->tm_mday,
+								 ts_tm->tm_hour, ts_tm->tm_min, ts_tm->tm_sec, ts_tm->tm_year + 1900);
+			} else { MCC_TRACE("br\n");
+				snprintf(buf, sizeof(buf), "??? ??? ?? ??:??:?? ????");
+			}
+			goto add_cstr;
 		} else if (v == TOK___DATE__ || v == TOK___TIME__) { MCC_TRACE("br\n");
 			time_t ti;
 			struct tm *tm = NULL;
@@ -5888,6 +5927,8 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 	define_push(TOK___TIME__, MACRO_OBJ, NULL, NULL);
 	define_push(TOK___COUNTER__, MACRO_OBJ, NULL, NULL);
 	define_push(TOK___INCLUDE_LEVEL__, MACRO_OBJ, NULL, NULL);
+	define_push(TOK___FILE_NAME__, MACRO_OBJ, NULL, NULL);
+	define_push(TOK___TIMESTAMP__, MACRO_OBJ, NULL, NULL);
 	define_push(tok_has_attribute, MACRO_FUNC, NULL, NULL);
 	define_push(tok_has_c_attribute, MACRO_FUNC, NULL, NULL);
 	define_push(tok_has_builtin, MACRO_FUNC, NULL, NULL);
