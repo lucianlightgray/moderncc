@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T21:07Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10407   | 2026-08-18T21:02Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10407   | 2026-08-18T21:14Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T21:09Z |
 
 ## Contracts — blocking, highest priority
@@ -257,9 +257,6 @@
 - [ ] T-mac-30199 [S] Fix: [LOW cluster] (1) `&&label` accepted at file scope (`static void *g[]={&&X};`, `mccgen.c:14029-14051` no in-function guard) — mcc compiles+emits working relocs; clang/gcc both ERROR ("address-of-label outside of a function body"). Fix: require in-function for `&&label`. (2) signed-overflow compare `x+1>x` (INT_MAX): mcc evaluates wrapped (0) at -O0 AND -O2 (self-consistent+safer); clang/gcc fold to 1 (UB exploit) — NOT actionable, noted. (3) `-Wclobbered` is an "unsupported option" (cosmetic).
       OWNER: — | STATE: OPEN | SHA: 5b956e03 | TS: 2026-08-18T18:00Z
       REF: INVESTIGATIONS.md#r31-low-cluster | DEPS: —
-- [ ] T-mac-30190 [S] Fix: [MED, wrong result type] `_BitInt(N)` for 32<N≤64 loses bit-precise type in arithmetic — `_BitInt(40) b; _Generic((b+b))` → `long long` in mcc, `_BitInt(40)` in clang/gcc. The VT_BITINT result re-tag (`mccgen.c:4971`) is guarded `(vtop->type.t&VT_BTYPE)!=VT_LLONG` (excludes LLONG-backed scalar _BitInt 33..64); `combine_types` (`:4644`) only tests struct-backed is_bitint_type → result falls to the VT_LLONG branch (`:4683`). Runtime VALUES correct (arith at right width, mod-2^N wrap via bf_trunc `:4949`); only _Generic/typeof/tgmath type wrong. N≤31 (INT) + N>64 (struct) correct. Analogous to T-mac-30172 (long-double demote). Fix: restore the _BitInt type tag for the LLONG-backed result in the arith re-tag path. C23 6.3.1.1/6.3.1.8.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1a5b344d | TS: 2026-08-18T21:06Z
-      REF: INVESTIGATIONS.md#r30-bitint-uac | DEPS: —
 - [ ] T-mac-30194 [S] Fix: [LOW cluster] diagnostic-category/cosmetic — (1) `_Atomic int*`→`int*` assign mis-categorized as qualifier-discard (`mccgen.c:5901-5932` treats _Atomic as VT_QUALIFY) — mcc "discards qualifiers", clang "incompatible pointer types", gcc ERRORS (_Atomic(int) is a distinct type); still diagnosed, wrong category + softer than gcc; (2) sizeof of an incomplete type → generic "unknown type size" (`mccgen.c:5771-5772`) vs clang/gcc "invalid application of sizeof to an incomplete type" (the _Alignof path DOES give the specific msg); (3) C23 `bool b; b++;` no -Wbool-operation (clang also silent → matches an oracle); (4) __int128 unsupported on this target blocks its UAC rank rules + __SIZEOF_INT128__ undefined (already tracked as #r12-bitint-cast).
       OWNER: — | STATE: OPEN | SHA: 1a5b344d | TS: 2026-08-18T17:30Z
       REF: INVESTIGATIONS.md#r30-low-cluster | DEPS: —
