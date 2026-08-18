@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30213 [S] Fix: [MED] `0x`/`0b` (and `0o`) with ZERO digits silently accepted as 0 — require ≥1 digit after the radix prefix (clang/gcc reject)
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T09:45Z
+      REF: DETAILS.md#t-mac-30213-empty-radix-digits | DEPS: —
+
 
 
 - SESSION WIND-DOWN (lin-x64, 2026-08-17T22:37Z, /goal=execute INSTRUCTIONS until TODO empty; user-directed wrap-up): long autonomous run, all pushed + fleet-coordinated. CLOSED+ARCHIVED four investigation tasks (all TDD-verified, mechanical-vs-real distinguished, no new reds, nothing masked): **T-mac-30014** (unsigned const-fold used signed `gen_opic_sdiv` — gated div/mod on VT_UNSIGNED; guard fails pre-fix under -fno-replay-fallback; dd8a57ed); **T-mac-30032** (`_BitInt(wb)` literal truncated to 128b / rejected >256 — widened lexer accumulator+store to 512-bit; guard bites at every opt incl -O0; 41e71bad); **T-mac-30023 SECURITY** (archive `nsyms` OOB heap read + COFF reloc VirtualAddress OOB heap write — bounded both, ASan+SIGSEGV-verified, regression guard tests/objsec/reject-malformed.sh; 77504f52); **T-mac-30031 slice** (C23 `unreachable()` = `__builtin_unreachable()` not `((void)0)`; shell guard, no corpus growth; 7c8b4231). Plus hygiene: cleared 2 wideint-unify treegate reds (docs/refs + fmt/census-bank, ddf3b73d); CORRECTED my flawed 6dad0f7d wide-census re-bank (was missing lowerable-bodies.tsv + banked a HIGH nondeterministic floor → main briefly red) by committing the tsv + pinning the wide lowerable floors to the stable LOW reading (6dfe844c) — the wide lowerable %s are T-lin-10057-class ±0.10pp-flaky on elf (noted on that task). MINTED follow-ups T-lin-10395 (decimal [2^63,2^64) 3-way type divergence), T-lin-10396 (remaining Mach-O/DLL reader bounds), T-lin-10397 (remaining header-conformance items). Coordinated w/ mac (census drifts) + win (887700e5 census re-bank). No active lin claims (T-lin-10001 is the pre-existing intentional pause). Tree clean; HEAD on origin/main.
@@ -185,9 +189,6 @@
 - [ ] T-mac-30212 [S] Fix: [MED] assembler `0b…` binary literals misparsed as local-label refs — `0b1100` → strtoull(…,0) reads 0, leaves `b1100`; trailing `b` triggers the `1b`/`2f` local-label path → `error: local label '0' not found backward` (`mccasm.c:117-143`). clang: 0b1100=12. Affects `.byte`/`.long`/`.quad 0b…`. Fix: recognize the 0b/0B binary prefix before the local-label check.
       OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
       REF: INVESTIGATIONS.md#r33-bin-literal-asm | DEPS: —
-- [ ] T-mac-30213 [S] Fix: [MED, accepts-invalid] `0x`/`0b`/`0o` with ZERO digits silently accepted as 0 — `int h=0x;` (also 0b/0o) compiles clean (value 0); the numeric lexer (`mccpp.c:3516-3541`) does `q--;ch=*p++;b=16;` then enters the digit loop (`:3543`) with no ≥1-digit check → non-digit breaks immediately → 0. clang/gcc `error: invalid suffix 'x'`. (`0xg` IS rejected — only empty-digit slips.) Fix: require ≥1 digit after the radix prefix.
-      OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
-      REF: INVESTIGATIONS.md#r33-empty-radix | DEPS: —
 - [ ] T-mac-30214 [S] Fix: [MED, design-level] no parser error recovery — every parser/semantic error uses mcc_error→`_mcc_error` (`libmcc.c:757-763`, NORETURN longjmp+exit(1)) → exactly ONE error per run then stops; clang/gcc recover + report all (3-error probe: mcc 1, oracles 4). `-fmax-errors=N` (`:735`) only affects the driver NOABORT path → inert for source errors. Classic TCC arch. FLIP SIDE positive: no cascading flood, robust vs malformed input (no crash/hang). Fix (large): parser recovery via sync points; at minimum make -fmax-errors meaningful.
       OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
       REF: INVESTIGATIONS.md#r33-no-recovery | DEPS: —
