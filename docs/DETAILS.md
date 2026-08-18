@@ -51587,3 +51587,11 @@ Two defects in `runtime/include/mccdefs.h` on macOS, both found in Round 28.
 **T-mac-30170 (HIGH, link failure):** `__builtin_mempcpy` was declared as a plain prototype whose `__asm__` redirect targeted `_mempcpy`, a GNU extension absent from macOS libc → `error: unresolved reference to '_mempcpy'` (and the same break in `__builtin___mempcpy_chk` / the `mempcpy` `_FORTIFY` paths). Fixed by providing an inline definition on `__APPLE__` — `static __inline void *__builtin_mempcpy(d,s,n){ __builtin_memcpy(d,s,n); return (char*)d+n; }` (the GNU semantics) — while keeping the libc redirect on glibc Linux (which has the symbol).
 
 Verified: `builtins/macos-mem` — bzero zeros exactly n bytes (incl. n=0), mempcpy copies n and returns `dst+n`, and the `_mempcpy_chk` path works. o0-baseline byte-identical (header-only; the copy is regenerated at build from `runtime/include/`). The rest of the mem/str builtin surface was already runtime-robust (Round 28 strong negative).
+
+<a id="t-mac-30182-unused-attr"></a>
+
+## T-mac-30182 unused/maybe_unused did not suppress -Wunused (RESOLVED, mac-arm64)
+
+**Type** `[S]` — **State** DONE — investigation `INVESTIGATIONS.md#r29-unused-attr`. Code SHA 22d93805.
+
+`__attribute__((unused))` and C23 `[[maybe_unused]]` were parsed to a bare `break` in `parse_one_attribute` and recorded nothing (there was no `unused` bit in `SymAttr`), so annotated variables and static functions STILL drew `-Wunused-variable` / `-Wunused-function` — the precise false positives the annotation exists to silence, making `-Wall` builds noisy. Fix: add `SymAttr.unused : 1` (`src/mcc.h`), set `ad->a.unused = 1` for the `TOK_UNUSED*`/`TOK_MAYBE_UNUSED*` cases (split out from the `fallthrough`/`unsequenced`/`reproducible` no-op group), and add `a.unused` to the skip conditions at the two warning sites — the unused-function loop (`src/mccgen.c:1082`, alongside the existing `a.used`) and the unused-variable loop (`:15563`). `sym->a = ad->a` propagates the bit to the declared entity. Verified: annotated function+variable and `[[maybe_unused]]` are suppressed while un-annotated ones still warn (the fix is specific). Test `attr/unused-suppress`. o0-baseline byte-identical.
