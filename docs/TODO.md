@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T21:45Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T21:36Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T21:48Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T21:44Z |
 
 ## Contracts — blocking, highest priority
@@ -424,9 +424,6 @@
 - [ ] T-mac-30102 [S] Fix: [LOW cluster] (1) VLA scope-tracker overflow (>512 open VLAs) FAIL-OPENS the jump-into-VLA-scope check — sticky `vla_track_ovf` (`mccgen.c:17751-17754,17776-17779,17829-17832`, reset only at fn entry `:18067`) makes `vla_scope_open()` return 1/"legal" (`:15439-15440`), so goto (`:16326-16327`) + switch (`:16283-16295`) into-VLA checks never fire → accepts illegal code, runs w/ uninitialized VLA ptr (clang errors). Fix: return 0 (reject) on overflow, or grow tracker. (2) `noreturn`-fall-off-end undiagnosed — explicit `return` warns (`mccgen.c:16052-16053`) but `check_func_return` VT_VOID early-return (`:15054-15056`) skips fall-off; add a noreturn+reachable warning (relates T-mac-30052).
       OWNER: — | STATE: OPEN | SHA: 12b38cd6 | TS: 2026-08-18T04:30Z
       REF: INVESTIGATIONS.md#r18-low-cluster | DEPS: —
-- [ ] T-mac-30091 [S] Fix: [HIGH, SECURITY] ELF `.o` loader `mcc_load_object_file` indexes `shdr[]`/`sm_table[]` (sized by `e_shnum`, `mccelf.c:3423-3425`) with file-controlled fields never bounded vs `e_shnum` — `e_shstrndx` (`:3427`→feeds `load_data` w/ attacker offset), `sh_link` (`:3449,3554`), `sh_info` (`:3461,3556,3601`), `st_shndx` (`:3570`, only guarded `<0xff00`). Crafted `.o`/`.a`/dylib → OOB heap read (info-disclosure/crash). Mach-O (`mccmacho.c:3116`) + COFF (`mccpe.c:2584,2617`) already bound theirs. Distinct from T-mac-30023/T-lin-10396. Fix: reject `e_shstrndx>=e_shnum` + clamp sh_link/sh_info/st_shndx before every index.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: d2141b72 | TS: 2026-08-18T21:40Z
-      REF: INVESTIGATIONS.md#r17-elf-loader-oob | DEPS: —
 - [ ] T-mac-30094 [S] Fix: [MED] empty-paren function DEFINITION after a prototype merged as a 0-param prototype (accept-invalid, order-dependent) — `is_compatible_func` treats a no-param `FUNC_OLD` as compatible w/ any prototype (`mccgen.c:4406-4412`) and the definition merge adopts the def's empty param list while flagging prototyped (`:1867-1873`). `int f(int,int); int f(){return 42;}` accepted (clang/gcc reject), then `f(1,2)`→spurious "too many arguments"; reverse order merges to 2 params. C 6.7.6.3p14: a def's `()` = 0 params. Fix: diagnose a 0-param def against a prior N-param prototype.
       OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
       REF: INVESTIGATIONS.md#r17-empty-paren-def | DEPS: —
