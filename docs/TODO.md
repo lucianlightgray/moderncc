@@ -52,6 +52,13 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30183 [S] Fix: [MED] nonnull/returns_nonnull/sentinel warn "attribute ignored" -> fail under -Werror; accept them silently (extend attr_ignore_silently). RESIDUAL: the -Wnonnull/missing-sentinel call-site diagnostics.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:30Z
+      REF: DETAILS.md#t-mac-30183-30181-accept-attrs | DEPS: —
+- [ ] T-mac-30181 [S] Fix: [MED] warn_unused_result warns "attribute ignored" -> fail under -Werror; accept it silently (same change as T-mac-30183). RESIDUAL: the -Wunused-result discard diagnostic.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:30Z
+      REF: DETAILS.md#t-mac-30183-30181-accept-attrs | DEPS: —
+
 - [ ] T-lin-10405 [S] Formalize + implement the CPU<->GPU transaction in the JIT (user-directed). DELIVERED: formal design + grounded marshalling ABI + gap analysis (DETAILS#t-lin-10405-cpu-gpu-transaction), and Phase A/B DEMONSTRATION (e91e4218): tools/slicerun.c suite_txn / ctest slice/txn — CPU seeds live-in, GPU runs { c=a+b; a=c*a; }, CPU consumes live-out c=17 a=170 (a transaction, not an oracle). Mechanism validated by slice/real+src green on RTX 5070 Ti; slice/txn run-verification deferred (user gaming on GPU). RESIDUAL: Phase C (frame-equivalence gate) + Phase D (inline into JIT-generated bodies, gaps 4-6). TTL-resumable.
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: e91e4218 | TS: 2026-08-18T16:12Z
       REF: DETAILS.md#t-lin-10405-cpu-gpu-transaction | DEPS: — | NOTE: subagent mapping the frame-executor/marshalling interface; design spec being written
@@ -275,12 +282,6 @@
 - [ ] T-mac-30180 [S] Fix: [MED, diagnostic] division-by-zero diagnostic policy diverges — `int x=5/0;` in a constant-required context is a HARD ERROR ("division by zero in constant" `mccgen.c:3726-3730`) → rejects a TU both oracles accept (they warn+compile); `int x=5/0;` in ordinary context is SILENT → misses `-Wdivision-by-zero`/`-Wdiv-by-zero` both oracles emit. Not a miscompile (runtime a/(volatile 0)→0, arm64 sdiv defined). Fix: downgrade constant-context to a warning (keep compiling) + add the ordinary-context div-by-zero warning. C11 6.5.5p5/6.6.
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-divzero-diag | DEPS: —
-- [ ] T-mac-30181 [S] Fix: [MED, missing diagnostic] `warn_unused_result`/`[[nodiscard]]` ignored — nodiscard uses goto skip_param, warn_unused_result hits default: "attribute ignored" (`mccgen.c:6550/6698`); no -Wunused-result machinery. `f();` (result ignored) → mcc no warning; clang/gcc `ignoring return value ... [-Wunused-result]`; `[[nodiscard("reason")]]` msg unprinted. Highest-value attr gap. GNU warn_unused_result / C23 6.7.13.3. Fix: record the attr + warn on a discarded call-as-statement; (void)f() suppresses.
-      OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
-      REF: INVESTIGATIONS.md#r29-nodiscard | DEPS: —
-- [ ] T-mac-30183 [S] Fix: [MED, missing diagnostic] `nonnull`/`returns_nonnull`/`sentinel` ignored — no token/case → default: "attribute ignored" (`mccgen.c:6698`; -Wnonnull also "unsupported option"). `nonnull(1,2); f(0,0)` → mcc no warning, clang/gcc `null passed to a callee that requires a non-null argument`. `sentinel; g(1,"a","b")` → mcc silent, clang/gcc `missing sentinel`. Fix: record nonnull arg-mask + sentinel, warn at the call site on literal-NULL / missing-terminator.
-      OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
-      REF: INVESTIGATIONS.md#r29-nonnull-sentinel | DEPS: —
 - [ ] T-mac-30189 [S] Fix: [LOW cluster] UB-fold/optimization/cosmetic — (1) UB shift-count>=width const-folds differently across all three (`mccgen.c:3661,3746-3753` masks; mcc self-consistent w/ its own runtime — pure UB); (2) `alloc_size` not fed into __builtin_object_size (→SIZE_MAX "unknown", safe; _FORTIFY gets no allocator info); (3) `pure`/`const` fn attrs don't enable call CSE at -O2 (`mccgen.c:6553-6558` no-op; correct results); (4) misplaced attribute (warn_unused_result on a var) → generic "ignored" vs oracles' specific "only applies to functions"; (5) no -Wimplicit-fallthrough warning class ([[fallthrough]] accepted, nothing to suppress); (6) tentative incomplete-array "assumed one element" warning -Wall-gated + mislocated to TU-end/EOF instead of the decl line (`mccgen.c:1138`).
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-low-cluster | DEPS: —
