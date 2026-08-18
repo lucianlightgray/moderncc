@@ -5159,6 +5159,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/dup-label-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30188: a tag first declared in a prototype parameter list warns
+        # under -Wall; pre-declared/anonymous/ordinary tags stay clean.
+        add_test(NAME "diag/param-tag-visibility" COMMAND ${_mcc_exe} -Wall -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/param_tag_visibility.c"
+                    -o "${CMAKE_BINARY_DIR}/param-tag.o")
+        set_tests_properties("diag/param-tag-visibility" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "declared inside parameter list will not be visible")
+        add_test(NAME "diag/param-tag-ok" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/param_tag_ok.c")
+        set_tests_properties("diag/param-tag-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"

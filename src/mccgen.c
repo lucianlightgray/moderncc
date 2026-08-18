@@ -6369,6 +6369,8 @@ ST_FUNC int exact_log2p1(int i) { MCC_TRACE("enter\n");
 	return ret;
 }
 
+static int in_func_params;
+
 static int attr_ignore_silently(int t) { MCC_TRACE("enter\n");
 	static const char *const hints[] = {
 		"hot", "cold", "flatten", "no_reorder", "no_stack_protector", "no_icf"
@@ -7352,6 +7354,7 @@ static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_T
 	v = 0;
 	if (tok >= TOK_IDENT)
 		{ MCC_TRACE("br\n"); v = tok, next(); }
+	int named_tag = v;
 
 	bt = ut = 0;
 	if (u == VT_ENUM) { MCC_TRACE("br\n");
@@ -7386,6 +7389,12 @@ static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_T
 	type1.ref = NULL;
 	s = sym_push(v | SYM_STRUCT, &type1, 0, bt ? 0 : -1);
 	s->r = 0;
+	if (in_func_params && named_tag)
+		{ MCC_TRACE("br\n"); mcc_warning_c(warn_all)(
+				"'%s %s' declared inside parameter list will not be visible "
+				"outside of this definition or declaration",
+				u == VT_UNION ? "union" : u == VT_ENUM ? "enum" : "struct",
+				get_tok_str(named_tag, NULL)); }
 do_decl:
 	type->t = s->type.t;
 	type->ref = s;
@@ -9574,6 +9583,7 @@ static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) 
 
 		ps = local_stack ? &local_stack : &global_stack;
 		++local_scope;
+		++in_func_params;
 		sr = sym_push2(ps, SYM_FIELD, 0, 0);
 
 		if (tok == ')')
@@ -9586,6 +9596,7 @@ static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) 
 		else if (td & (TYPE_DIRECT | TYPE_ABSTRACT)) { MCC_TRACE("br\n");
 			sym_pop(ps, sr->prev, 0);
 			--local_scope;
+			--in_func_params;
 			merge_attr(ad, &ad1);
 			return 0;
 		} else
@@ -9702,6 +9713,7 @@ static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) 
 		type->ref = s;
 		sym_pop(ps, sr, 1);
 		--local_scope;
+		--in_func_params;
 	} else if (tok == '[') { MCC_TRACE("br\n");
 		int saved_nocode_wanted;
 		int saw_static;
