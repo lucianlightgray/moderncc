@@ -5200,6 +5200,14 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("type/constexpr-atomic-rejected" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
+        # T-mac-30235: under -E, the _Pragma operator form of push_macro/pop_macro
+        # must be APPLIED (not only emitted) so a later pop restores the macro --
+        # a subsequent `V` must expand to the pushed 2, not the intervening 9.
+        add_test(NAME "pp/pragma-op-pushpop-E" COMMAND ${_mcc_exe} -E
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_op_pushpop.c")
+        set_tests_properties("pp/pragma-op-pushpop-E" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT PASS_REGULAR_EXPRESSION "int a = 2")
+
         # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
         # unreferenced label; goto'd / address-taken labels stay clean.
         add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c

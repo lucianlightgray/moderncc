@@ -6268,6 +6268,40 @@ static void pp_pragma_operator(MCCState *s1, int *ptoken_seen) { MCC_TRACE("ente
 	*q = 0;
 	next();
 
+	{ MCC_TRACE("br\n");
+		const char *cc = content;
+		int mut = 0;
+		char b;
+		while (*cc == ' ' || *cc == '\t')
+			{ MCC_TRACE("br\n"); cc++; }
+		if (!strncmp(cc, "push_macro", 10)) { MCC_TRACE("br\n");
+			b = cc[10];
+			if (!((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
+					(b >= '0' && b <= '9') || b == '_'))
+				{ MCC_TRACE("br\n"); mut = 1; }
+		} else if (!strncmp(cc, "pop_macro", 9)) { MCC_TRACE("br\n");
+			b = cc[9];
+			if (!((b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
+					(b >= '0' && b <= '9') || b == '_'))
+				{ MCC_TRACE("br\n"); mut = 1; }
+		}
+		if (mut) { MCC_TRACE("br\n");
+			const int *saved_macro_ptr = macro_ptr;
+			int saved_parse_flags = parse_flags;
+			int n = (int)strlen(content);
+			mcc_open_bf(s1, ":pragma:", n + 1);
+			memcpy(file->buffer, content, n);
+			file->buffer[n] = '\n';
+			macro_ptr = NULL;
+			parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM | PARSE_FLAG_TOK_STR |
+					PARSE_FLAG_LINEFEED | (saved_parse_flags & PARSE_FLAG_ASM_FILE);
+			pragma_parse(s1);
+			parse_flags = saved_parse_flags;
+			mcc_close();
+			macro_ptr = saved_macro_ptr;
+		}
+	}
+
 	if (*ptoken_seen != TOK_LINEFEED)
 		{ MCC_TRACE("br\n"); fputc('\n', s1->ppfp); }
 	fputs("#pragma ", s1->ppfp);
