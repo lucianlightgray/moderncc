@@ -52,7 +52,7 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30130 [S] Fix: [LOW cluster] SLICE-1 DONE+GREEN (fec2f992): `-Wunused-label` for ordinary defined-but-unreferenced labels (warn_unused_label -Wall-gated; a.used set at goto + &&label sites; warn LABEL_DEFINED && !a.used at label_pop; zero o0 drift). See DETAILS#t-mac-30130-unused-label. HEARTBEAT INTENTIONALLY STALE — TTL-resumable. RESIDUAL: (2) dup __label__ in one block should error (needs block-boundary label-stack scan), (4) malformed #pragma pack (non-pow2/>16/named) route always-on, (5) further items
+- [ ] T-mac-30130 [S] Fix: [LOW cluster] SLICE-1 DONE (fec2f992: -Wunused-label, DETAILS#t-mac-30130-unused-label) + SLICE-2 DONE (bab5c86d: dup __label__ errors via block-boundary label-stack scan, DETAILS#t-mac-30130-dup-label) + (3) DONE earlier (pack-pop-warn). HEARTBEAT INTENTIONALLY STALE — TTL-resumable. RESIDUAL: (4) malformed #pragma pack always-on — the clean fix is warn_unknown_pragmas default-on (matching gcc -Wpragmas), a broader change (an always-on warning breaks the cli/malformed_pragma_is_not_fatal -Wno-unknown-pragmas-suppressible contract); (5) further minor items
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fec2f992 | TS: 2026-08-18T15:20Z
       REF: DETAILS.md#t-mac-30130-unused-label | DEPS: —
 
