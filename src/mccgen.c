@@ -5701,7 +5701,7 @@ done:
 	vtop->type.t &= ~(VT_QUALIFY | VT_ARRAY);
 }
 
-ST_FUNC int type_size(CType *type, int *a) { MCC_TRACE("enter\n");
+static int type_size_impl(CType *type, int *a) { MCC_TRACE("enter\n");
 	Sym *s;
 	int bt;
 
@@ -5757,6 +5757,14 @@ ST_FUNC int type_size(CType *type, int *a) { MCC_TRACE("enter\n");
 		*a = 1;
 		return 1;
 	}
+}
+
+ST_FUNC int type_size(CType *type, int *a) { MCC_TRACE("enter\n");
+	int size = type_size_impl(type, a);
+	if ((type->t & VT_ATOMIC_BIT) && size > 0 && size <= 16 &&
+			(size & (size - 1)) == 0 && *a < size)
+		{ MCC_TRACE("br\n"); *a = size; }
+	return size;
 }
 
 static void vpush_type_size(CType *type, int *a) { MCC_TRACE("enter\n");
