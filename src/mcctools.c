@@ -465,7 +465,9 @@ static char *escape_target_dep(const char *s) { MCC_TRACE("enter\n");
 	char *res = mcc_malloc(strlen(s) * 2 + 1);
 	int j;
 	for (j = 0; *s; s++, j++) { MCC_TRACE("br\n");
-		if (is_space(*s)) { MCC_TRACE("br\n");
+		if (*s == '$') { MCC_TRACE("br\n");
+			res[j++] = '$';
+		} else if (is_space(*s) || *s == '#') { MCC_TRACE("br\n");
 			res[j++] = '\\';
 		}
 		res[j] = *s;

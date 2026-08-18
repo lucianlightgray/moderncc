@@ -434,6 +434,13 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'ok=%s bad=%s\\n' $(grep -c 'error' {W}/u8ok.err) $(grep -c 'error' {W}/u8bad.err)",
 		 "ok=0 bad=1\n"},
 
+		{"depfile_escapes_hash_dollar", "",
+		 "mkdir -p {W}/depd && printf 'int h;\\n' > '{W}/depd/a$b#c.h' && "
+		 "printf '#include \"a$b#c.h\"\\nint x;\\n' > {W}/depd/m.c && "
+		 "{MCC} -B{B} -I{W}/depd -M -MF {W}/depd/out.mk -c {W}/depd/m.c -o {W}/depd/m.o && "
+		 "grep -Fc 'a$$b\\#c.h' {W}/depd/out.mk",
+		 "1\n"},
+
 		{"dM_dump_macros", "",
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},
