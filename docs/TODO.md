@@ -99,7 +99,7 @@
       OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
       REF: INVESTIGATIONS.md#r23-low-cluster | DEPS: —
 - [ ] T-mac-30122 [S] Fix: [HIGH] volatile access defects — (1) a `volatile` lvalue read whose value is DISCARDED emits NO load (-O0+-O2): `x;`/`(void)x;`/comma-left/`*p;` (discard sites w/o gv(): `mccgen.c:16415` stmt [+:16412 suppresses the unused warning], `:5263-5264` cast-to-void, `:14922` comma) → breaks read-to-clear MMIO (clang emits `ldr wzr`); fix: gv() a VT_LVAL|VT_VOLATILE before dropping. (2) volatile struct/union assignment lowered to `memmove` (`:6098-6138`, no VT_VOLATILE guard) → volatility lost + a call; fix: inline element/word-wise volatile copy when either operand is VT_VOLATILE. Negatives: no CSE-merge/loop-hoist/DCE, ordering preserved.
-      OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 0e8155aa | TS: 2026-08-18T10:45Z
       REF: INVESTIGATIONS.md#r22-volatile | DEPS: —
 - [ ] T-mac-30123 [S] Fix: [MED] full-64-bit unsigned enumerator (`enum E{MASK=~0ULL}`) sized as `int` (4B) not `unsigned long long` (8B) → wrong sizeof/struct-layout/ABI — `expr_const64()` returns signed so `~0ULL`→-1; min/max scan (`mccgen.c:7355,7386-7389`) records nl=-1/pl=0, both pass `==(int)` (`:7413-7419`) → stays VT_INT. Value round-trips by accident; size/ABI wrong (sizeof 4 vs 8, `_Generic` int vs ullong). Also LOW: pre-C23 int-range pedwarn (`:7380`) misfires. Fix: capture the enumerator's true unsignedness (need_ull when expr_const64 gave unsigned w/ bit63) → force VT_LLONG|VT_LONG|VT_UNSIGNED. Distinct from T-mac-30060/INVESTIGATIONS:186.
       OWNER: — | STATE: OPEN | SHA: c8083b21 | TS: 2026-08-18T06:55Z
