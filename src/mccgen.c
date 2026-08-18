@@ -9569,6 +9569,19 @@ static int asm_label_instr(void) { MCC_TRACE("enter\n");
 
 static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td);
 
+static int type_is_variably_modified(CType *type) { MCC_TRACE("enter\n");
+	CType *t = type;
+	for (;;) { MCC_TRACE("br\n");
+		if (t->t & VT_VLA)
+			{ MCC_TRACE("br\n"); return 1; }
+		if ((t->t & VT_BTYPE) == VT_STRUCT && t->ref && t->ref->a.has_vla_member)
+			{ MCC_TRACE("br\n"); return 1; }
+		if (((t->t & VT_BTYPE) == VT_PTR || (t->t & VT_ARRAY)) && t->ref)
+			{ MCC_TRACE("br\n"); t = &t->ref->type; continue; }
+		return 0;
+	}
+}
+
 static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_TRACE("enter\n");
 	int r;
 	mcc_parse_depth_enter();
@@ -10012,6 +10025,9 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) { MCC_TRA
 	if (bad)
 		{ MCC_TRACE("br\n"); mcc_error("pointer to function type may not be "
 							"'restrict'-qualified"); }
+	if ((type->t & VT_BTYPE) == VT_FUNC && type->ref &&
+			type_is_variably_modified(&type->ref->type))
+		{ MCC_TRACE("br\n"); mcc_error("function cannot return a variably modified type"); }
 	CST_CLOSE();
 	return ret;
 }

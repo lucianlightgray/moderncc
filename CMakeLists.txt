@@ -5179,6 +5179,14 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pg_flag.c")
         set_tests_properties("driver/pg-warn-and-ignore" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30239: a function declared with a variably-modified return type
+        # (here pointer-to-VLA, int (*fp(void))[n]) is rejected per C11 6.7.6.3.
+        add_test(NAME "type/vm-return-rejected" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/vm_return_bad.c"
+                    -o "${CMAKE_BINARY_DIR}/vm-return-bad.o")
+        set_tests_properties("type/vm-return-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
         # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
         # unreferenced label; goto'd / address-taken labels stay clean.
         add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c
