@@ -51653,3 +51653,27 @@ Blast radius: zero on the x86_64 o0-baseline (fixed board byte-identical to the 
 **Type** `[S]` — **State** DONE — minted by mac-arm64, fixed on lin-x64 (native repro). Verification: `lexical/empty-radix-rejected` (WILL_FAIL) + `lexical/empty-radix-valid` (known-positive, guards against over-rejection).
 
 `int h = 0x;` (also `0b`, `0o`) compiled clean with value 0. The numeric lexer (`src/mccpp.c`) consumed the radix prefix (`q--; ch=*p++; b=16/2/8`) then entered the digit loop with no minimum-digit check, so a non-digit char broke the loop immediately and the literal became 0. clang/gcc both error ("invalid suffix 'x' on integer constant"). Fix: capture `q` before the digit loop as `radix_digits_start`; after the loop, if a radix prefix was consumed (`b != 10`) and no digit was written (`q == radix_digits_start`) and the next char does not begin a float continuation (`.`/`p`/`P`), `mcc_error("invalid suffix '%c' on integer constant")`. The float guard preserves valid hex floats with no integer part (`0x.5p3`); decimal (`b==10`) and leading-`0` octal (also `b==10`) are unaffected, and `0xg`-style bad suffixes continue to be rejected by the existing suffix path. Zero x86_64 o0-baseline drift (no valid corpus literal has an empty radix). Verified against gcc across `0x`/`0b`/`0o` (reject) and `0xAB`/`0b101`/`0o17`/`017`/`0x.5p3`/`0x1.8p1`/decimals/floats (accept, values matched).
+<a id="t-mac-30234-alignof-vla"></a>
+
+## T-mac-30234 _Alignof of a VLA type returned pointer size, not element alignment (RESOLVED, win-x64)
+
+**Type** `[S]` — **State** DONE — minted by mac-arm64, fixed on win-x64 (native x86_64-win32 repro; oracles gcc-16 + clang, which agree on every case below). Verification: `ctest -R alignof-vla-run` (self-checking; exits 0 only when every case matches the oracles), backed by a direct gcc/clang differential of the same values.
+
+`_Alignof(T[n])` for a runtime `n` (a variably-modified / VLA type) returned 8 (pointer size) for every element type instead of the element alignment: `_Alignof(int[n])`->8 (oracles 4), `char[n]`->8 (1), `short[n]`->8 (2), `int[n][3]`->8 (4); `double[n]`->8 was correct only by coincidence. A silent wrong value that propagates into logic such as `char buf[_Alignof(int[n])]`. `sizeof` of the same VLA was already correct.
+
+Root cause: a VLA is represented `VT_PTR | VT_VLA` (no `VT_ARRAY`), so `type_size_impl` (`src/mccgen.c`, the `bt == VT_PTR` arm) misses the array branch (`type->t & VT_ARRAY`) and falls into the plain-pointer else -> size/align = `MCC_PTR_SIZE` (8). The `_Alignof` handler (`unary`, `TOK_ALIGNOF3` else-arm) pushed that pointer alignment directly, and because the returned size is non-negative the incomplete-type guard never fired. `sizeof` avoided the bug because it routes through `vpush_type_size`, whose dedicated `VT_VLA` arm reads alignment from the element type.
+
+Fix (front-end only, no codegen change): in the `_Alignof` else-arm, when the operand is a VLA, walk through every array/VLA level to the innermost element and take that element's alignment:
+
+    if (type.t & VT_VLA) {
+        CType et = type;
+        while ((et.t & VT_BTYPE) == VT_PTR && (et.t & (VT_ARRAY | VT_VLA)))
+            et = *pointed_type(&et);
+        type_size(&et, &align);
+    } else if (type_size(&type, &align) < 0 && ...) mcc_error("...incomplete type");
+
+The walk (the same idiom used elsewhere in mccgen.c) stops at the innermost element: a scalar (`int`/`char`/...), a pointer (`char *[n]` -> alignof(char*)), or a fixed-array element (`int[n][3]` -> the `int[3]` array-arm of `type_size` -> 4); it recurses correctly through VLA-of-VLA (`int[n][m]`) and array-of-VLA (`int[3][n]`). `long double[n]` yields the same value as scalar `long double` by construction (host-ABI-dependent: 16 under mingw gcc, 8 under clang-msvc — the test checks self-consistency against `_Alignof(long double)`, not a fixed number).
+
+Blast radius: zero. The change is guarded by `type.t & VT_VLA`, so the non-VLA path is byte-identical; no corpus/exec program applies `_Alignof` to a VLA (every existing `_Alignof` operand in the test tree is a scalar or struct), so the o0-baseline is unchanged. Regression test `tests/misc/alignof_vla.c` (cell `alignof-vla-run`), kept out of every coverage corpus so no cross-fleet re-bank.
+
+WIN CROSS-CHECK (pre-existing, NOT introduced by this task; each verified by re-running with this fix stashed on clean HEAD): `atomic-aggregate-align-run` (T-mac-30242) exits 4 on x86_64-win32 — `_Alignof(_Atomic struct{long,long})` is 8 not 16; lin's C11 atomic-alignment promotion was verified only on x86_64-Linux and does not hold on the win build (FYI to lin). `cli/sizeof_alignof_void` fails because the `_Alignof(void)` pedantic diagnostic (T-mac-30192) does not fire on win. `diff3/alignas` fails to build alignas.c under mcc on win. Fleet treegate reds `docs/refs` / `fmt/census-bank` / `trace-gate-invariant` are pre-existing fleet drift (lin's in-flight T-mac-30243 dangling DETAILS anchor; mccpp.c printf-census +2; latent trace-gate violations at mccgen.c:~16660 and mccpp.c:2645).
