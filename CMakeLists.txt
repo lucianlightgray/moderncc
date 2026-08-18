@@ -4803,6 +4803,20 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("fold/int64-float-known-positive" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
+        add_test(NAME "switch/jumptable-exhaustive"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/switch/jumptable_exhaustive.c"
+                    -o "${CMAKE_BINARY_DIR}/jte.o")
+        set_tests_properties("switch/jumptable-exhaustive" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_SWITCH_JUMPTABLE=1")
+        add_test(NAME "switch/jumptable-falloff-known-positive"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/switch/jumptable_falloff.c"
+                    -o "${CMAKE_BINARY_DIR}/jtf.o")
+        set_tests_properties("switch/jumptable-falloff-known-positive" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_SWITCH_JUMPTABLE=1"
+            WILL_FAIL TRUE)
+
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")

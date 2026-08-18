@@ -15288,7 +15288,7 @@ static int gcase_jumptable(struct switch_t *sw) { MCC_TRACE("enter\n");
 		greloca(rodata_section, tab_sym, tab_off + i * elt, R_RISCV_SUB32, 0);
 #endif
 	}
-	nocode_wanted = nsave;
+	nocode_wanted = nsave | CODE_OFF_BIT;
 	return dsym;
 }
 #endif
