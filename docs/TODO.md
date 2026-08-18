@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30251   | 2026-08-18T22:52Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10405   | 2026-08-18T16:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10406   | 2026-08-18T16:12Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T14:01Z |
 
 ## Contracts — blocking, highest priority
@@ -51,6 +51,10 @@
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+
+- [ ] T-lin-10405 [S] Formalize + implement the CPU<->GPU transaction in the JIT (user-directed) — a documented protocol by which a JIT'd C program packages live-in frame state, executes a statement/frame slice on the GPU, and reads live-out state back to continue on the CPU, with a demonstrable end-to-end C program running across both slices. Concretizes T-lin-10404 (frame executor into the JIT).
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:12Z
+      REF: DETAILS.md#t-lin-10405-cpu-gpu-transaction | DEPS: — | NOTE: subagent mapping the frame-executor/marshalling interface; design spec being written
 
 - [ ] T-mac-30227 [S] Fix: [MED cluster, driver] SLICE-1 DONE (4f87ab9c): stdin named <stdin> not - in __FILE__/-E (DETAILS#t-mac-30227-stdin-filename). TTL-resumable. RESIDUAL: -E marker line # 1 vs gcc # 0; other driver-cluster items.
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 4f87ab9c | TS: 2026-08-18T16:08Z
