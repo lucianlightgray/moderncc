@@ -5208,6 +5208,17 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("pp/pragma-op-pushpop-E" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT PASS_REGULAR_EXPRESSION "int a = 2")
 
+        # T-mac-30200: under -E, adjacent tokens produced by macro expansion must
+        # be separated by a space when they would otherwise re-lex as a longer
+        # pp-token -- worst case '/' + '*' forming a block-comment introducer.
+        # The output must contain the spaced form "/ *", never the comment "/*".
+        add_test(NAME "pp/paste-avoid-E" COMMAND ${_mcc_exe} -E
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pp_paste_avoid.c")
+        set_tests_properties("pp/paste-avoid-E" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "1 / [*]b [+] c"
+            FAIL_REGULAR_EXPRESSION "/[*]")
+
         # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
         # unreferenced label; goto'd / address-taken labels stay clean.
         add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c

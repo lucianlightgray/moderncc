@@ -6223,15 +6223,49 @@ static void pp_debug_defines(MCCState *s1) { MCC_TRACE("enter\n");
 }
 
 static int pp_need_space(int a, int b) { MCC_TRACE("enter\n");
-	return 'E' == a
-						 ? '+' == b || '-' == b
-				 : '+' == a
-						 ? TOK_INC == b || '+' == b
-				 : '-' == a
-						 ? TOK_DEC == b || '-' == b
-				 : a >= TOK_IDENT || a == TOK_PPNUM
-						 ? b >= TOK_IDENT || b == TOK_PPNUM
-						 : 0;
+	int fb;
+
+	if ('E' == a)
+		{ MCC_TRACE("br\n"); return '+' == b || '-' == b; }
+	if (a >= TOK_IDENT || a == TOK_PPNUM)
+		{ MCC_TRACE("br\n"); return b >= TOK_IDENT || b == TOK_PPNUM; }
+
+	/* Operator/punctuator paste avoidance: inserting a space is required
+	 * whenever the last character of token a followed by the first character
+	 * of token b would re-lex as a longer pp-token (worst case the block/line
+	 * comment introducers '/' '*' and '/' '/'). a here is a single-character
+	 * punctuator; fb is the first character of b's spelling. */
+	if (b > ' ' && b < 127)
+		{ MCC_TRACE("br\n"); fb = b; }
+	else if (b == TOK_INC || b == TOK_A_ADD)
+		{ MCC_TRACE("br\n"); fb = '+'; }
+	else if (b == TOK_DEC || b == TOK_A_SUB || b == TOK_ARROW)
+		{ MCC_TRACE("br\n"); fb = '-'; }
+	else if (b == TOK_LT)
+		{ MCC_TRACE("br\n"); fb = '<'; }
+	else if (b == TOK_GT)
+		{ MCC_TRACE("br\n"); fb = '>'; }
+	else
+		{ MCC_TRACE("br\n"); fb = 0; }
+
+	switch (a) { MCC_TRACE("br\n");
+	case '/': return fb == '/' || fb == '*' || fb == '=';
+	case TOK_LT: return fb == '<' || fb == '=' || fb == ':' || fb == '%';
+	case TOK_GT: return fb == '>' || fb == '=';
+	case '+': return fb == '+' || fb == '=';
+	case '-': return fb == '-' || fb == '=' || fb == '>';
+	case '*': return fb == '=';
+	case '%': return fb == '=' || fb == '>' || fb == ':';
+	case '^': return fb == '=';
+	case '!': return fb == '=';
+	case '=': return fb == '=';
+	case '&': return fb == '&' || fb == '=';
+	case '|': return fb == '|' || fb == '=';
+	case ':': return fb == '>' || fb == ':';
+	case '#': return fb == '#';
+	case '.': return fb == '.' || (fb >= '0' && fb <= '9') || b == TOK_PPNUM;
+	default: return 0;
+	}
 }
 
 static int pp_check_he0xE(int t, const char *p) { MCC_TRACE("enter\n");
