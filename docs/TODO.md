@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30130 [S] Fix: [LOW cluster] SLICE-1 = `-Wunused-label` for ordinary defined-but-unreferenced labels (warn LABEL_DEFINED && !a.used, -Wall-gated). RESIDUAL: (2) dup __label__ error, (4) malformed #pragma pack always-on, (5)
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:20Z
+      REF: DETAILS.md#t-mac-30130-unused-label | DEPS: —
+
 
 
 
@@ -384,9 +388,6 @@
 - [ ] T-mac-30128 [S] Fix: [MED] `#pragma pack(N)` + member `aligned(K<natural)` silently UNDER-aligns the member → ABI mismatch — `#pragma pack(8) struct{char c;int x __attribute__((aligned(2)));}` → mcc 6/2/2 vs gcc/clang 8/4/4 (aligned only RAISES). Root: member-align guard `if(a && (a>align||...||pragma_pack)) align=a;` (`mccgen.c:6910-6912`) fires on `||pragma_pack` even when a≤align → LOWERS below natural. Distinct from no-pack LOW note INVESTIGATIONS:436. Fix: only apply explicit aligned when it raises (a>align); drop `||pragma_pack`/`||packed` disjuncts. Correct rule min(pack,max(natural,K)).
       OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
       REF: INVESTIGATIONS.md#r23-pack-underalign | DEPS: —
-- [ ] T-mac-30130 [S] Fix: [LOW cluster] (1) `-Wunused-label` entirely missing for ordinary defined-but-unreferenced labels (`mccgen.c:1508` warns only LABEL_DECLARED; option unrecognized) — gcc/clang warn under -Wall; add the group + warn LABEL_DEFINED&&!a.used. (2) duplicate `__label__` in one block silently accepted (`mccgen.c:16027-16036` no dup check) — gcc/clang error. (3) [DONE ae7f043a, pack/pop-unmatched] unmatched `#pragma pack(pop)` now warns not errors. (4) malformed `#pragma pack` (non-pow2/>16/named) warns only under -Wunknown-pragmas (`mccpp.c:2662/2813`) — route always-on. (5) C23 `constexpr` pointer object unconditionally rejected (`mccgen.c:18300`) — support null/address-constant.
-      OWNER: — | STATE: OPEN | SHA: ab8456ce | TS: 2026-08-18T07:45Z
-      REF: INVESTIGATIONS.md#r23-low-cluster | DEPS: —
 - [ ] T-mac-30122 [S] Fix: [HIGH] volatile access defects — (1) a `volatile` lvalue read whose value is DISCARDED emits NO load (-O0+-O2): `x;`/`(void)x;`/comma-left/`*p;` (discard sites w/o gv(): `mccgen.c:16415` stmt [+:16412 suppresses the unused warning], `:5263-5264` cast-to-void, `:14922` comma) → breaks read-to-clear MMIO (clang emits `ldr wzr`); fix: gv() a VT_LVAL|VT_VOLATILE before dropping. (2) volatile struct/union assignment lowered to `memmove` (`:6098-6138`, no VT_VOLATILE guard) → volatility lost + a call; fix: inline element/word-wise volatile copy when either operand is VT_VOLATILE. Negatives: no CSE-merge/loop-hoist/DCE, ordering preserved. SLICE-1 DONE (6153e545, volatile/discard-read): fix (1) landed — gv_cast_rvalue() at the 3 discard sites guarded on VT_VOLATILE; discarded volatile read now emits the load, non-volatile byte-identical (o0-baseline zero-drift). See DETAILS#t-mac-30122-volatile-discard. RESIDUAL (fix 2): volatile struct/union copy still lowered to memmove — but mcc MATCHES clang -O0 there; only gcc-16 (all opt) + clang -O2 do inline element-wise volatile copy → needs a new inline volatile-copy codegen path gated on VT_VOLATILE at the struct-copy site (~`:6101`). Lower-value/more-invasive than fix 1.
       OWNER: — | STATE: OPEN | SHA: 6153e545 | TS: 2026-08-18T11:30Z
       REF: INVESTIGATIONS.md#r22-volatile | DEPS: —
