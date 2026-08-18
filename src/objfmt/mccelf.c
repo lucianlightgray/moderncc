@@ -3424,22 +3424,31 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 									 sizeof(ElfW(Shdr)) * ehdr.e_shnum);
 	sm_table = mcc_mallocz(sizeof(SectionMergeInfo) * ehdr.e_shnum);
 
-	sh = &shdr[ehdr.e_shstrndx];
-	strsec = load_data(fd, file_offset + sh->sh_offset, sh->sh_size);
-
 	old_to_new_syms = NULL;
 	symtab = NULL;
 	strtab = NULL;
+	strsec = NULL;
 	nb_syms = 0;
 	seencompressed = 0;
 	stab_index = stabstr_index = 0;
 	ret = -1;
+
+	if (ehdr.e_shstrndx >= ehdr.e_shnum) { MCC_TRACE("br\n");
+		mcc_error_noabort("invalid object file (section string table index out of range)");
+		goto the_end;
+	}
+	sh = &shdr[ehdr.e_shstrndx];
+	strsec = load_data(fd, file_offset + sh->sh_offset, sh->sh_size);
 
 	for (i = 1; i < ehdr.e_shnum; i++) { MCC_TRACE("br\n");
 		sh = &shdr[i];
 		if (sh->sh_type == SHT_SYMTAB) { MCC_TRACE("br\n");
 			if (symtab) { MCC_TRACE("br\n");
 				mcc_error_noabort("object must contain only one symtab");
+				goto the_end;
+			}
+			if (sh->sh_link >= ehdr.e_shnum) { MCC_TRACE("br\n");
+				mcc_error_noabort("invalid object file (symtab sh_link out of range)");
 				goto the_end;
 			}
 			nb_syms = sh->sh_size / sizeof(ElfW(Sym));
@@ -3457,8 +3466,13 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 		if (i == ehdr.e_shstrndx)
 			{ MCC_TRACE("br\n"); continue; }
 		sh = &shdr[i];
-		if (sh->sh_type == SHT_RELX)
-			{ MCC_TRACE("br\n"); sh = &shdr[sh->sh_info]; }
+		if (sh->sh_type == SHT_RELX) { MCC_TRACE("br\n");
+			if (sh->sh_info >= ehdr.e_shnum) { MCC_TRACE("br\n");
+				mcc_error_noabort("invalid object file (reloc sh_info out of range)");
+				goto the_end;
+			}
+			sh = &shdr[sh->sh_info];
+		}
 		sh_name = strsec + sh->sh_name;
 		if (0 == strncmp(sh_name, ".debug_", 7) || 0 == strncmp(sh_name, ".stab", 5)) { MCC_TRACE("br\n");
 			if (!s1->do_debug || seencompressed)
@@ -3550,9 +3564,17 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 		if (!s || !sm_table[i].new_section)
 			{ MCC_TRACE("br\n"); continue; }
 		sh = &shdr[i];
+		if (sh->sh_link >= ehdr.e_shnum) { MCC_TRACE("br\n");
+			mcc_error_noabort("invalid object file (section sh_link out of range)");
+			goto the_end;
+		}
 		if (sh->sh_link > 0)
 			{ MCC_TRACE("br\n"); s->link = sm_table[sh->sh_link].s; }
 		if (sh->sh_type == SHT_RELX) { MCC_TRACE("br\n");
+			if (sh->sh_info >= ehdr.e_shnum || !sm_table[sh->sh_info].s) { MCC_TRACE("br\n");
+				mcc_error_noabort("invalid object file (reloc sh_info out of range)");
+				goto the_end;
+			}
 			s->sh_info = sm_table[sh->sh_info].s->sh_num;
 			s1->sections[s->sh_info]->reloc = s;
 		}
@@ -3567,6 +3589,10 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 	for (i = 1; i < nb_syms; i++, sym++) { MCC_TRACE("br\n");
 		if (sym->st_shndx != SHN_UNDEF &&
 				sym->st_shndx < SHN_LORESERVE) { MCC_TRACE("br\n");
+			if (sym->st_shndx >= ehdr.e_shnum) { MCC_TRACE("br\n");
+				mcc_error_noabort("invalid object file (symbol st_shndx out of range)");
+				goto the_end;
+			}
 			sm = &sm_table[sym->st_shndx];
 			if (sm->link_once) { MCC_TRACE("br\n");
 				if (ELFW(ST_BIND)(sym->st_info) != STB_LOCAL) { MCC_TRACE("br\n");
@@ -3598,6 +3624,10 @@ ST_FUNC int mcc_load_object_file(MCCState *s1,
 		size = sh->sh_size;
 		switch (s->sh_type) { MCC_TRACE("br\n");
 		case SHT_RELX:
+			if (sh->sh_info >= ehdr.e_shnum) { MCC_TRACE("br\n");
+				mcc_error_noabort("invalid object file (reloc sh_info out of range)");
+				goto the_end;
+			}
 			offseti = sm_table[sh->sh_info].offset;
 			for (rel = (ElfW_Rel *)s->data + (offset / sizeof(*rel));
 					 rel < (ElfW_Rel *)s->data + ((offset + size) / sizeof(*rel));

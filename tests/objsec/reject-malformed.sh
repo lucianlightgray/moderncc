@@ -100,5 +100,37 @@ PY
 	fi
 fi
 
+# ---- 3. ELF section-header index OOB (T-mac-30091, native ELF only) ----
+python3 - <<'PY' || exit 77
+import struct
+d = bytearray(open("a.o", "rb").read())
+# only meaningful for a 64-bit little-endian ELF object (native lin-x64 build)
+if d[:4] == b"\x7fELF" and d[4] == 2 and d[5] == 1:
+	# ELF64 Ehdr: e_shnum @60, e_shstrndx @62 (both uint16 LE)
+	shnum = struct.unpack_from("<H", d, 60)[0]
+	struct.pack_into("<H", d, 62, 0xffff)  # e_shstrndx far past e_shnum
+	open("bad_elf.o", "wb").write(d)
+PY
+if [ -f bad_elf.o ]; then
+	out=$("$MCC" m.c bad_elf.o -o out_elf 2>&1)
+	rc=$?
+	if crashed "$rc"; then
+		echo "FAIL: ELF shndx — mcc crashed (rc=$rc) on malformed object"
+		echo "$out"
+		exit 1
+	fi
+	if [ "$rc" -eq 0 ]; then
+		echo "FAIL: ELF shndx — mcc accepted a malformed object (rc=0)"
+		exit 1
+	fi
+	case "$out" in
+		*"invalid object file"*) : ;;
+		*) echo "FAIL: ELF shndx — expected 'invalid object file', got: $out"; exit 1 ;;
+	esac
+	# the pristine object must still link (no false reject)
+	"$MCC" m.c a.o -o out_elf_ok || { echo "FAIL: valid ELF object rejected"; exit 1; }
+	rm -f bad_elf.o
+fi
+
 echo "PASS: malformed object/archive inputs rejected cleanly"
 exit 0
