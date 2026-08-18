@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T22:22Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:14Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:24Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T22:20Z |
 
 ## Contracts — blocking, highest priority
@@ -309,8 +309,8 @@
       OWNER: — | STATE: OPEN | SHA: c35c291e | TS: 2026-08-18T11:45Z
       REF: INVESTIGATIONS.md#r26-constant-p-noopt | DEPS: —
 - [ ] T-mac-30152 [S] Fix: [MED, diagnostic] `__attribute__((cleanup))` two missing diagnostics (runtime ordering FULLY correct) — (1) cleanup fn pointee type never checked vs the variable: `void cf(long*)` on an `int` var compiles+RUNS passing `&int_var` as `long*` → 8-byte read of a 4-byte object → garbage (`mccgen.c:17706-17713`/`15423-15433`, no arg-type check); both oracles hard-ERROR. (2) cleanup on a static/file-scope/param (non-automatic) var silently dropped, no warning even under -Wall (`:17706-17722`, only auto-local path wires all_cleanups); both oracles warn. Runtime LIFO/all-exit-paths/nested/longjmp/exit/VLA all byte-identical to oracles. Fix: type-check the cleanup arg (error) + warn on non-automatic storage. CALIBRATION (mac-arm64, measured vs gcc-16+clang): cf(int*)/int OK both; cf(long*)/int ERROR both (the safe target — size mismatch); cf(void*)/int OK both; cf(const int*)/int OK both (qualifier-tolerant); cf(unsigned*)/int → gcc OK, clang ERROR (oracles DISAGREE on same-size sign mismatch). So the arg-check must match GCC (the GNU-ext reference): error only on genuinely-incompatible pointees (esp. different size), allow void*/qualifier/same-size. CORPUS USES cleanup (cleanup.c, struct.c, run_atexit.c) → verify o0-baseline before landing (a too-strict check breaks valid corpus). Part-2 (non-auto warning) is false-positive-free and can land independently.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: c35c291e | TS: 2026-08-18T22:20Z
-      REF: INVESTIGATIONS.md#r26-cleanup-diag | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS (PART-2 DONE 28dec8e9; part-1 arg type-check residual) | SHA: 28dec8e9 | TS: 2026-08-18T22:24Z | HEARTBEAT INTENTIONALLY STALE — TTL-resumable by any session
+      REF: DETAILS.md#t-mac-30152-cleanup-nonauto | DEPS: —
 - [ ] T-mac-30154 [S] Fix: [MED] `#line`/`__LINE__` beyond INT_MAX — (1) `#line N` with N>2147483647 silently accepted + clamped to 2147483647, NO default diagnostic (`mccpp.c:3053-3062`, overflow warns only under -pedantic); clang errors, gcc warns by default (C11/C23 6.10.4p3 constraint → diagnostic required). (2) `__LINE__` past line 2147483647 WRAPS to -2147483648 (`int line_num` `mcc.h:439`, inc at `mccpp.c:5345-5346`/`3076`); clang/gcc yield 2147483648 → any use (assert/logging) sees a negative line. Fix: default diagnostic on the #line overflow; widen/saturate the line counter so __LINE__ never goes negative.
       OWNER: — | STATE: OPEN | SHA: c35c291e | TS: 2026-08-18T11:45Z
       REF: INVESTIGATIONS.md#r26-line-intmax | DEPS: —
