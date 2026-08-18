@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30043   | 2026-08-17T23:19Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30048   | 2026-08-18T00:10Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -71,6 +71,21 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30043 [S] Investigate: linkage/visibility/TLS-model emission — [HIGH] x86_64 ELF emits ONLY local-exec `R_X86_64_TPOFF32` (no `gen_tls_addr`, no GD/IE), ignoring `-fPIC`/`-shared`/visibility → `mcc -fPIC -shared` with `__thread` rejected by `ld` / bogus TP offset internally (`x86_64-gen.c:310/326/417/444/556/576`; broader than i386-only T-lin-10020); [MED] Mach-O drops `STV_HIDDEN`/`-fvisibility=hidden`, never sets `N_PEXT` → hidden syms leak into dylib exports (`mccmacho.c:995-1038`); [LOW] `VT_INLINE`→LOCAL tested before `a.weak` (`mccgen.c:1204`). C99-inline emission all ROBUST
+      OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z
+      REF: INVESTIGATIONS.md#r8-x86_64-tls-model | DEPS: —
+- [ ] T-mac-30044 [S] Investigate: `_Complex` constant-fold path (runtime+main-arch ABI ROBUST) — [MED] `_Complex __float128`/`_Float128` silently narrowed to `_Complex float` (24-bit) via `combine_complex_base` (`mccgen.c:8410/8514`), no `__float128` complex helper; [MED] const-folded complex `/` and `*` use naive textbook formula (den in base type → float overflow, no Smith scaling, no Annex-G inf/NaN recovery) diverging from the upgraded runtime `__mcc_cdiv*`/`GEN_MUL` (`mccgen.c:8526/8582-8650`; finishes Q-lin-10012 on the fold side); [LOW] `_Imaginary` rejected while `__STDC_IEC_559_COMPLEX__` advertised
+      OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z
+      REF: INVESTIGATIONS.md#r8-complex-fold | DEPS: —
+- [ ] T-mac-30045 [S] Investigate: varargs/stdarg — [MED] x86_64 SysV `__va_arg_inline` bumps `fp_offset += 16` BEFORE the capacity test for a 2-SSE aggregate (`mccdefs.h:549-560`), so with one XMM slot left the counter sticks at 176 and a later single `double`/`float` vararg (caller backfilled into XMM7 w/o bumping `nb_sse_args`, `x86_64-gen.c:1699`) is read from the overflow area not the register → silent miscompile; [MED] arm64-ELF `assert(0)` still live for size==16/align==16 non-HFA aggregate through `...` (`arm64-gen.c:1728`; the Round-1 `#codegen-arm64-vaarg-assert`, now located). Save-area/gr_offs/riscv/va_copy ROBUST
+      OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z
+      REF: INVESTIGATIONS.md#r8-varargs | DEPS: —
+- [ ] T-mac-30046 [S] Investigate: `-fpromote-locals`/`-finline` miss an INDIRECT `setjmp` → silent miscompile at `-O2` — [MED] `ast_body_has_setjmp` (`mccast.c:3013/4598`) matches only a direct callee whose NAME contains "setjmp"; `setjmp` via a function pointer is a name-less `Invoke` → a live local promoted into a callee-saved reg that `longjmp` restores (reproduced: `x=20` at -O0, `x=10` at -O2/-O3); auto-on at -O2 (`:2349`); [LOW] same name-based blind spot in the inliner guard `ast_fn_inlinable` (`:3049`). Inline single-eval/copy-prop/algebraic/DCE all ROBUST
+      OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z
+      REF: INVESTIGATIONS.md#r8-promote-setjmp | DEPS: —
+- [ ] T-mac-30047 [S] Investigate: builtin lowering (atomics ROBUST) — [MED] glibc-only `__builtin_mempcpy`/`stpncpy`/`*_unlocked` predefined with unconditional `__RENAME` (`mccdefs.h:710-717`), no platform guard → hard link-fail on macOS/BSD (`unresolved reference to '_mempcpy'`, incl. `__builtin___mempcpy_chk`); [MED] non-constant `__builtin_clz`/`ctz`/`ffs` lowered to a runtime CALL on every non-x86 target (`mccircap.c:438` `#ifdef MCC_IR_HAVE_X86_PRIMS`, `mccgen.c:13683-13702`) — perf + link dep, diverges from x86 inline (popcount/parity inline everywhere); [LOW] overflow builtins not constant-expressions + mis-handle `_BitInt(N>64)`/`__int256` (>64b non-`__int128` truncated, `mccdefs.h:966/1022`)
+      OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z
+      REF: INVESTIGATIONS.md#r8-builtins | DEPS: —
 - [ ] T-mac-30039 [S] Investigate: parser/declarator storage-class + C23 semantics — [MED] `constexpr int i = 0xFFFFFFFFFFFFFFFFULL` silently accepted as `-1` (sign-collapsed in-range check; `mccgen.c:18257/18346`); [MED] storage-class specifiers accepted in every type-name/abstract-declarator context (`(static int)3`, `sizeof(static int)`, `_Generic(1,static int:…)`; `mccgen.c:12974/9164`); [LOW-MED] `register`/`auto` accepted on struct members (`mccgen.c:7500`); [LOW] `_Noreturn` on non-function only pedantic. Scoping/K&R/`_Generic`/declarator-zoo/C23-attrs all ROBUST
       OWNER: — | STATE: OPEN | SHA: bac4a448 | TS: 2026-08-17T23:19Z
       REF: INVESTIGATIONS.md#r7-parser-declarators | DEPS: —
