@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30222 [S] Fix: [MED] codegen-hint attributes (hot/cold/flatten/no_reorder/no_stack_protector/no_icf) warn "attribute ignored" → fail under -Werror; accept silently like gcc
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:20Z
-      REF: DETAILS.md#t-mac-30222-codegen-hint-attrs | DEPS: —
 
 
 
