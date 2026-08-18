@@ -14244,6 +14244,8 @@ tok_next:
 		if (!gnu_ext)
 			{ MCC_TRACE("br\n"); goto tok_identifier; }
 		mcc_pedantic("taking the address of a label is a GNU extension");
+		if (!funcname[0])
+			{ MCC_TRACE("br\n"); mcc_error("address-of-label used outside of a function body"); }
 		ast_func_has_labeladdr = 1;
 		next();
 		if (tok < TOK_UIDENT)

@@ -7721,6 +7721,22 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(enum-u64-underlying-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/labeladdr_filescope.c")
+        add_test(NAME "diag/labeladdr-filescope-rejected" COMMAND ${_mcc_exe} -c
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/labeladdr_filescope.c"
+            -o "${CMAKE_BINARY_DIR}/labeladdr_filescope.o")
+        set_tests_properties("diag/labeladdr-filescope-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+    endif()
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/labeladdr_infunc.c")
+        add_test(NAME labeladdr-infunc-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/labeladdr_infunc.c
+            --out ${CMAKE_BINARY_DIR}/labeladdr_infunc${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(labeladdr-infunc-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(MCC_CPU STREQUAL "arm64"
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/asm_align_p2_arm64.S")
         add_test(NAME asm-align-p2-arm64-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
