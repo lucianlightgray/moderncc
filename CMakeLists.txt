@@ -4984,6 +4984,16 @@ if(MCC_BUILD_TESTS)
                     -o "${CMAKE_BINARY_DIR}/tuq-pre.o")
         set_tests_properties("typeof/unqual-pre-c23-rejected" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
+        # T-mac-30143: 'stdcall' is meaningless off i386 — warn-and-ignore like
+        # gcc/clang (pre-fix it was silent, so the warning match is the bite).
+        add_test(NAME "attr/stdcall-ignored"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/attr/stdcall_ignored.c"
+                    -o "${CMAKE_BINARY_DIR}/stdcall-ignored.o")
+        set_tests_properties("attr/stdcall-ignored" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "'stdcall' attribute ignored")
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"

@@ -6577,6 +6577,10 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 		case TOK_STDCALL3:
 #if defined(MCC_TARGET_I386)
 			ad->f.func_call = FUNC_STDCALL;
+#else
+			/* T-mac-30143: 'stdcall' is meaningless off i386; warn-and-ignore
+			 * like gcc/clang (fastcall/thiscall already hit the default: warn). */
+			mcc_warning_c(warn_attributes)("'%s' attribute ignored", get_tok_str(t, NULL));
 #endif
 			break;
 #ifdef MCC_TARGET_I386
