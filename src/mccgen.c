@@ -8953,11 +8953,15 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	t = VT_INT;
 	bt = st = -1;
 	type->ref = NULL;
+	unsigned char pb_save_pedantic = mcc_state->warn_pedantic;
+	unsigned char pb_save_pedantic_errors = mcc_state->pedantic_errors;
 
 	while (1) { MCC_TRACE("br\n");
 		switch (tok) { MCC_TRACE("br\n");
 		case TOK_EXTENSION:
 			ext_seen++;
+			mcc_state->warn_pedantic = 0;
+			mcc_state->pedantic_errors = 0;
 			next();
 			continue;
 
@@ -9448,6 +9452,8 @@ the_end:
 		while (ext_seen--)
 			{ MCC_TRACE("br\n"); unget_tok(TOK_EXTENSION); }
 	}
+	mcc_state->warn_pedantic = pb_save_pedantic;
+	mcc_state->pedantic_errors = pb_save_pedantic_errors;
 	return type_found;
 }
 

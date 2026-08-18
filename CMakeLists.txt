@@ -4895,6 +4895,17 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/static-assert-false" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
+        add_test(NAME "ext/extension-declspec"
+            COMMAND ${_mcc_exe} -std=c89 -pedantic-errors -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/ext/extension_declspec.c"
+                    -o "${CMAKE_BINARY_DIR}/extd.o")
+        set_tests_properties("ext/extension-declspec" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME "ext/extension-noleak"
+            COMMAND ${_mcc_exe} -std=c89 -pedantic-errors -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/ext/extension_noleak.c"
+                    -o "${CMAKE_BINARY_DIR}/extn.o")
+        set_tests_properties("ext/extension-noleak" PROPERTIES FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
         add_test(NAME "pack/pop-unmatched"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack/pop_unmatched.c"
