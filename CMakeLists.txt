@@ -4856,6 +4856,25 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/excess-string-init-nowarn" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        add_test(NAME "builtins/expect-assume"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/builtins/expect_assume.c")
+        set_tests_properties("builtins/expect-assume" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "expect_assume fails=0")
+        add_test(NAME "builtins/assume-typecheck"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/builtins/assume_typecheck.c"
+                    -o "${CMAKE_BINARY_DIR}/at.o")
+        set_tests_properties("builtins/assume-typecheck" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "diag/typeof-bitfield"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/typeof_bitfield.c"
+                    -o "${CMAKE_BINARY_DIR}/tbf.o")
+        set_tests_properties("diag/typeof-bitfield" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
         add_test(NAME "diag/tls-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/tls_addr_static_init.c"

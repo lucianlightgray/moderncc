@@ -9268,6 +9268,8 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			u = tok;
 			next();
 			parse_expr_type(&type1);
+			if (type1.t & VT_BITFIELD)
+				{ MCC_TRACE("br\n"); mcc_error("'typeof' applied to a bit-field"); }
 			type1.t &= ~(VT_STORAGE & ~VT_TYPEDEF);
 			if (u == TOK_TYPEOF_UNQUAL) { MCC_TRACE("br\n");
 				type1.t &= ~(VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT);
@@ -13213,7 +13215,8 @@ tok_next:
 		}
 		break;
 
-	case TOK_builtin_expect:
+	case TOK_builtin_expect: {
+		CType lt;
 		next();
 		skip('(');
 		expr_eq();
@@ -13223,6 +13226,22 @@ tok_next:
 		vpop();
 		nocode_wanted--;
 		skip(')');
+		lt.t = (LONG_SIZE == 8) ? (VT_LLONG | VT_LONG) : (VT_INT | VT_LONG);
+		lt.ref = NULL;
+		gen_cast(&lt);
+		break;
+	}
+	case TOK_builtin_assume:
+		next();
+		skip('(');
+		nocode_wanted++;
+		expr_eq();
+		vpop();
+		nocode_wanted--;
+		skip(')');
+		type.t = VT_VOID;
+		vpush(&type);
+		expr_has_effect = 1;
 		break;
 	case TOK_builtin_types_compatible_p:
 		parse_builtin_params(0, "tt");
@@ -13298,6 +13317,7 @@ tok_next:
 		parse_builtin_params(0, "");
 		type.t = VT_VOID;
 		vpush(&type);
+		expr_has_effect = 1;
 		CODE_OFF();
 		break;
 	case TOK_builtin_classify_type: {
@@ -13424,6 +13444,7 @@ tok_next:
 			{ MCC_TRACE("br\n"); gen_trap(); }
 		type.t = VT_VOID;
 		vpush(&type);
+		expr_has_effect = 1;
 		CODE_OFF();
 		break;
 	case TOK_builtin_prefetch:

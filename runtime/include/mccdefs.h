@@ -1053,7 +1053,6 @@
 	#define __builtin_mul_overflow_p(a, b, c) \
 	({ __typeof__(c) __mcc_ovp_r; __builtin_mul_overflow((a), (b), &__mcc_ovp_r); })
 	#define __builtin_assoc_barrier(x) (x)
-	#define __builtin_assume(cond) ((void)0)
 
 	/* NO __atomic_thread_fence / __atomic_signal_fence here. Both are already
 	 * defined by runtime/include/stdatomic.h, which is their right home, and
