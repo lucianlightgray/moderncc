@@ -102,7 +102,7 @@
       OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
       REF: INVESTIGATIONS.md#r25-c23-empty-paren | DEPS: —
 - [ ] T-mac-30143 [S] Fix: [MED, diagnostic] `stdcall`/`fastcall`/`thiscall` silently ignored on arm64 (no `-Wignored-attributes`) — TOK_STDCALL* body is `#if MCC_TARGET_I386…#endif` falling to bare `break` (`mccgen.c:6574-6580`); fastcall/thiscall/regparm entirely `#ifdef MCC_TARGET_I386` (`:6581-6604`). clang/gcc both warn "calling convention not supported"/"attribute ignored". `ms_abi`/`sysv_abi` correctly warn via default: path — only lexed-but-compiled-out conv tokens stay silent. Low ABI risk (don't exist on arm64). Fix: `warn_attributes("'%s' attribute ignored")` in non-i386 fall-through.
-      OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: c7a65f22 | TS: 2026-08-18T13:00Z
       REF: INVESTIGATIONS.md#r25-callconv-silent | DEPS: —
 - [ ] T-mac-30144 [S] Fix: [MED, accepts-invalid] K&R definition + promotion-mismatching prototype only pedantic-warns — `is_compatible_func` (`mccgen.c:4406-4417`) emits `mcc_pedantic(...)` for the promotion mismatch but does NOT `return 0`, so compatible unless `-pedantic-errors`. `int f(a) char a;{} int f(char a);` (promoted param int vs prototype char) → mcc default no diag; gcc/clang `error: conflicting types` unconditionally. C17 6.7.6.3p15 (prototype must agree with PROMOTED old-style types — constraint violation). Fix: make promotion-mismatch a hard incompatibility (return 0).
       OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
