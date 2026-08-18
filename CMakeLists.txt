@@ -4895,6 +4895,13 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/static-assert-false" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
+        add_test(NAME "pack/pop-unmatched"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/pack/pop_unmatched.c"
+                    -o "${CMAKE_BINARY_DIR}/pu.o")
+        set_tests_properties("pack/pop-unmatched" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         add_test(NAME "diag/generic-enum-tag"
             COMMAND ${_mcc_exe} -run
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/generic_enum_tag.c")

@@ -2640,17 +2640,17 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		if (tok == TOK_ASM_pop) { MCC_TRACE("br\n");
 			next();
 			if (s1->pack_stack_ptr <= s1->pack_stack) { MCC_TRACE("br\n");
-			stk_error:
-				mcc_error("out of pack stack");
+				mcc_warning("#pragma pack(pop) without matching push, ignored");
+			} else {
+				s1->pack_stack_ptr--;
 			}
-			s1->pack_stack_ptr--;
 		} else { MCC_TRACE("br\n");
 			int val = 0;
 			if (tok != ')') { MCC_TRACE("br\n");
 				if (tok == TOK_ASM_push) { MCC_TRACE("br\n");
 					next();
 					if (s1->pack_stack_ptr >= s1->pack_stack + PACK_STACK_SIZE - 1)
-						{ MCC_TRACE("br\n"); goto stk_error; }
+						{ MCC_TRACE("br\n"); mcc_error("#pragma pack(push) nested too deeply"); }
 					val = *s1->pack_stack_ptr++;
 					if (tok != ',')
 						{ MCC_TRACE("br\n"); goto pack_set; }
