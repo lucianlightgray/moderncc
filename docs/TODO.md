@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30191 [S] Fix: [MED] `return;` (no value) in a K&R `int f()` silently returns 0 with no diagnostic — emit the same return-type diagnostic the prototyped form does (error-by-default, matches gcc/clang)
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T13:42Z
+      REF: DETAILS.md#t-mac-30191-knr-return-no-value | DEPS: —
+
 
 
 
@@ -237,9 +241,6 @@
 - [ ] T-mac-30190 [S] Fix: [MED, wrong result type] `_BitInt(N)` for 32<N≤64 loses bit-precise type in arithmetic — `_BitInt(40) b; _Generic((b+b))` → `long long` in mcc, `_BitInt(40)` in clang/gcc. The VT_BITINT result re-tag (`mccgen.c:4971`) is guarded `(vtop->type.t&VT_BTYPE)!=VT_LLONG` (excludes LLONG-backed scalar _BitInt 33..64); `combine_types` (`:4644`) only tests struct-backed is_bitint_type → result falls to the VT_LLONG branch (`:4683`). Runtime VALUES correct (arith at right width, mod-2^N wrap via bf_trunc `:4949`); only _Generic/typeof/tgmath type wrong. N≤31 (INT) + N>64 (struct) correct. Analogous to T-mac-30172 (long-double demote). Fix: restore the _BitInt type tag for the LLONG-backed result in the arith re-tag path. C23 6.3.1.1/6.3.1.8.
       OWNER: — | STATE: OPEN | SHA: 1a5b344d | TS: 2026-08-18T17:30Z
       REF: INVESTIGATIONS.md#r30-bitint-uac | DEPS: —
-- [ ] T-mac-30191 [S] Fix: [MED, accepts-invalid] `return;` (no value) in a K&R `int f()` silently returns 0 — `int f(){ return; }` (empty parens → func_old) synthesizes return 0 with NO diagnostic (`mccgen.c:16136-16137` `else if (b && func_old && (func_vt.t&VT_BTYPE)==VT_INT){vpushi(0);}` bypasses even the gated warn_return_type), even under -Wall -Werror -Wreturn-type. clang/gcc both ERROR in all modes. Prototyped forms (int f(void)/int f(int)) correctly error. C11 6.8.6.4p1; under C23 int f()≡int f(void) → must error. Clusters w/ T-mac-30142 (C23 ()≡(void)). Fix: drop the func_old return-0 synthesis (or gate to pre-C23 non-strict with a warning).
-      OWNER: — | STATE: OPEN | SHA: 1a5b344d | TS: 2026-08-18T17:30Z
-      REF: INVESTIGATIONS.md#r30-knr-return | DEPS: —
 - [ ] T-mac-30193 [S] Fix: [MED, missing diagnostic] `-Wpointer-sign` entirely unimplemented — sign-mismatched integer-pointer assigns silently accepted (`unsigned int *u=int_ptr;`, `signed char *s=char_ptr;`) in all modes; clang warns default, gcc under -Wall (both -Wpointer-sign). `mccgen.c:5925` treats same-btype integer pointees differing only in VT_UNSIGNED (or one enum) as compatible-enough to skip incompatible_ptr_diag() with no substitute; no warn_pointer_sign class (`mcc.h:720-728`). int*↔long* still correctly errors. C11 6.5.16.1. Fix: add a -Wpointer-sign class emitted at the :5925 sign-only-mismatch site.
       OWNER: — | STATE: OPEN | SHA: 1a5b344d | TS: 2026-08-18T17:30Z
       REF: INVESTIGATIONS.md#r30-pointer-sign | DEPS: —
