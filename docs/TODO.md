@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30133   | 2026-08-18T08:10Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30139   | 2026-08-18T08:30Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -73,6 +73,24 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30133 [S] Fix: [HIGH] `__extension__` fails to silence `-pedantic` for declspecs/declarators/struct-enum-layout/`_Static_assert` → reject-valid under `-pedantic-errors` — declspec parser consumes `__extension__` (`mccgen.c:8955-8958`) but never disables pedantic (only unary/expr `:12848` + init `:17085` do). `-std=c89 -pedantic-errors`: `__extension__ long long g=1;`, `__extension__ enum{A,B,}`, `__extension__ struct{int fam[];}`, `__extension__ int v[n]`, `__extension__ _Static_assert(1,"")` all hard-error (gcc silent). Fix: save+zero warn_pedantic/pedantic_errors at decl-start when `__extension__` seen (`:8955`/`:9443`), restore after the full declaration.
+      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      REF: INVESTIGATIONS.md#r24-extension | DEPS: —
+- [ ] T-mac-30134 [S] Fix: [MED] arm64 local `register T v asm("name")` silently drops an unrecognized register name (no diagnostic, binding lost) — `mccgen.c:17674` `if(reg>=0 && reg<MCC_NB_REGS) r=...;` has no else; arm64 table (`arm64-asm.c:230-244`) knows only x0-x30, v/d/s/h/b 0-7, so d8-d15/v8-v31/sp/wN/rN silently ignored → `register double v asm("d10")` lands in d0. Fix: error "invalid register name" on parse-fail/out-of-range. ALSO refine T-mac-30033: the x19-x30 physical→codegen numbering collision manifests through this declarator path too (`:17673-17675` feeds physical num into VT_VALMASK) — apply arm64_asm_treg translation at `:17673`. (Global reg-vars rejected `:18588-18590`, matches clang, no task.)
+      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      REF: INVESTIGATIONS.md#r24-regvar | DEPS: —
+- [ ] T-mac-30135 [S] Fix: [MED] `weakref` non-functional → emits a STRONG global UNDEF to the alias's own name (not a weak ref to the target) → link failure — `weakref` not a token, falls to attr default: (`mccgen.c:6683`); `static int wf(void) __attribute__((weakref("g")));` → `wf *UND* STB_GLOBAL` + reloc to `wf` not `g` (all 3 formats); `&wf` const-folds non-null. gcc/clang: weak undef to `g`, resolves 0. Fix: add weakref token recording target, mark weak-undef aliased to target (reuse alias_target+a.weak+SHN_UNDEF), or clean "unsupported" error. Cluster w/ T-mac-30072.
+      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      REF: INVESTIGATIONS.md#r24-weakref | DEPS: —
+- [ ] T-mac-30136 [S] Fix: [MED] `ifunc` attribute dropped → aliased symbol never emitted → unresolved reference; AND the ELF STT_GNU_IFUNC/IRELATIVE backend is UNREACHABLE dead code — `mcc_prepare/fill_static_ifunc` (`mccelf.c:1988/2067`, IPLT+R_*_IRELATIVE `:2054/2082`) gated on ST_TYPE==STT_GNU_IFUNC which is NEVER assigned; asm `.type` rejects `@gnu_indirect_function` (`mccasm.c:784-798`). Fix: wire ifunc attr → STT_GNU_IFUNC (ELF) + clean diag on Mach-O/COFF, OR accept `.type ,@gnu_indirect_function`. Cluster w/ T-mac-30072.
+      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      REF: INVESTIGATIONS.md#r24-ifunc | DEPS: —
+- [ ] T-mac-30137 [S] Fix: [MED] `#ifdef`/`#elifdef __has_embed` report not-defined while `#if defined(__has_embed)` is true (self-contradiction) → code guarded by `#ifdef __has_embed` silently takes the no-embed fallback though mcc supports `#embed` — ifdef guard (`mccpp.c:2948`) whitelists only __has_include/__has_include_next; `#elifdef` (`:2999`) whitelists none (so `#elifdef __has_include` also wrongly false). Fix: add TOK___HAS_EMBED to `:2948` + give `:2999` the __has_include/_next/__has_embed whitelist. (#embed itself ROBUST.)
+      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      REF: INVESTIGATIONS.md#r24-embed-ifdef | DEPS: —
+- [ ] T-mac-30138 [S] Fix: [MED] block-scope `static` rejects a CONSTANT statement-expression initializer — `int f(void){ static int s=({7;}); }` → mcc "constant expected"; gcc+clang accept (fold the constant-valued stmt-expr). Stmt-expr `'{'` arm of unary (`mccgen.c:13050-13057`) result reaches the static-init constant check which doesn't recognize a folded stmt-expr. Automatic init + non-constant/file-scope rejection are correct. Fix: accept a stmt-expr whose result constant-folded to a literal in the static-init constant path.
+      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      REF: INVESTIGATIONS.md#r24-static-stmtexpr | DEPS: —
 - [ ] T-mac-30131 [S] Fix: [MED] `__builtin_expect(e,c)` result type must be `long` not the operand's type (sizeof/_Generic/typeof diverge from clang+gcc) — the one-line fix (gen_cast result to `LONG_SIZE==8?VT_LLONG|VT_LONG:VT_INT|VT_LONG` after the case, `mccgen.c` TOK_builtin_expect) was implemented+verified then REVERTED (0ca7cbd8) because it changes the emitted object for the sole corpus TU using __builtin_expect (`tests/exec/codegen/codeopt.c`) → `ast/o0-baseline` red. Landing it requires a FLEET-WIDE o0-baseline re-bank of codeopt.c across all target keys (per T-lin-10002 bank-keying; o0_ab.sh) — coordinate or re-bank all keys from a host with every cross toolchain. Fix is trivial; the gate is the re-bank. Split from T-mac-30125.
       OWNER: — | STATE: OPEN | SHA: 0ca7cbd8 | TS: 2026-08-18T08:05Z
       REF: INVESTIGATIONS.md#r22-intrinsic-builtins | DEPS: —
