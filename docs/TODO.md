@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T22:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:44Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T22:39Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T22:56Z |
 
 ## Contracts — blocking, highest priority
 
@@ -129,9 +129,9 @@
 - [ ] T-mac-30097 [S] Fix: [LOW cluster] sub-item (4) SLICE DONE (465978e1): `set_output_type` now warns only when the action actually changes (`s->output_type != x`), so same-type flags `-c -c`/`-c -r` no longer spurious-warn; `-c -S` still warns. TDD cli/output_type_same_action_no_warn (driver-only, no o0 impact). TTL-resumable. RESIDUAL: (1) array-size-overflow reported "incomplete type elements", (2) DWARF llong-bitfield≤32b as int, (3) mccdis 256-byte name buf.
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 465978e1 | TS: 2026-08-18T22:20Z
       REF: DETAILS.md#t-mac-30097-output-type-warn | DEPS: —
-- [ ] T-mac-30039 [S] Investigate: parser/declarator storage-class — [LOW-MED] SLICE DONE (add2dfff): `register`/`auto` on struct members now rejected (`ad1.storage_class & 3` check by the existing member VT_STORAGE check; restrict/_Alignas stay valid). TDD cli/struct_member_no_storage_class, o0 byte-identical. TTL-resumable. RESIDUAL: [MED] constexpr 64-bit sign-collapse, [MED] storage-class in type-name/abstract-declarator, [LOW] _Noreturn on non-function.
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: add2dfff | TS: 2026-08-18T22:39Z
-      REF: DETAILS.md#t-mac-30039-member-storage-class | DEPS: —
+- [ ] T-mac-30039 [S] Investigate: parser/declarator storage-class — TWO slices DONE: (a) [LOW-MED] register/auto on struct members rejected (add2dfff, `ad1.storage_class & 3`); (b) [MED] constexpr unsigned value >LLONG_MAX now rejected (4822887c, `constexpr int i = 0xFFFFFFFFFFFFFFFFULL` was accepted as -1 — in_range saw the sign-collapsed ll; added an unsigned-source-overflow check, DETAILS#t-mac-30039-constexpr-range). Both TDD (cli/struct_member_no_storage_class, cli/constexpr_unsigned_overflow_rejected), o0 byte-identical. TTL-resumable. RESIDUAL: [MED] storage-class in type-name/abstract-declarator (scattered across sizeof/alignof/cast/_Generic/classify_type sites — the storage-class bits are consumed inside the delegated type-name parse, needs plumbing not a per-site check), [LOW] _Noreturn on non-function.
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 4822887c | TS: 2026-08-18T22:56Z
+      REF: DETAILS.md#t-mac-30039-constexpr-range | DEPS: —
 
 ## Open — claimable
 - [ ] T-mac-30251 [S] Fix: [treegate red] `ci/gate-contract` — 3 orphaned known-positives that no gate-contract row claims: `bitint/scast-signext-known-positive` (T-mac-30063), `fold/int64-float-known-positive` (T-mac-30082), `switch/jumptable-falloff-known-positive` (T-mac-30099). Base cells + known-positives are `if(NOT CMAKE_CROSSCOMPILING)`-gated → absent on cross, so naive rows break `cmake-cross`; fix needs `else() mcc_skip_test` echo-stubs + must-run.txt entries + real intrinsic floors (ratchets maxed). NOT mac-only-verifiable (needs a cmake-cross gate-contract run). Found landing T-mac-30169.
