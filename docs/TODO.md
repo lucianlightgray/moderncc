@@ -110,7 +110,7 @@
       OWNER: — | STATE: OPEN | SHA: 635b850a | TS: 2026-08-18T05:30Z
       REF: INVESTIGATIONS.md#r20-parsedepth-sizeof | DEPS: —
 - [ ] T-mac-30110 [S] Fix: [LOW-MED] runtime `__builtin_clz(0)`/`ctz(0)` disagree with the const-fold path + clang (3 answers for the same UB expr) — fold (`fold_bit_builtin` `mccgen.c:906/912-921`) gives W (32/64); runtime de Bruijn helpers (`runtime/lib/builtin.c` `:40-58`) don't special-case 0 → clz(0)=31/63, ctz(0)=0/0; x86 native bsf/bsr undefined for 0. clang self-consistent (32/32). Input is UB (severity capped) but mcc self-contradicts; INVESTIGATIONS:277 "ROBUST via fold" missed the runtime edge. Distinct from T-mac-30047. Fix: guard x==0 in CLZI/CLZL/CTZI/CTZL to return bit width.
-      OWNER: — | STATE: OPEN | SHA: 635b850a | TS: 2026-08-18T05:30Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 635b850a | TS: 2026-08-18T06:35Z
       REF: INVESTIGATIONS.md#r20-clz-zero | DEPS: —
 - [ ] T-mac-30111 [S] Fix: [LOW-MED, diagnostic] `-Wsequence-point` misses read-vs-write conflicts + is reset per function argument — `seqp_check` warns only on `writes>=2` (`mccgen.c:458`); reads recorded (`gv:2629`) but used only for de-dup, so `a[i]=i++`/`x=i+i++`/`f(i,i++)` compile clean (gcc-16/clang warn — real 6.5p2 UB); `seqp_flush` per-arg (`:14356/14380`) hides inter-arg conflicts. No miscompile (codegen==clang), just under-reports. Fix: warn when a WRITE coexists with any read/write on the same object; flush once after all args.
       OWNER: — | STATE: OPEN | SHA: 635b850a | TS: 2026-08-18T05:30Z
