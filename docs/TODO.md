@@ -246,7 +246,6 @@
 - [ ] T-mac-30204 [S] Fix: [MED, assembler gap] exclusive/acquire-release atomic instruction encoders missing — `ldxr`/`stxr`/`ldaxr`/`stlxr`/`ldar`/`stlr` etc. have tokens declared (`arm64-tok.h:478-491`) but NO encoder in `arm64-asm.c` → hand-written CAS/atomic inline asm fails `error: ARM64 instruction 'ldxr' not implemented`. clang/gcc assemble+run (`dmb ish` IS implemented). Blocks lock-free-primitive inline asm. Fix: add encoders for the load/store-exclusive + load-acquire/store-release family.
       OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
       REF: INVESTIGATIONS.md#r32-asm-atomics | DEPS: —
-- [ ] T-mac-30205 [S] Fix: [MED, -E token loss] `#`/`#` adjacency from separate arg expansions merges to `##` and is DROPPED — `#define H(a) a` + `H(#)H(#)` → mcc emits an empty line; clang/gcc emit ` # #`. Same missing-space family as T-mac-30200 (folds into the pp_need_space fix) but noted distinctly since the result is token LOSS not just re-lex ambiguity. Corner case (bare `#` as a macro argument).
       OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
       REF: INVESTIGATIONS.md#r32-hash-adjacency | DEPS: T-mac-30200
 - [ ] T-mac-30206 [S] Fix: [MED, missing builtin] `__builtin_dwarf_cfa()` (canonical frame address, unwind/EH) not in the token table (`mcctok.h`; → implicit-decl error `mccgen.c:14201`) — both clang+gcc-16 support it. The two implemented stack builtins (__builtin_return_address/__builtin_frame_address) are ROBUST at -O0/-O2. Fix: add __builtin_dwarf_cfa returning the CFA.
