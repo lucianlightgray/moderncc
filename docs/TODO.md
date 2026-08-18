@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30161 [S] Fix: [MED] `#pragma GCC warning/error "msg"` ignored — emit mcc_warning/mcc_error with the message (extends the GCC pragma arm added for poison)
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:42Z
+      REF: DETAILS.md#t-mac-30161-pragma-gcc-warning-error | DEPS: —
+
 
 - [ ] T-mac-30130 [S] Fix: [LOW cluster] SLICE-1 DONE (fec2f992: -Wunused-label, DETAILS#t-mac-30130-unused-label) + SLICE-2 DONE (bab5c86d: dup __label__ errors via block-boundary label-stack scan, DETAILS#t-mac-30130-dup-label) + (3) DONE earlier (pack-pop-warn). HEARTBEAT INTENTIONALLY STALE — TTL-resumable. RESIDUAL: (4) malformed #pragma pack always-on — the clean fix is warn_unknown_pragmas default-on (matching gcc -Wpragmas), a broader change (an always-on warning breaks the cli/malformed_pragma_is_not_fatal -Wno-unknown-pragmas-suppressible contract); (5) further minor items
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fec2f992 | TS: 2026-08-18T15:20Z
@@ -311,9 +315,6 @@
 - [ ] T-mac-30159 [S] Fix: [MED] `#pragma GCC diagnostic push/pop/ignored/error` is a no-op — no handler in `pragma_parse` (`mccpp.c:2601`), falls to catch-all `else` (`:2807`) warn-as-unknown. `#pragma GCC diagnostic ignored "-Wsign-compare"` does NOT suppress + `... error "-Wunused-variable"` does NOT escalate (clang/gcc honor push/pop regions). Widely used to locally silence a warning. Fix: push/pop stack of per-warning overrides keyed off the -W name.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-diagnostic | DEPS: —
-- [ ] T-mac-30161 [S] Fix: [MED] `#pragma GCC warning/error "msg"` ignored — `#pragma GCC error "msg"` + `#pragma GCC warning "msg"` silently dropped (`mccpp.c:2807`); build continues, clang/gcc emit error(rc=1)/warning with the text. mcc handles only bare `#pragma message`, not the GCC warning/error forms. Fix: route GCC warning/error to mcc_warning/mcc_error with the string operand.
-      OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
-      REF: INVESTIGATIONS.md#r27-pragma-warning-error | DEPS: —
 - [ ] T-mac-30162 [S] Fix: [MED, link correctness] `#pragma weak` ignored → symbol strong, alias dropped — `#pragma weak wsym` leaves wsym STRONG (nm: mcc `D _wsym` vs clang/gcc `weak external`); `#pragma weak alias = target` dropped entirely (no alias symbol). No handler in pragma_parse (`mccpp.c:2807`). Dup-symbol link errors / missing weak-override. Clusters w/ T-mac-30135 weak/weakref attr. Fix: weak pragma handler marking the sym weak (reuse a.weak) + weak-alias to target.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-weak | DEPS: —
