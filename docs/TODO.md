@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30058   | 2026-08-18T01:06Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30062   | 2026-08-18T01:19Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -72,6 +72,18 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30058 [S] Investigate: integrated-assembler directive coverage (can't consume GCC/clang `-S`; expr-eval/string/int/.set/.globl/.rept ROBUST) — [HIGH] `.comm`/`.lcomm` unimplemented (no token `mcctok.h:570`, falls to instr encoder `mccasm.c:1136`; GCC's tentative-global emission); [HIGH] `.zero` unimplemented (clang `-S` emits it for BSS → can't reassemble); [MED-HIGH] `.equ`/`.equiv` missing alias (machinery exists via `.set`/infix `=`); [MED-HIGH] `.align`/`.p2align` ignore max-skip + abort on GCC `.p2align N,,M` (`:477`); [MED] `.if`/`.else`/`.endif` absent; [MED] `.local`; [LOW] unsupported dir misreported as missing-instruction (`:1153` vs `:948`); [LOW] `.size` false "ignoring" warning then applies it (`:756`)
+      OWNER: — | STATE: OPEN | SHA: d55b1d64 | TS: 2026-08-18T01:19Z
+      REF: INVESTIGATIONS.md#r11-asm-directives | DEPS: —
+- [ ] T-mac-30059 [S] Investigate: make dependency-file generation — [HIGH] `$` and `#` in prereq paths emitted unescaped (`escape_target_dep` `mcctools.c:464` only escapes spaces) → `make` treats `#` as comment (truncates deps → missed rebuilds), `$` expands as a var; same strings reused for `-MP` (`:515`); [MED] `-MG` unrecognized → hard error (`libmcc.c:2338`; breaks autoconf/makedepend); [LOW] depfile not written on compile failure (`mcc.c:1842`). sys-vs-user/`-MP`/`-MT`/`-MQ`/`-MD`→.d/default-target/dedup all ROBUST
+      OWNER: — | STATE: OPEN | SHA: d55b1d64 | TS: 2026-08-18T01:19Z
+      REF: INVESTIGATIONS.md#r11-depfile | DEPS: —
+- [ ] T-mac-30060 [S] Investigate: enum C23 fixed-underlying-type diagnostics (enum core byte-identical to gcc+clang) — [MED] rejects a negative enumerator in an unsigned fixed type gcc/clang accept (`enum E:unsigned char{A=-1}`→ mcc "out of range", refs convert to 255; `in_range` tests signed value vs unsigned range, `mccgen.c:7370`) — rejects-valid, breaks real headers; [LOW/MED] conflicting fixed underlying type on redecl silently reconciled to the later (`enum E:int; enum E:long{A}` → sizeof 8; `:7304` checks only IS_ENUM) — latent cross-TU ABI; [LOW] nonfixed-then-fixed redecl silently accepted. NB: KNOWN DETAILS c23-enum-1 (`:17830`) appears RESOLVED — refresh/close
+      OWNER: — | STATE: OPEN | SHA: d55b1d64 | TS: 2026-08-18T01:19Z
+      REF: INVESTIGATIONS.md#r11-enum-c23 | DEPS: —
+- [ ] T-mac-30061 [S] Investigate: debug `.debug_line` spurious rows (mechanics + `DW_OP_fbreg` var locations ROBUST) — [LOW] on any source-line jump >8 + small pc advance, `mcc_debug_line` (`mccdbg.c:2110-2118`) emits a pc-only SPECIAL opcode to advance PC, which appends a matrix row carrying the STALE line, then the correct row at the same addr → naive addr2line resolves the wrong line (reproduced: two rows at 0x2c line 2 then 30); fix = use `DW_LNS_advance_pc` (appends no row); [LOW] duplicate primary-file entry in `file_names` (`:1857`, tcc DWARF≤4/5 index hack, harmless-redundant). (MED inliner-no-inlined-subroutine is KNOWN DETAILS B7 `:6475`, not re-tasked)
+      OWNER: — | STATE: OPEN | SHA: d55b1d64 | TS: 2026-08-18T01:19Z
+      REF: INVESTIGATIONS.md#r11-debug-line | DEPS: —
 - [ ] T-mac-30052 [S] Investigate: semantic warning analyses — [HIGH] `__attribute__((format(printf,...)))` parsed then discarded (`mccgen.c:6542`); `-Wformat` driven only by an 8-name strcmp table (`:10724/14385`) → zero warnings on user logging wrappers (clang flags them); [MED] length modifiers stripped so `%d`/long, `%ld`/int, `%zu` never warn (`:10827/10770`); [MED] fall-off-end "might return no value" uses plain `mcc_warning` not `mcc_warning_c(warn_return_type)` (`:15062/16052`) → `-Wno-return-type`/`-Werror=return-type` both ignored (ONE-LINE fix); [MED] `-Wparentheses` misses precedence cases (`a&b==c`; `:15838/15988/16132/16178`); [LOW-MED] `-Wsign-compare` suppressed by any const (`:4874`); [LOW] positional `%1$d` → spurious "too many arguments" (`:10787`)
       OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z
       REF: INVESTIGATIONS.md#r10-wformat | DEPS: —
