@@ -38,10 +38,13 @@ static const unsigned char table_2_64[] = {
 #define FFSL(x) \
 	return table_1_64[((x & -x) * 0x022fdd63cc95386dull) >> 58] + (x != 0);
 #define CTZI(x) \
+	if (!(x)) return 32; \
 	return table_1_32[((x & -x) * 0x077cb531u) >> 27];
 #define CTZL(x) \
+	if (!(x)) return 64; \
 	return table_1_64[((x & -x) * 0x022fdd63cc95386dull) >> 58];
 #define CLZI(x) \
+	if (!(x)) return 32; \
 	x |= x >> 1;  \
 	x |= x >> 2;  \
 	x |= x >> 4;  \
@@ -49,6 +52,7 @@ static const unsigned char table_2_64[] = {
 	x |= x >> 16; \
 	return table_2_32[(x * 0x07c4acddu) >> 27];
 #define CLZL(x) \
+	if (!(x)) return 64; \
 	x |= x >> 1;  \
 	x |= x >> 2;  \
 	x |= x >> 4;  \

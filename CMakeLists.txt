@@ -4824,6 +4824,13 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "if64 checks=7 ok=5")
 
+        add_test(NAME "builtins/clz-ctz-zero"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/builtins/clz_ctz_zero.c")
+        set_tests_properties("builtins/clz-ctz-zero" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "clzctz0 clz=32 clzll=64 ctz=32 ctzll=64 fails=0")
+
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
