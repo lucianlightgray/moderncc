@@ -2792,6 +2792,17 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) { MCC_TRACE(
 		struct _debug_info *next = cur->next;
 
 		if (s1->dwarf) { MCC_TRACE("br\n");
+			int dbg_has_kids = (cur->n_sym > 0 || cur->child != NULL);
+			dwarf_data1(dwarf_info_section,
+									dbg_has_kids ? DWARF_ABBREV_LEXICAL_BLOCK
+															 : DWARF_ABBREV_LEXICAL_EMPTY_BLOCK);
+			dwarf_reloc_addr(dwarf_info_section, section_sym, R_DATA_PTR,
+										 func_ind + cur->start);
+#if MCC_PTR_SIZE == 4
+			dwarf_data4(dwarf_info_section, cur->end - cur->start);
+#else
+			dwarf_data8(dwarf_info_section, cur->end - cur->start);
+#endif
 			for (int i = cur->n_sym - 1; i >= 0; i--) { MCC_TRACE("br\n");
 				struct debug_sym *s = &cur->sym[i];
 
@@ -2833,18 +2844,8 @@ static void mcc_debug_finish(MCCState *s1, struct _debug_info *cur) { MCC_TRACE(
 				mcc_free(s->str);
 			}
 			mcc_free(cur->sym);
-			dwarf_data1(dwarf_info_section,
-									cur->child ? DWARF_ABBREV_LEXICAL_BLOCK
-														 : DWARF_ABBREV_LEXICAL_EMPTY_BLOCK);
-			dwarf_reloc_addr(dwarf_info_section, section_sym, R_DATA_PTR,
-										 func_ind + cur->start);
-#if MCC_PTR_SIZE == 4
-			dwarf_data4(dwarf_info_section, cur->end - cur->start);
-#else
-			dwarf_data8(dwarf_info_section, cur->end - cur->start);
-#endif
 			mcc_debug_finish(s1, cur->child);
-			if (cur->child)
+			if (dbg_has_kids)
 				{ MCC_TRACE("br\n"); dwarf_data1(dwarf_info_section, 0); }
 		} else { MCC_TRACE("br\n");
 			for (int i = 0; i < cur->n_sym; i++) { MCC_TRACE("br\n");

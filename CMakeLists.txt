@@ -4933,6 +4933,18 @@ if(MCC_BUILD_TESTS)
                     -o "${CMAKE_BINARY_DIR}/tlsaddr.o")
         set_tests_properties("diag/tls-addr-static-init" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
+        # T-mac-30103: shadowed locals must land in nested DW_TAG_lexical_block
+        # DIEs (inner block inside outer), not one level too shallow. Needs
+        # dwarfdump to read the DIE tree; skips (77) where it is absent.
+        add_test(NAME "debug/lexblock-nest"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/debug/lexblock-nest.sh"
+                    ${_mcc_exe}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/debug/lexblock_nest.c"
+                    "${CMAKE_BINARY_DIR}/lexblock-nest.o")
+        set_tests_properties("debug/lexblock-nest" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "nested")
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"
