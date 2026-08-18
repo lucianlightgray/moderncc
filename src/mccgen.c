@@ -7692,6 +7692,9 @@ do_decl:
 								(type1.t & VT_STORAGE))
 							{ MCC_TRACE("br\n"); mcc_error("invalid type for '%s'",
 												get_tok_str(v, NULL)); }
+						if (ad1.storage_class & 3)
+							{ MCC_TRACE("br\n"); mcc_error("storage class specified for struct member '%s'",
+												get_tok_str(v, NULL)); }
 						if (type1.t & VT_VLA)
 							{ MCC_TRACE("br\n"); saw_vla = 1; }
 						if (struct_has_flexible_member(&type1))

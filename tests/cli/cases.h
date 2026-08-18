@@ -448,6 +448,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'same=%s diff=%s\\n' $(grep -c 'overriding' {W}/ot.same.err) $(grep -c 'overriding' {W}/ot.diff.err)",
 		 "same=0 diff=1\n"},
 
+		{"struct_member_no_storage_class", "",
+		 "printf 'struct S { register int x; };\\n' > {W}/sm_bad.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/sm_bad.c -o {W}/sm_bad.o 2>{W}/sm_bad.err; "
+		 "printf 'struct S { int x; };\\n' > {W}/sm_ok.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/sm_ok.c -o {W}/sm_ok.o 2>{W}/sm_ok.err; "
+		 "printf 'bad=%s ok=%s\\n' $(grep -c 'storage class' {W}/sm_bad.err) $(grep -c 'error' {W}/sm_ok.err)",
+		 "bad=1 ok=0\n"},
+
 		{"dM_dump_macros", "",
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},
