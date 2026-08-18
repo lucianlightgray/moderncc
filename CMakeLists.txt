@@ -4970,6 +4970,20 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fam/static_init.c")
         set_tests_properties("fam/static-init-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
+
+        # T-mac-30150: typeof_unqual is C23-only, not a GNU extension — accepted
+        # in C23, rejected as a keyword in a pre-C23 GNU dialect (the bite).
+        add_test(NAME "typeof/unqual-c23"
+            COMMAND ${_mcc_exe} -std=c23 -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/typeof/unqual_c23.c")
+        set_tests_properties("typeof/unqual-c23" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME "typeof/unqual-pre-c23-rejected"
+            COMMAND ${_mcc_exe} -std=gnu17 -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/typeof/unqual_pre_c23.c"
+                    -o "${CMAKE_BINARY_DIR}/tuq-pre.o")
+        set_tests_properties("typeof/unqual-pre-c23-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"

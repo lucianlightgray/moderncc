@@ -9277,14 +9277,21 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			}
 			continue;
 		}
-		case TOK_TYPEOF1:
 		case TOK_TYPEOF_UNQUAL:
+			/* T-mac-30150: typeof_unqual is C23-only and, unlike typeof, is NOT
+			 * a GNU extension in earlier language modes — gate on the C version
+			 * regardless of strict-ansi. */
+			if (mcc_state->cversion < 202311 || mcc_state->noasm)
+				{ MCC_TRACE("br\n"); goto the_end; }
+			goto typeof_ok;
+		case TOK_TYPEOF1:
 			if ((mcc_state->std_strict_ansi && mcc_state->cversion < 202311) ||
 					mcc_state->noasm)
 				{ MCC_TRACE("br\n"); goto the_end; }
 			FALLTHROUGH;
 		case TOK_TYPEOF2:
 		case TOK_TYPEOF3:
+		typeof_ok:
 			u = tok;
 			next();
 			parse_expr_type(&type1);
