@@ -7661,6 +7661,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(ftoi-fold-saturate-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/sizeof_long_double.c")
+        add_test(NAME sizeof-long-double-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/sizeof_long_double.c
+            --out ${CMAKE_BINARY_DIR}/sizeof_long_double${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(sizeof-long-double-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(MCC_CPU STREQUAL "arm64"
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/asm_align_p2_arm64.S")
         add_test(NAME asm-align-p2-arm64-run COMMAND "$<TARGET_FILE:mccharness>" mccexe

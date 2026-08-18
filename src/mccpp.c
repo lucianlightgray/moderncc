@@ -5825,7 +5825,11 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	cstr_printf(cs, "#define __SIZEOF_FLOAT__ 4\n");
 	cstr_printf(cs, "#define __SIZEOF_FLOAT16__ 2\n");
 	cstr_printf(cs, "#define __SIZEOF_DOUBLE__ 8\n");
+#ifdef MCC_USING_DOUBLE_FOR_LDOUBLE
+	cstr_printf(cs, "#define __SIZEOF_LONG_DOUBLE__ %d\n", 8);
+#else
 	cstr_printf(cs, "#define __SIZEOF_LONG_DOUBLE__ %d\n", MCC_LDOUBLE_SIZE);
+#endif
 	cstr_printf(cs, "#define __SIZEOF_SIZE_T__ %d\n", MCC_PTR_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_PTRDIFF_T__ %d\n", MCC_PTR_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_WCHAR_T__ %d\n", (int)sizeof(nwchar_t));
