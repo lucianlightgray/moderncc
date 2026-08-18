@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30185 [S] Fix: [MED] `deprecated` not honored on struct/union/enum tags — SLICE: store ad.a.deprecated on the tag sym at definition, warn at tag use (struct_decl_nested). RESIDUAL: enumerators.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:00Z
+      REF: DETAILS.md#t-mac-30185-deprecated-tag | DEPS: —
+
 
 
 
@@ -272,9 +276,6 @@
 - [ ] T-mac-30183 [S] Fix: [MED, missing diagnostic] `nonnull`/`returns_nonnull`/`sentinel` ignored — no token/case → default: "attribute ignored" (`mccgen.c:6698`; -Wnonnull also "unsupported option"). `nonnull(1,2); f(0,0)` → mcc no warning, clang/gcc `null passed to a callee that requires a non-null argument`. `sentinel; g(1,"a","b")` → mcc silent, clang/gcc `missing sentinel`. Fix: record nonnull arg-mask + sentinel, warn at the call site on literal-NULL / missing-terminator.
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-nonnull-sentinel | DEPS: —
-- [ ] T-mac-30185 [S] Fix: [MED, missing diagnostic] `deprecated` not honored on struct/union/enum tags or enumerators — the use-site check (`mccgen.c:14204-14206`) fires only on ordinary-identifier lookup (fns/objects/typedefs), not tag/enumerator uses. `enum E{A [[deprecated]]} __attribute__((deprecated)); struct S{} __attribute__((deprecated)); enum E e=A; struct S s;` → mcc warns on NONE; clang/gcc warn on all. Also deprecated("msg") text not echoed. (fns/vars/typedefs ARE honored.) Fix: extend deprecated check to tag+enumerator uses + echo the message.
-      OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
-      REF: INVESTIGATIONS.md#r29-deprecated-tags | DEPS: —
 - [ ] T-mac-30189 [S] Fix: [LOW cluster] UB-fold/optimization/cosmetic — (1) UB shift-count>=width const-folds differently across all three (`mccgen.c:3661,3746-3753` masks; mcc self-consistent w/ its own runtime — pure UB); (2) `alloc_size` not fed into __builtin_object_size (→SIZE_MAX "unknown", safe; _FORTIFY gets no allocator info); (3) `pure`/`const` fn attrs don't enable call CSE at -O2 (`mccgen.c:6553-6558` no-op; correct results); (4) misplaced attribute (warn_unused_result on a var) → generic "ignored" vs oracles' specific "only applies to functions"; (5) no -Wimplicit-fallthrough warning class ([[fallthrough]] accepted, nothing to suppress); (6) tentative incomplete-array "assumed one element" warning -Wall-gated + mislocated to TU-end/EOF instead of the decl line (`mccgen.c:1138`).
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-low-cluster | DEPS: —
