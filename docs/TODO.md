@@ -186,7 +186,7 @@
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
       REF: INVESTIGATIONS.md#r35-dylib-flatns | DEPS: —
 - [ ] T-mac-30226 [S] Fix: [HIGH, silent wrong value] generic/`stdc_*` bit builtins miscompute on `_BitInt` operands — `runtime/include/mccdefs.h`: (a) `__mcc_gu_t` (`:1213-1218`) falls back to 64-bit ull (mcc rejects __int128) → `_BitInt(N>64)` truncated (`_BitInt(100) 1<<70` → clzg=128 popcountg=0 vs gcc clzg=29 popcountg=1); (b) `__mcc_gprec(x)` (`:1319`) uses 8*sizeof (storage width) not precision N → `_BitInt(40)` gives clzg=30 vs gcc/clang 6. Silent (accepts operand, plausible-but-wrong). C23 §7.18. Standard integer types bit-identical to gcc-16. Fix: derive width/precision from the actual _BitInt type; wide-int path for N>64.
-      OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: e7a57695 | TS: 2026-08-18T21:18Z
       REF: INVESTIGATIONS.md#r35-bitint-bitbuiltins | DEPS: —
 - [ ] T-mac-30229 [S] Fix: [MED, dylib] no export control + `-bundle` unsupported — a dylib exports ALL functions regardless of visibility("hidden")/-fvisibility=hidden (nm -gU unchanged; extends T-mac-30157), AND `-exported_symbols_list` is rejected → no mechanism to control the export set. `-bundle` (MH_BUNDLE, plugins) → `error: invalid option`. Fix: honor visibility in the export trie (ties 30157), accept -exported_symbols_list, support -bundle.
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
