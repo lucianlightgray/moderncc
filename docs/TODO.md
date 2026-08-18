@@ -81,7 +81,7 @@
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-nodiscard | DEPS: —
 - [ ] T-mac-30182 [S] Fix: [MED, false-positive diagnostics] `unused`/`[[maybe_unused]]` does not suppress -Wunused — parsed to a bare break, records nothing (`mccgen.c:6531-6541`; no a.unused bit). `int b __attribute__((unused));`, `[[maybe_unused]] int c;`, `static void m() __attribute__((unused))` STILL warn unused-variable/function — the exact diagnostics the annotation should silence. clang/gcc suppress all. Fix: add an a.unused bit + suppress unused-* for annotated entities.
-      OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 673d900d | TS: 2026-08-18T17:00Z
       REF: INVESTIGATIONS.md#r29-unused-attr | DEPS: —
 - [ ] T-mac-30183 [S] Fix: [MED, missing diagnostic] `nonnull`/`returns_nonnull`/`sentinel` ignored — no token/case → default: "attribute ignored" (`mccgen.c:6698`; -Wnonnull also "unsupported option"). `nonnull(1,2); f(0,0)` → mcc no warning, clang/gcc `null passed to a callee that requires a non-null argument`. `sentinel; g(1,"a","b")` → mcc silent, clang/gcc `missing sentinel`. Fix: record nonnull arg-mask + sentinel, warn at the call site on literal-NULL / missing-terminator.
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
