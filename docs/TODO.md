@@ -108,7 +108,7 @@
       OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
       REF: INVESTIGATIONS.md#r25-c23-cl-storage | DEPS: —
 - [ ] T-mac-30146 [S] Fix: [MED, accepts-invalid] surrogate/out-of-range UCN accepted silently in wide strings & char constants under C23 — `\uD800`/`\U00110000` in `u""`/`U""`/`L""` + `u''`/`U''`/`L''` accepted with no diag under -std=c23, emits surrogate verbatim. Version gate `mccpp.c:3193` disables the check for cversion>=202311; wide path (`parse_escape_string`→`cstr_wccat` `:3326`) has no UCN validation (only `unicode_to_utf8 :301-309` on the plain/u8 path via cstr_u8cat). clang `error: invalid universal character`; gcc `error: not a valid universal character`. Plain/u8 path correctly rejects; c11/c17 warn/error. C23 6.4.3 (still a constraint violation). Fix: validate code point in the wide path + don't disable for C23.
-      OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: bf351ae9 | TS: 2026-08-18T13:20Z
       REF: INVESTIGATIONS.md#r25-ucn-wide | DEPS: —
 - [ ] T-mac-30147 [S] Fix: [MED, diagnostic] 4-byte wide-string array init ignores element signedness — `int a[]=U"a";`/`unsigned b[]=L"a";` accepted; `mccgen.c:17180` (TOK_LSTR checks VT_INT only) + `:17183` (TOK_U32STR && VT_BTYPE==VT_INT, no VT_UNSIGNED) drop the signedness requirement (unlike the correct TOK_U16STR arm requiring VT_SHORT&&VT_UNSIGNED). char32_t=unsigned int, wchar_t=signed int → cross-signedness. clang/gcc error "incompatible wide string literal". No miscompile (int/unsigned same repr). Fix: require matching signedness in the 4-byte L/U32 init arms.
       OWNER: — | STATE: OPEN | SHA: 4ab799ba | TS: 2026-08-18T11:00Z
