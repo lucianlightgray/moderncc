@@ -18241,14 +18241,14 @@ static void free_inline_functions(MCCState *s) {
 }
 
 static void do_Static_assert(void) {
-	int c;
+	int64_t c;
 	const char *msg;
 
 	if (mcc_state->cversion < 201112)
 		{ MCC_TRACE("br\n"); mcc_pedantic("ISO C does not support '_Static_assert' before C11"); }
 	next();
 	skip('(');
-	c = expr_const();
+	c = expr_const64_pub();
 	msg = "_Static_assert fail";
 	if (tok == ',') { MCC_TRACE("br\n");
 		next();
