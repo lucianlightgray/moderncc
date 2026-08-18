@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30215 [S] Fix: [MED] `-Wswitch` misses "case value not in enumerated type" — add the mirror check (case value outside the enum members) alongside the existing enum-not-handled loop
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:08Z
-      REF: DETAILS.md#t-mac-30215-wswitch-case-not-in-enum | DEPS: —
 
 
 
