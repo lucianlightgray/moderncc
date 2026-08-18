@@ -5032,6 +5032,14 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/pp/loc_macros.c")
         set_tests_properties("pp/loc-macros" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
+
+        # T-mac-30156: <stdckdint.h> must work on every target (no __int128 dep);
+        # pre-fix the #include itself failed with '__int128 not supported'.
+        add_test(NAME "ckdint/ckd-basic"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/ckdint/ckd_basic.c")
+        set_tests_properties("ckdint/ckd-basic" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"
