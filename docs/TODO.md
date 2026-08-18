@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30062   | 2026-08-18T01:19Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30063   | 2026-08-18T02:00Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10398   | 2026-08-17T22:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-17T21:30Z |
 
@@ -72,6 +72,9 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-mac-30062 [S] Fix: bugs surfaced by the self-hosted cross-oracle conformance run over gcc.c-torture/execute (static 1587/1601=99.13% vs clang; 8/9 DIFFs were clang-outliers where mcc==gcc-16) — [MED] real miscompile `pr85156`: `__builtin_expect(x?y!=0:0, z++)` under noipa + `asm volatile("":"+m"(x),"+m"(y))` → mcc aborts (rc134), gcc-16+clang pass (needs minimization; plain `__builtin_expect(0,z++)` side-effect drop is standard); [MED] NOBUILD `pr40657` inline-asm empty clobber `"":"=m"(x)::` → "string constant expected" (adjacent T-mac-30033); [MED] NOBUILD `pr70460` `&&label` in a static initializer rejected (GNU ext gcc/clang accept); [MED] NOBUILD `980526-1`/`stdarg-4` unresolved `_lbl`/`_f` (labels-as-values/static-fn addr). NB `string-opt-18` `_mempcpy` = KNOWN T-mac-30047. Also: embed-JIT bakes only ~38% (992/1601 NOT_BAKED) + run-JIT engine refuses ~99% on the mac build (T-lin-10029/T-win-50021 family); JIT introduced ZERO miscompiles (DIFFER set == static). Repro tooling: tools/xoracle.py + tools/jitconform.py, corpus ~/Projects/gcc, oracles gcc-16 + clang
+      OWNER: — | STATE: OPEN | SHA: e26f22cb | TS: 2026-08-18T02:00Z
+      REF: INVESTIGATIONS.md#cross-oracle-conformance-run-2026-08-18--self-hosted-mcc-over-gccc-tortureexecute-judged-by-clang--gcc-16 | DEPS: —
 - [ ] T-mac-30058 [S] Investigate: integrated-assembler directive coverage (can't consume GCC/clang `-S`; expr-eval/string/int/.set/.globl/.rept ROBUST) — [HIGH] `.comm`/`.lcomm` unimplemented (no token `mcctok.h:570`, falls to instr encoder `mccasm.c:1136`; GCC's tentative-global emission); [HIGH] `.zero` unimplemented (clang `-S` emits it for BSS → can't reassemble); [MED-HIGH] `.equ`/`.equiv` missing alias (machinery exists via `.set`/infix `=`); [MED-HIGH] `.align`/`.p2align` ignore max-skip + abort on GCC `.p2align N,,M` (`:477`); [MED] `.if`/`.else`/`.endif` absent; [MED] `.local`; [LOW] unsupported dir misreported as missing-instruction (`:1153` vs `:948`); [LOW] `.size` false "ignoring" warning then applies it (`:756`)
       OWNER: — | STATE: OPEN | SHA: d55b1d64 | TS: 2026-08-18T01:19Z
       REF: INVESTIGATIONS.md#r11-asm-directives | DEPS: —
