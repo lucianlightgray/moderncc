@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T21:58Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T21:56Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T21:44Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T21:59Z |
 
 ## Contracts — blocking, highest priority
 
@@ -122,9 +122,6 @@
 - [ ] T-win-50026 [S] `rir/rec-miss` + `rir-nofb-probe`: the empty-subject floors fire on win — provision or gate honestly
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 8df84468 | TS: 2026-08-17T02:31Z | HEARTBEAT INTENTIONALLY STALE — VLA fix ATTEMPTED+REVERTED; cell still red (pre-existing). TTL-eligible for any session to resume.
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
-- [ ] T-mac-30126 [S] Fix: [MED, accepts-invalid] `u8` character constant accepts a non-ASCII/multibyte char (`u8'é'`/`u8'ab'`) with a spec-violating value (C23 6.4.4.4: single UTF-8 code unit; gcc/clang error). Fix: at the u8 char path (`mccpp.c`), error when n>1 code units.
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: c8083b21 | TS: 2026-08-18T21:53Z
-      REF: INVESTIGATIONS.md#r22-u8-char | DEPS: —
 
 ## Open — claimable
 - [ ] T-mac-30251 [S] Fix: [treegate red] `ci/gate-contract` — 3 orphaned known-positives that no gate-contract row claims: `bitint/scast-signext-known-positive` (T-mac-30063), `fold/int64-float-known-positive` (T-mac-30082), `switch/jumptable-falloff-known-positive` (T-mac-30099). Base cells + known-positives are `if(NOT CMAKE_CROSSCOMPILING)`-gated → absent on cross, so naive rows break `cmake-cross`; fix needs `else() mcc_skip_test` echo-stubs + must-run.txt entries + real intrinsic floors (ratchets maxed). NOT mac-only-verifiable (needs a cmake-cross gate-contract run). Found landing T-mac-30169.
