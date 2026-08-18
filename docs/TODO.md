@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30187 [S] Fix: [MED] `extern int x=5;` no warning — warn "initialized and declared extern" when has_init && VT_EXTERN (decl_initializer_alloc)
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:48Z
-      REF: DETAILS.md#t-mac-30187-extern-initializer | DEPS: —
 
 
 
