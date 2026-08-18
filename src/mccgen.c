@@ -19015,6 +19015,9 @@ static int decl(int l) {
 							{ MCC_TRACE("br\n"); r |= VT_CONST; }
 						else
 							{ MCC_TRACE("br\n"); r |= VT_LOCAL; }
+						if (has_init && (type.t & VT_EXTERN) && l == VT_CONST)
+							{ MCC_TRACE("br\n"); mcc_warning("'%s' initialized and declared 'extern'",
+												get_tok_str(v, NULL)); }
 						type.t &= ~VT_EXTERN;
 						if (has_init)
 							{ MCC_TRACE("br\n"); next(); }

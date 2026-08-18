@@ -5186,6 +5186,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/param-tag-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30187: `extern int x = 5;` warns (extern + initializer); plain
+        # extern / ordinary / static definitions stay clean.
+        add_test(NAME "diag/extern-initializer" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/extern_initializer.c"
+                    -o "${CMAKE_BINARY_DIR}/extern-init.o")
+        set_tests_properties("diag/extern-initializer" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "initialized and declared 'extern'")
+        add_test(NAME "diag/extern-ok" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/extern_ok.c")
+        set_tests_properties("diag/extern-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"
