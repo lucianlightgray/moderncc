@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30251   | 2026-08-18T22:52Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10400   | 2026-08-18T14:20Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10405   | 2026-08-18T14:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T14:01Z |
 
 ## Contracts — blocking, highest priority
@@ -53,9 +53,6 @@
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
 
-- [ ] T-lin-10399 [S] Research: strategies to run AST/RIR slices MAXIMALLY on GPU for a self-hosted mcc-JIT — coverage is the sole objective (wall-clock irrelevant); publish gap taxonomy + ranked strategies + code loci, then taskify per-strategy follow-ups
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:20Z
-      REF: DETAILS.md#t-lin-10398-selfhost-jit-gpu-coverage | DEPS: — | NOTE: 2 research agents dispatched at mint (§6); findings append to the DETAILS anchor
 
 
 
@@ -91,6 +88,21 @@
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
 
 ## Open — claimable
+- [ ] T-lin-10400 [S] Build a "% of slices executed on GPU" (device-execution-fraction) metric on the `ast_ladder_gpu_report` dispatches/rungs signal + slicerun/gpuconform funnel — the number T-lin-10398 needs (only lowerability/byte-faithfulness is banked today)
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
+      REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
+- [ ] T-lin-10401 [S] GPU-coverage strategy 1 [LOW risk]: route the CPU-only ladder sub-paths (const `n==0`, corner-sweep, observed-tuples) through `ast_ladder_gpu_hook` + relax the `n<1` refusal (mccast.c:18700) — extra dispatches of already-emittable trees
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
+      REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
+- [ ] T-lin-10402 [S] GPU-coverage strategy 2 [MED risk]: lift the oracle float refusal (mccast.c:18706/18713) guarded on `mcc_gpu_f64()` — the emitter already has f64; unlocks the FP slice category
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
+      REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
+- [ ] T-lin-10403 [S] GPU-coverage strategy 3 [MED risk, census-driven]: rank refused expression node kinds via `mcc_gpu_refuse_kind` on a real self-host, add the top paired `case` arms to `msl_expr`/`spv_expr` (each with a slicerun/spvgate conformance case)
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
+      REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
+- [ ] T-lin-10404 [S] GPU-coverage strategy 4 [HIGH risk, HIGHEST ceiling]: compile the frame/loop/store executor (mccslice.h, MCC_SLICE_GPU) into the JIT TU + add a frame-equivalence oracle calling `mcc_slice_run_frame_gpu` — unlocks loops/stores/if-statements (~90-95% ceiling)
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
+      REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
 - [ ] T-lin-10398 [P] Self-hosted mcc-JIT: measure + attribute CPU-vs-GPU slice coverage and enumerate the gaps on EACH machine's GPU stack (coverage is the only objective; wall-clock irrelevant). Fans into /lin (Vulkan RTX 5070 Ti + Radeon 610M), /mac (Metal/MSL Apple GPU), /win (Vulkan RTX 2060). Each child records a coverage number + gap list under a per-platform DETAILS sub-anchor; parent closes when all three DONE.
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:20Z
       REF: DETAILS.md#t-lin-10398-selfhost-jit-gpu-coverage | DEPS: —
