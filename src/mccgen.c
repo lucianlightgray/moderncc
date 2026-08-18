@@ -18510,6 +18510,10 @@ static void decl_constexpr(CType *type, int v) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mcc_error("'constexpr' for this type is not supported"); }
 	if (!is_integer_btype(bt) && bt != VT_FLOAT && bt != VT_DOUBLE)
 		{ MCC_TRACE("br\n"); mcc_error("'constexpr' requires an object of arithmetic type"); }
+	if (dt.t & VT_ATOMIC_BIT)
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' for an object of atomic type is not permitted"); }
+	if (dt.t & VT_VOLATILE)
+		{ MCC_TRACE("br\n"); mcc_error("'constexpr' for an object of volatile-qualified type is not permitted"); }
 
 	if (tok == '{')
 		{ MCC_TRACE("br\n"); next(); braced = 1; }

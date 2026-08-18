@@ -5187,6 +5187,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("type/vm-return-rejected" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
+        # T-mac-30247 (sub-items 4/5): a constexpr object may not have a
+        # volatile-qualified or _Atomic type (C23 6.7.1); both are rejected.
+        add_test(NAME "type/constexpr-volatile-rejected" COMMAND ${_mcc_exe} -std=c23 -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/constexpr_volatile.c"
+                    -o "${CMAKE_BINARY_DIR}/constexpr-volatile.o")
+        set_tests_properties("type/constexpr-volatile-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "type/constexpr-atomic-rejected" COMMAND ${_mcc_exe} -std=c23 -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/constexpr_atomic.c"
+                    -o "${CMAKE_BINARY_DIR}/constexpr-atomic.o")
+        set_tests_properties("type/constexpr-atomic-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
         # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
         # unreferenced label; goto'd / address-taken labels stay clean.
         add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c
