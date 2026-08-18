@@ -1207,6 +1207,7 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->warn_excess_initializers = WARN_ON;
 	s->warn_attributes = WARN_ON;
 	s->warn_return_type = WARN_ON;
+	s->warn_cpp = WARN_ON;
 	s->warn_shift_count_negative = WARN_ON;
 	s->warn_shift_count_overflow = WARN_ON;
 	s->warn_undefined_internal = WARN_ON;
@@ -2410,6 +2411,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_unused_variable), WD_ALL, "unused-variable"},
 		{offsetof(MCCState, warn_unused_parameter), 0, "unused-parameter"},
 		{offsetof(MCCState, warn_unused_function), WD_ALL, "unused-function"},
+		{offsetof(MCCState, warn_cpp), WD_ALL, "cpp"},
 		{offsetof(MCCState, warn_unused_label), WD_ALL, "unused-label"},
 		{offsetof(MCCState, warn_unknown_pragmas), WD_ALL, "unknown-pragmas"},
 		{offsetof(MCCState, warn_pedantic), 0, "pedantic"},

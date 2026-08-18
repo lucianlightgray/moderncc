@@ -5156,6 +5156,16 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "diagnostic message here")
 
+        # T-mac-30220: #warning is under the -Wcpp category -- -Wno-cpp
+        # suppresses it, -Werror=cpp promotes it to an error.
+        add_test(NAME "pp/warning-cpp-suppressed" COMMAND ${_mcc_exe} -Wno-cpp -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/warning_cpp_suppressed.c")
+        set_tests_properties("pp/warning-cpp-suppressed" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME "pp/warning-cpp-error" COMMAND ${_mcc_exe} -Werror=cpp -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/warning_cpp_error.c"
+                    -o "${CMAKE_BINARY_DIR}/warning-cpp-error.o")
+        set_tests_properties("pp/warning-cpp-error" PROPERTIES FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
         # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
         # unreferenced label; goto'd / address-taken labels stay clean.
         add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c

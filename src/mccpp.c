@@ -3142,7 +3142,7 @@ redo:
 		if (tok == TOK_ERROR)
 			{ MCC_TRACE("br\n"); mcc_error("#error %s", buf); }
 		else
-			{ MCC_TRACE("br\n"); mcc_warning("#warning %s", buf); }
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_cpp)("#warning %s", buf); }
 		next_nomacro();
 		break;
 	}
