@@ -1079,7 +1079,7 @@ ST_FUNC int mccgen_compile(MCCState *s1) { MCC_TRACE("enter\n");
 		Sym *fs;
 		for (fs = global_stack; fs; fs = fs->prev) { MCC_TRACE("br\n");
 			ElfSym *es;
-			if ((fs->type.t & VT_BTYPE) != VT_FUNC || !(fs->type.t & VT_STATIC) || (fs->type.t & VT_INLINE) || fs->a.used || fs->v < TOK_IDENT || fs->v >= SYM_FIRST_ANOM)
+			if ((fs->type.t & VT_BTYPE) != VT_FUNC || !(fs->type.t & VT_STATIC) || (fs->type.t & VT_INLINE) || fs->a.used || fs->a.unused || fs->v < TOK_IDENT || fs->v >= SYM_FIRST_ANOM)
 				{ MCC_TRACE("br\n"); continue; }
 			es = elfsym(fs);
 			if (!es || es->st_shndx == SHN_UNDEF)
@@ -6532,6 +6532,10 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 		case TOK_UNUSED2:
 		case TOK_MAYBE_UNUSED1:
 		case TOK_MAYBE_UNUSED2:
+			/* T-mac-30182: record the attribute so -Wunused-variable /
+			 * -Wunused-function are suppressed for the annotated entity. */
+			ad->a.unused = 1;
+			break;
 		case TOK_FALLTHROUGH1:
 		case TOK_FALLTHROUGH2:
 		case TOK_UNSEQUENCED1:
@@ -15560,7 +15564,7 @@ static void prev_scope(struct scope *o, int is_expr) { MCC_TRACE("enter\n");
 	if ((mcc_state->warn_unused_variable & WARN_ON) && !is_expr) { MCC_TRACE("br\n");
 		Sym *sm;
 		for (sm = local_stack; sm && sm != o->lstk; sm = sm->prev) { MCC_TRACE("br\n");
-			if ((sm->r & VT_VALMASK) == VT_LOCAL && !sm->a.used && sm->v >= TOK_IDENT && sm->v < SYM_FIRST_ANOM && !(sm->type.t & VT_TYPEDEF))
+			if ((sm->r & VT_VALMASK) == VT_LOCAL && !sm->a.used && !sm->a.unused && sm->v >= TOK_IDENT && sm->v < SYM_FIRST_ANOM && !(sm->type.t & VT_TYPEDEF))
 				{ MCC_TRACE("br\n"); mcc_warning_c(warn_unused_variable)(
 						"%i:unused variable '%s'",
 						sm->vla_inner_id, get_tok_str(sm->v, NULL)); }

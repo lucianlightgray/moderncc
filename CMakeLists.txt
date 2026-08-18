@@ -5048,6 +5048,17 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/builtins/macos_mem.c")
         set_tests_properties("builtins/macos-mem" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
+
+        # T-mac-30182: unused/maybe_unused suppress -Wunused for the annotated
+        # entity; un-annotated ones must still warn (the bite).
+        add_test(NAME "attr/unused-suppress"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/attr/unused-suppress.sh"
+                    ${_mcc_exe}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/attr/unused_suppress.c"
+                    "${CMAKE_BINARY_DIR}/unused-suppress.o")
+        set_tests_properties("attr/unused-suppress" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "suppression is specific")
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"
