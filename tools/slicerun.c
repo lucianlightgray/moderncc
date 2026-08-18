@@ -1997,6 +1997,77 @@ static AstLocal mk_gmember_idx(AstArena *a, uint64_t sym, int32_t madd,
 	return ld;
 }
 
+/* T-lin-10405 CPU<->GPU TRANSACTION demonstration. The frame ORACLE blocks
+ * COMPARE a CPU reference against the device. A transaction instead CONSUMES the
+ * device result as the program's state: the CPU seeds the live-in slots from
+ * concrete values, dispatches the statement run to the GPU, reads the live-out
+ * slots back, and uses them -- proving a C computation runs on the device and
+ * communicates its result across the boundary in both directions, not merely
+ * that the two agree. Runs { c = a + b; a = c * a; } for a=10, b=7 -> c=17,
+ * a=170. See docs/DETAILS.md#t-lin-10405-cpu-gpu-transaction. */
+static void suite_txn(void) {
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr, "FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+	{
+		AstArena *ta = ast_arena_new();
+		AstLocal bb = ast_node(ta, AST_BasicBlock);
+		MccSliceFrame tf;
+		MccSliceKernel tk;
+		int64_t frame[MCC_SLICE_MAXSLOT], cref[MCC_SLICE_MAXSLOT];
+		int si, slot_a = -1, slot_c = -1;
+		const int64_t IN_A = 10, IN_B = 7;
+		long disp_before = mcc_slice_dispatch_count;
+		ast_add_child(ta, bb,
+									mk_store(ta, -24,
+													 mk_bin(ta, '+', mk_ref(ta, -8, VT_INT),
+																	mk_ref(ta, -16, VT_INT), VT_INT),
+													 VT_INT));
+		ast_add_child(ta, bb,
+									mk_store(ta, -8,
+													 mk_bin(ta, '*', mk_ref(ta, -24, VT_INT),
+																	mk_ref(ta, -8, VT_INT), VT_INT),
+													 VT_INT));
+		CHECK(mcc_slice_frame_from_ast(ta, bb, &tf) == 1, "txn: statement run is frame work");
+		if (mcc_slice_frame_kernel_build(&tf, &tk) != 1) {
+			unsupported("frame kernels", "T-lin-10405 transaction");
+			ast_arena_free(ta);
+			return;
+		}
+		/* CPU seeds live-in: slot -8 = a, -16 = b, -24 = c (written by the run) */
+		for (si = 0; si < tf.nslot; si++) {
+			int64_t v = tf.slot[si] == -8 ? IN_A : tf.slot[si] == -16 ? IN_B : 0;
+			frame[si] = cref[si] = v;
+			if (tf.slot[si] == -8)
+				slot_a = si;
+			if (tf.slot[si] == -24)
+				slot_c = si;
+		}
+		CHECK(mcc_slice_frame_exec_cpu(&tf, cref) == 1, "txn: cpu reference runs the frame");
+		/* THE TRANSACTION: dispatch to the GPU; the live-out overwrites `frame`. */
+		CHECK(mcc_slice_run_frame_gpu(&tf, &tk, frame, 1, NULL, NULL) == MCC_TASK_DONE,
+					"txn: the device runs the frame and returns the live-out");
+		CHECK(mcc_slice_dispatch_count > disp_before, "txn: a GPU dispatch actually happened");
+		CHECK(slot_a >= 0 && slot_c >= 0, "txn: live-in/out slots were located");
+		/* CPU CONSUMES the device-computed live-out. */
+		fprintf(stderr,
+						"[gpu-txn] cpu seeded a=%lld b=%lld -> device computed -> cpu consumed "
+						"c=%lld a=%lld (dispatch #%ld)\n",
+						(long long)IN_A, (long long)IN_B, (long long)frame[slot_c],
+						(long long)frame[slot_a], mcc_slice_dispatch_count);
+		CHECK(frame[slot_c] == IN_A + IN_B, "txn: device-computed c crossed back correctly");
+		CHECK(frame[slot_a] == (IN_A + IN_B) * IN_A, "txn: device-computed a crossed back correctly");
+		CHECK(frame[slot_a] == cref[slot_a] && frame[slot_c] == cref[slot_c],
+					"txn: the consumed device result equals the cpu reference");
+		mcc_slice_kernel_free(&tk);
+		ast_arena_free(ta);
+	}
+}
+
 static void suite_frame(void) {
 	AstArena *a;
 	MccSliceFrame fr;
@@ -10294,7 +10365,7 @@ static int slicerun_main(int argc, char **argv) {
 				"task",  "work",   "cpu",	 "gpu",		"bytes",	"wide64",
 				"f64",	 "ops",		"frame", "mem",		"deref",	"fmt",
 				"fault", "sched",	"ext",	 "rwstore", "arrow",	"effect",
-				"hostimport", "thread", "lost", "quiesce", "f64cross", "route"};
+				"hostimport", "thread", "lost", "quiesce", "f64cross", "route", "txn"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
@@ -10330,6 +10401,8 @@ static int slicerun_main(int argc, char **argv) {
 		suite_route();
 	if (!only || !strcmp(only, "ops"))
 		suite_ops();
+	if (!only || !strcmp(only, "txn"))
+		suite_txn();
 	if (!only || !strcmp(only, "frame"))
 		suite_frame();
 	if (!only || !strcmp(only, "mem"))

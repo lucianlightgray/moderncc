@@ -3956,6 +3956,14 @@ if(MCC_BUILD_TESTS)
                 set_tests_properties("slice/${_sr}" PROPERTIES
                     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
             endforeach()
+            # T-lin-10405: the CPU<->GPU transaction demonstration -- the CPU
+            # seeds a statement run's live-in, the GPU executes it, and the CPU
+            # consumes the live-out (c=17, a=170 for a=10,b=7). Asserts the
+            # consumed device result, proving cross-slice run+communicate.
+            add_test(NAME "slice/txn" COMMAND slicerun txn)
+            set_tests_properties("slice/txn" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "gpu-txn.*cpu consumed c=17 a=170")
             add_test(NAME "slice/effect-known-positive"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
