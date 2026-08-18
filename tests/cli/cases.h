@@ -428,6 +428,12 @@ static const cli_case_t cli_cases[] = {
 		 "grep -c 'variably modified' {W}/cg.err",
 		 "1\n"},
 
+		{"u8_char_single_code_unit", "",
+		 "{MCC} -B{B} -I{I} -c {D}/u8char_ok.c -o {W}/u8ok.o 2>{W}/u8ok.err; "
+		 "{MCC} -B{B} -I{I} -c {D}/u8char_bad.c -o {W}/u8bad.o 2>{W}/u8bad.err; "
+		 "printf 'ok=%s bad=%s\\n' $(grep -c 'error' {W}/u8ok.err) $(grep -c 'error' {W}/u8bad.err)",
+		 "ok=0 bad=1\n"},
+
 		{"dM_dump_macros", "",
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},

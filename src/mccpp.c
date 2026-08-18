@@ -3432,6 +3432,8 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 		n = tokcstr.size / char_size - 1;
 		if (n < 1)
 			{ MCC_TRACE("br\n"); mcc_error("empty character constant"); }
+		if (prefix == '8' && n > 1)
+			{ MCC_TRACE("br\n"); mcc_error("u8 character constant must contain a single UTF-8 code unit"); }
 		if (prefix == 'U') { MCC_TRACE("br\n");
 			int nchars = 0;
 			for (c = i = 0; i < n; ++i) { MCC_TRACE("br\n");
