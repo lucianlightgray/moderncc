@@ -16333,6 +16333,24 @@ again:
 							get_tok_str(ev->v & ~SYM_FIELD, NULL)); }
 			}
 		}
+		if ((mcc_state->warn_switch & WARN_ON) && IS_ENUM(sw->sv.type.t)) { MCC_TRACE("br\n");
+			Sym *ev;
+			int i;
+			for (i = 0; i < sw->n; i++) { MCC_TRACE("br\n");
+				int in_enum = 0;
+				for (ev = sw->sv.type.ref->next; ev; ev = ev->next)
+					{ MCC_TRACE("br\n"); if (ev->enum_val >= sw->p[i]->v1 && ev->enum_val <= sw->p[i]->v2) { MCC_TRACE("br\n");
+						in_enum = 1;
+						break;
+					} }
+				if (!in_enum) { MCC_TRACE("br\n");
+					char buf[60];
+					type_to_str(buf, sizeof buf, &sw->sv.type, NULL);
+					mcc_warning_c(warn_switch)("case value '%lld' not in enumerated type '%s'",
+							(long long)sw->p[i]->v1, buf);
+				}
+			}
+		}
 		if (sw->nocode_wanted)
 			{ MCC_TRACE("br\n"); goto skip_switch; }
 		case_sort(sw);

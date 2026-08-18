@@ -5055,6 +5055,21 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/knr-return-valid" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30215: -Wswitch must warn on a case value not in the enum type;
+        # a switch over only enumerators stays clean (even under -Werror).
+        add_test(NAME "diag/wswitch-case-not-in-enum"
+            COMMAND ${_mcc_exe} -Wswitch -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/wswitch_case_enum.c"
+                    -o "${CMAKE_BINARY_DIR}/wswitch-case.o")
+        set_tests_properties("diag/wswitch-case-not-in-enum" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "case value '99' not in enumerated type")
+        add_test(NAME "diag/wswitch-case-valid"
+            COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/wswitch_case_enum_valid.c")
+        set_tests_properties("diag/wswitch-case-valid" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"
