@@ -75,7 +75,7 @@
 
 ## Open — claimable
 - [ ] T-mac-30133 [S] Fix: [HIGH] `__extension__` fails to silence `-pedantic` for declspecs/declarators/struct-enum-layout/`_Static_assert` → reject-valid under `-pedantic-errors` — declspec parser consumes `__extension__` (`mccgen.c:8955-8958`) but never disables pedantic (only unary/expr `:12848` + init `:17085` do). `-std=c89 -pedantic-errors`: `__extension__ long long g=1;`, `__extension__ enum{A,B,}`, `__extension__ struct{int fam[];}`, `__extension__ int v[n]`, `__extension__ _Static_assert(1,"")` all hard-error (gcc silent). Fix: save+zero warn_pedantic/pedantic_errors at decl-start when `__extension__` seen (`:8955`/`:9443`), restore after the full declaration.
-      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 9cd4fb3c | TS: 2026-08-18T09:30Z
       REF: INVESTIGATIONS.md#r24-extension | DEPS: —
 - [ ] T-mac-30134 [S] Fix: [MED] arm64 local `register T v asm("name")` silently drops an unrecognized register name (no diagnostic, binding lost) — `mccgen.c:17674` `if(reg>=0 && reg<MCC_NB_REGS) r=...;` has no else; arm64 table (`arm64-asm.c:230-244`) knows only x0-x30, v/d/s/h/b 0-7, so d8-d15/v8-v31/sp/wN/rN silently ignored → `register double v asm("d10")` lands in d0. Fix: error "invalid register name" on parse-fail/out-of-range. ALSO refine T-mac-30033: the x19-x30 physical→codegen numbering collision manifests through this declarator path too (`:17673-17675` feeds physical num into VT_VALMASK) — apply arm64_asm_treg translation at `:17673`. (Global reg-vars rejected `:18588-18590`, matches clang, no task.)
       OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
