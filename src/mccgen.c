@@ -16909,6 +16909,9 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 		if ((vtop->r & VT_SYM) && bt != VT_PTR && (bt != (MCC_PTR_SIZE == 8 ? VT_LLONG : VT_INT) || (type->t & VT_BITFIELD)) && !((vtop->r & VT_CONST) && vtop->sym->v >= SYM_FIRST_ANOM))
 			{ MCC_TRACE("br\n"); mcc_error("initializer element is not computable at load time"); }
 
+		if ((vtop->r & VT_SYM) && vtop->sym && (vtop->sym->type.t & VT_TLS))
+			{ MCC_TRACE("br\n"); mcc_error("initializer element is not a compile-time constant"); }
+
 		if (NODATA_WANTED) { MCC_TRACE("br\n");
 			vtop--;
 			return;

@@ -4856,6 +4856,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/excess-string-init-nowarn" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        add_test(NAME "diag/tls-addr-static-init"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/tls_addr_static_init.c"
+                    -o "${CMAKE_BINARY_DIR}/tlsaddr.o")
+        set_tests_properties("diag/tls-addr-static-init" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "diag/global-addr-static-init"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"
+                    -o "${CMAKE_BINARY_DIR}/gaddr.o")
+        set_tests_properties("diag/global-addr-static-init" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         if(UNIX)
             add_test(NAME "inline/used-static-inline"
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/inline/used-emit.sh"
