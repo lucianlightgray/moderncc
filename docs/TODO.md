@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30251   | 2026-08-18T22:52Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10405   | 2026-08-18T15:55Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10405   | 2026-08-18T16:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T14:01Z |
 
 ## Contracts — blocking, highest priority
@@ -52,8 +52,8 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30185 [S] Fix: [MED] `deprecated` not honored on struct/union/enum tags — SLICE: store ad.a.deprecated on the tag sym at definition, warn at tag use (struct_decl_nested). RESIDUAL: enumerators.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:00Z
+- [ ] T-mac-30185 [S] Fix: [MED] deprecated on tags — SLICE DONE (4f686892): leading-attr struct/union/enum tags warn on use (DETAILS#t-mac-30185-deprecated-tag). TTL-resumable. RESIDUAL: enumerators, typedef-name uses, trailing-attr form.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 4f686892 | TS: 2026-08-18T16:00Z
       REF: DETAILS.md#t-mac-30185-deprecated-tag | DEPS: —
 
 
