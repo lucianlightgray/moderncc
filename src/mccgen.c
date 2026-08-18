@@ -6373,7 +6373,8 @@ static int in_func_params;
 
 static int attr_ignore_silently(int t) { MCC_TRACE("enter\n");
 	static const char *const hints[] = {
-		"hot", "cold", "flatten", "no_reorder", "no_stack_protector", "no_icf"
+		"hot", "cold", "flatten", "no_reorder", "no_stack_protector", "no_icf",
+		"warn_unused_result", "nonnull", "returns_nonnull", "sentinel"
 	};
 	const char *n = get_tok_str(t, NULL);
 	char buf[32];

@@ -7551,6 +7551,12 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(has-builtin-name-recognized PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/semantic_attrs_accepted.c")
+        add_test(NAME semantic-attrs-accepted COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/semantic_attrs_accepted.c")
+        set_tests_properties(semantic-attrs-accepted PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/codegen_hint_attrs.c")
         add_test(NAME codegen-hint-attrs COMMAND ${_mcc_exe} -Wall -Werror -run
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/codegen_hint_attrs.c")
