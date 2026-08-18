@@ -9054,6 +9054,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(headers-unreachable-c23 PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "headers" SKIP_RETURN_CODE 77
             TIMEOUT 60)
+
+        add_test(NAME diag.return-type-gating
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/return-type-gating.sh"
+                    "$<TARGET_FILE:mcc>"
+                    "${CMAKE_BINARY_DIR}/diag-return-type-gating-work")
+        set_tests_properties(diag.return-type-gating PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "diagnostics" SKIP_RETURN_CODE 77
+            TIMEOUT 60)
     endif()
 
     if(UNIX)

@@ -15059,7 +15059,7 @@ static void check_func_return(void) { MCC_TRACE("enter\n");
 		vpushi(0);
 		gfunc_return(&func_vt);
 	} else { MCC_TRACE("br\n");
-		mcc_warning("function might return no value: '%s'", funcname);
+		mcc_warning_c(warn_return_type)("function might return no value: '%s'", funcname);
 	}
 }
 
