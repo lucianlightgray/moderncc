@@ -281,7 +281,7 @@
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-ctor-priority | DEPS: —
 - [ ] T-mac-30159 [S] Fix: [MED] `#pragma GCC diagnostic push/pop/ignored/error` is a no-op — no handler in `pragma_parse` (`mccpp.c:2601`), falls to catch-all `else` (`:2807`) warn-as-unknown. `#pragma GCC diagnostic ignored "-Wsign-compare"` does NOT suppress + `... error "-Wunused-variable"` does NOT escalate (clang/gcc honor push/pop regions). Widely used to locally silence a warning. Fix: push/pop stack of per-warning overrides keyed off the -W name.
-      OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 75fa28a3 | TS: 2026-08-18T22:10Z
       REF: INVESTIGATIONS.md#r27-pragma-diagnostic | DEPS: —
 - [ ] T-mac-30162 [S] Fix: [MED, link correctness] `#pragma weak` ignored → symbol strong, alias dropped — `#pragma weak wsym` leaves wsym STRONG (nm: mcc `D _wsym` vs clang/gcc `weak external`); `#pragma weak alias = target` dropped entirely (no alias symbol). No handler in pragma_parse (`mccpp.c:2807`). Dup-symbol link errors / missing weak-override. Clusters w/ T-mac-30135 weak/weakref attr. Fix: weak pragma handler marking the sym weak (reuse a.weak) + weak-alias to target.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
