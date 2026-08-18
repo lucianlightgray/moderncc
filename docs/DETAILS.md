@@ -51318,3 +51318,51 @@ Default-severity change (warning→error) is SAFE — verified no corpus file ha
 Verification: `diag.return-type-gating` (shell cell `tests/diagnostics/return-type-gating.sh`, not `tests/exec` → no coverage-corpus growth). Asserts default=error+text, `-Wno-return-type`=silent rc0, `-Wno-error=return-type`=warning rc0. TDD: FAILS pre-fix (`-Wno-return-type` fired anyway) / PASSES post-fix. corpusgate + treegate green.
 
 RESIDUAL (T-mac-30052 stays OPEN/IN_PROGRESS, TTL-resumable): [HIGH] `__attribute__((format))` ignored → no `-Wformat` on user fns (`mccgen.c:6542`); length modifiers stripped (`:10827`); `-Wparentheses` precedence coverage (`:15838`+); `-Wsign-compare` const-suppression (`:4874`); positional `%1$d` false positive (`:10787`). See `INVESTIGATIONS.md#r10-wformat`.
+
+<a id="t-mac-30063-bitint-scast"></a>
+
+## T-mac-30063 unsigned `_BitInt(N)` → signed cast sign-extension (RESOLVED, mac-arm64)
+
+**Type** `[S]` — **State** DONE — **DEPS** — — investigation `INVESTIGATIONS.md#r12-bitint-cast`.
+
+**Root cause.** `gen_bitint_cast` (`src/bitint_slice.h`) widens an unsigned
+`_BitInt(N)` source to a wide temp with the *source* signedness
+(`bitint_to_wide(suns)`), then `wide_to_bitint(duns, n)` sign/zero-extends bit
+`N-1` with the shift-left/shift-right idiom, requesting `TOK_SAR` for a signed
+dest. But `gen_wideint_op`'s shift path derives arithmetic-vs-logical purely
+from the operand's wide-type signedness (`uns = wideint_is_unsigned(vtop[-1])`),
+because the frontend contract is that C `>>` always tokenizes to `TOK_SAR`
+(`TOK_SAR == '>'`) and the *type* decides the fill. With an unsigned-typed
+operand the requested `TOK_SAR` was therefore demoted to logical
+`__mcc_i256/512_shr`: sign extension never happened, so `s < 0` read 0 and every
+later signed div/mod/compare on the value was wrong. Only widths where the shift
+idiom runs are affected — N in (128,256)∪(256,512) with N not equal to the arith
+kernel width; N=256/512 skip the shift (`n == anl*64`) and were already correct.
+
+**Fix.** In `wide_to_bitint`, when the dest is signed (`!uns`), retype the wide
+operand to a *signed* wide type (`mk_wideint_type(&vtop->type, 0, wideint_nlimbs(...))`)
+before the sign-extending shift, so `gen_wideint_op` honors the arithmetic shift.
+This covers both the runtime and the const-fold branch (both read the operand's
+signedness). Rejected the finding's alternative "`op==TOK_SAR` overrides `uns` in
+`wideint_shift_helper`": that would break normal unsigned wide `>>`, which
+legitimately arrives as `TOK_SAR` with an unsigned operand and must stay logical.
+
+**Verification.** `ctest -R 'bitint/scast'` (native, `NOT CMAKE_CROSSCOMPILING`,
+FIXTURES MCC_BUILT): `bitint/scast-signext` runs `mcc -run tests/bitint/scast_signext.c`
+and must print `bitint-scast checks=80 fails=0`; `bitint/scast-signext-known-positive`
+compiles the same source with `-DMCC_SCAST_MUTATE` (one expected value flipped)
+and is `WILL_FAIL TRUE`, proving the harness is non-vacuous. Oracle values are
+Python bignum (`tests/bitint/gen_scast.py`) covering N=129..512 across sign,
+quotient low word, remainder and compare, plus a `u >> 1` check per width that
+locks normal unsigned `>>` as logical. Pre-fix the same source reports 56 fails
+(14 affected widths × 4 checks; N=256/512 and all `ushr-logical` checks pass).
+Kept out of `tests/exec` deliberately so it never enters the `o0_ab.sh`
+object-identity corpus (`find tests/exec -name '*.c'`).
+
+**Scope-adjacent (NOT fixed here, pre-existing).** (1) arm64/riscv64 reject
+`__int128` despite AAPCS support (`MCC_HAVE_INT128` is x86_64-only, `src/mcc.h`).
+(2) `tests/diagnostics/dg-error/bitint_over_256.c` is stale: it expects
+`_BitInt(257)` to be rejected, but mcc supports `_BitInt(N)` up to
+`__BITINT_MAXWIDTH__`=512 (bitint256.c golden already reads "maxwidth 512"), so
+`_BitInt(257)` compiles and `_BitInt(513)` is the first rejected width. This red
+is present on clean HEAD independent of this task — see T-mac-30079.
