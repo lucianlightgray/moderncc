@@ -3585,7 +3585,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		{ MCC_TRACE("br\n"); return OPT_PRINT_DIRS; }
 	if (s->verbose)
 		{ MCC_TRACE("br\n"); return OPT_V; }
-	return OPT_HELP;
+	return 0;
 }
 
 LIBMCCAPI int mcc_set_options(MCCState *s, const char *r) { MCC_TRACE("enter\n");

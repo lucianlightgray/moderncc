@@ -5106,6 +5106,12 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
+        add_test(NAME "cli/no-args-error"
+            COMMAND ${_mcc_exe})
+        set_tests_properties("cli/no-args-error" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "no input files")
+
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_region.c")
             add_test(NAME "diag/pragma-region"
                 COMMAND ${_mcc_exe} -Wall -Werror -run
