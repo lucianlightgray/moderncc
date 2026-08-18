@@ -4708,6 +4708,52 @@ static int bf_operand_bits(int tt, int bs) { MCC_TRACE("enter\n");
 	return (tt & VT_BTYPE) == VT_LLONG ? 64 : 32;
 }
 
+static int sv_is_unsigned_expr(SValue *sv) { MCC_TRACE("enter\n");
+	int bt = sv->type.t & VT_BTYPE;
+	if (!(sv->type.t & VT_UNSIGNED))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (bt != VT_INT && bt != VT_LLONG)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) == VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+static int sv_is_int_zero(SValue *sv) { MCC_TRACE("enter\n");
+	int bt = sv->type.t & VT_BTYPE;
+	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (bt != VT_INT && bt != VT_LLONG && bt != VT_BYTE && bt != VT_SHORT && bt != VT_BOOL)
+		{ MCC_TRACE("br\n"); return 0; }
+	return sv->c.i == 0;
+}
+
+static void check_tautological_unsigned_cmp(int op) { MCC_TRACE("enter\n");
+	SValue *l = &vtop[-1], *r = &vtop[0];
+	int always;
+
+	if (sv_is_unsigned_expr(l) && sv_is_int_zero(r)) { MCC_TRACE("br\n");
+		if (op == TOK_LT)
+			{ MCC_TRACE("br\n"); always = 0; }
+		else if (op == TOK_GE)
+			{ MCC_TRACE("br\n"); always = 1; }
+		else
+			{ MCC_TRACE("br\n"); return; }
+	} else if (sv_is_int_zero(l) && sv_is_unsigned_expr(r)) { MCC_TRACE("br\n");
+		if (op == TOK_GT)
+			{ MCC_TRACE("br\n"); always = 0; }
+		else if (op == TOK_LE)
+			{ MCC_TRACE("br\n"); always = 1; }
+		else
+			{ MCC_TRACE("br\n"); return; }
+	} else {
+		MCC_TRACE("br\n");
+		return;
+	}
+	mcc_warning_c(warn_type_limits)(
+			"comparison of unsigned expression is always %s", always ? "true" : "false");
+}
+
 ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	int t1, t2, bt1, bt2, t;
 	int bs1, bs2;
@@ -4721,6 +4767,9 @@ ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); op_class = SHIFT_OP; }
 	else if (TOK_ISCOND(op))
 		{ MCC_TRACE("br\n"); op_class = CMP_OP; }
+
+	if (op_class == CMP_OP)
+		{ MCC_TRACE("br\n"); check_tautological_unsigned_cmp(op); }
 
 redo:
 	t1 = vtop[-1].type.t;

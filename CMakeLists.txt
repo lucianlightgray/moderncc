@@ -5219,6 +5219,27 @@ if(MCC_BUILD_TESTS)
             PASS_REGULAR_EXPRESSION "1 / [*]b [+] c"
             FAIL_REGULAR_EXPRESSION "/[*]")
 
+        # T-mac-30202: -Wtype-limits (a -Wextra sub-warning, off by default like
+        # gcc) flags a comparison whose result is constant because an unsigned
+        # operand is compared against 0.
+        add_test(NAME "diag/type-limits-warns" COMMAND ${_mcc_exe} -Wtype-limits -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/type_limits.c"
+                    -o "${CMAKE_BINARY_DIR}/type-limits.o")
+        set_tests_properties("diag/type-limits-warns" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "comparison of unsigned expression is always (false|true)")
+        # Off by default: -Werror alone must NOT escalate (anti-vacuity below).
+        add_test(NAME "diag/type-limits-default-off" COMMAND ${_mcc_exe} -Werror -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/type_limits.c"
+                    -o "${CMAKE_BINARY_DIR}/type-limits-off.o")
+        set_tests_properties("diag/type-limits-default-off" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        # Anti-vacuity: -Werror=type-limits must turn the warning into an error.
+        add_test(NAME "diag/type-limits-error" COMMAND ${_mcc_exe} -Werror=type-limits -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/type_limits.c"
+                    -o "${CMAKE_BINARY_DIR}/type-limits-err.o")
+        set_tests_properties("diag/type-limits-error" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+
         # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
         # unreferenced label; goto'd / address-taken labels stay clean.
         add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c

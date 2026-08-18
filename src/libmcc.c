@@ -2407,6 +2407,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_int_conversion), 0, "int-conversion"},
 		{offsetof(MCCState, warn_excess_initializers), 0, "excess-initializers"},
 		{offsetof(MCCState, warn_sign_compare), 0, "sign-compare"},
+		{offsetof(MCCState, warn_type_limits), 0, "type-limits"},
 		{offsetof(MCCState, warn_pointer_sign), WD_ALL, "pointer-sign"},
 		{offsetof(MCCState, warn_parentheses), WD_ALL, "parentheses"},
 		{offsetof(MCCState, warn_switch), WD_ALL, "switch"},
@@ -3296,6 +3297,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->warn_sign_compare = on;
 				s->warn_unused_parameter = on;
 				s->warn_extra_ptr_zero_cmp = on;
+				s->warn_type_limits = on;
 				break;
 			}
 			if (optarg[0] && set_flag(s, options_W, optarg) < 0)
