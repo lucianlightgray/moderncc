@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30227 [S] Fix: [MED cluster, driver] SLICE-1: stdin input named `-` not `<stdin>` (__FILE__/-E marker) — fix mcc_open to pass the renamed filename to mcc_open_bf. RESIDUAL: other driver cluster items.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:08Z
+      REF: DETAILS.md#t-mac-30227-stdin-filename | DEPS: —
+
 - [ ] T-mac-30185 [S] Fix: [MED] deprecated on tags — SLICE DONE (4f686892): leading-attr struct/union/enum tags warn on use (DETAILS#t-mac-30185-deprecated-tag). TTL-resumable. RESIDUAL: enumerators, typedef-name uses, trailing-attr form.
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 4f686892 | TS: 2026-08-18T16:00Z
       REF: DETAILS.md#t-mac-30185-deprecated-tag | DEPS: —
@@ -171,9 +175,6 @@
 - [ ] T-mac-30226 [S] Fix: [HIGH, silent wrong value] generic/`stdc_*` bit builtins miscompute on `_BitInt` operands — `runtime/include/mccdefs.h`: (a) `__mcc_gu_t` (`:1213-1218`) falls back to 64-bit ull (mcc rejects __int128) → `_BitInt(N>64)` truncated (`_BitInt(100) 1<<70` → clzg=128 popcountg=0 vs gcc clzg=29 popcountg=1); (b) `__mcc_gprec(x)` (`:1319`) uses 8*sizeof (storage width) not precision N → `_BitInt(40)` gives clzg=30 vs gcc/clang 6. Silent (accepts operand, plausible-but-wrong). C23 §7.18. Standard integer types bit-identical to gcc-16. Fix: derive width/precision from the actual _BitInt type; wide-int path for N>64.
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
       REF: INVESTIGATIONS.md#r35-bitint-bitbuiltins | DEPS: —
-- [ ] T-mac-30227 [S] Fix: [MED cluster, driver] (1) stdin input named `-` not `<stdin>` — `_mcc_open` (`libmcc.c:810-828`) intends `<stdin>` (`:811`) but the rename is to a local + lost across the call → `__FILE__`=`[-]`, -E `# 1 "-"` (oracles `<stdin>`); (2) `-arch x86_64` accepted-and-ignored (`libmcc.c:2349` value 0) → produces an arm64 binary at exit 0 (silent WRONG arch claiming success; mcc is arm64-only → should error); (3) `-dumpversion` prints a build datestamp `20260707.94756` (`libmcc.c:3373`) → breaks autoconf/CMake numeric-version probes (gcc 16, clang 21.0.0). Fix: propagate <stdin>; error on unsupported -arch; plain numeric -dumpversion.
-      OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
-      REF: INVESTIGATIONS.md#r35-driver-a | DEPS: —
 - [ ] T-mac-30229 [S] Fix: [MED, dylib] no export control + `-bundle` unsupported — a dylib exports ALL functions regardless of visibility("hidden")/-fvisibility=hidden (nm -gU unchanged; extends T-mac-30157), AND `-exported_symbols_list` is rejected → no mechanism to control the export set. `-bundle` (MH_BUNDLE, plugins) → `error: invalid option`. Fix: honor visibility in the export trie (ties 30157), accept -exported_symbols_list, support -bundle.
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
       REF: INVESTIGATIONS.md#r35-dylib-exports | DEPS: T-mac-30157
