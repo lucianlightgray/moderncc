@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30213 [S] Fix: [MED] `0x`/`0b` (and `0o`) with ZERO digits silently accepted as 0 — require ≥1 digit after the radix prefix (clang/gcc reject)
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T09:45Z
-      REF: DETAILS.md#t-mac-30213-empty-radix-digits | DEPS: —
 
 
 
