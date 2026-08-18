@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30187 [S] Fix: [MED] `extern int x=5;` no warning — warn "initialized and declared extern" when has_init && VT_EXTERN (decl_initializer_alloc)
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:48Z
+      REF: DETAILS.md#t-mac-30187-extern-initializer | DEPS: —
+
 
 
 - [ ] T-mac-30130 [S] Fix: [LOW cluster] SLICE-1 DONE (fec2f992: -Wunused-label, DETAILS#t-mac-30130-unused-label) + SLICE-2 DONE (bab5c86d: dup __label__ errors via block-boundary label-stack scan, DETAILS#t-mac-30130-dup-label) + (3) DONE earlier (pack-pop-warn). HEARTBEAT INTENTIONALLY STALE — TTL-resumable. RESIDUAL: (4) malformed #pragma pack always-on — the clean fix is warn_unknown_pragmas default-on (matching gcc -Wpragmas), a broader change (an always-on warning breaks the cli/malformed_pragma_is_not_fatal -Wno-unknown-pragmas-suppressible contract); (5) further minor items
@@ -276,9 +280,6 @@
 - [ ] T-mac-30185 [S] Fix: [MED, missing diagnostic] `deprecated` not honored on struct/union/enum tags or enumerators — the use-site check (`mccgen.c:14204-14206`) fires only on ordinary-identifier lookup (fns/objects/typedefs), not tag/enumerator uses. `enum E{A [[deprecated]]} __attribute__((deprecated)); struct S{} __attribute__((deprecated)); enum E e=A; struct S s;` → mcc warns on NONE; clang/gcc warn on all. Also deprecated("msg") text not echoed. (fns/vars/typedefs ARE honored.) Fix: extend deprecated check to tag+enumerator uses + echo the message.
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-deprecated-tags | DEPS: —
-- [ ] T-mac-30187 [S] Fix: [MED, missing diagnostic] `extern int x=5;` no -Wextern-initializer — extern-with-const-init routes to definition emission with no warning path (`mccgen.c:18894`); mcc silent even under -Wall -Wextra (emits D _x, returns 5 — codegen correct); clang -Wextern-initializer, gcc "initialized and declared extern". C11 6.9.2. Fix: warn when extern is combined with an initializer.
-      OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
-      REF: INVESTIGATIONS.md#r29-extern-init | DEPS: —
 - [ ] T-mac-30189 [S] Fix: [LOW cluster] UB-fold/optimization/cosmetic — (1) UB shift-count>=width const-folds differently across all three (`mccgen.c:3661,3746-3753` masks; mcc self-consistent w/ its own runtime — pure UB); (2) `alloc_size` not fed into __builtin_object_size (→SIZE_MAX "unknown", safe; _FORTIFY gets no allocator info); (3) `pure`/`const` fn attrs don't enable call CSE at -O2 (`mccgen.c:6553-6558` no-op; correct results); (4) misplaced attribute (warn_unused_result on a var) → generic "ignored" vs oracles' specific "only applies to functions"; (5) no -Wimplicit-fallthrough warning class ([[fallthrough]] accepted, nothing to suppress); (6) tentative incomplete-array "assumed one element" warning -Wall-gated + mislocated to TU-end/EOF instead of the decl line (`mccgen.c:1138`).
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-low-cluster | DEPS: —
