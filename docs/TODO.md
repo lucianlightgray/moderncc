@@ -78,10 +78,10 @@
       OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
       REF: INVESTIGATIONS.md#r28-bitint-bool | DEPS: —
 - [ ] T-mac-30170 [S] Fix: [HIGH, link failure] `__builtin_mempcpy` unresolved on macOS — emits `bl _mempcpy` but mempcpy is a GNU ext absent from macOS libc → `error: unresolved reference to '_mempcpy'`. Plain-prototype __asm__ redirect (`mccdefs.h:715` via __BUILTIN `:657`) targets a nonexistent symbol; clang/gcc inline it (return dst+n). Also breaks `__builtin___mempcpy_chk` (`:821-824`) → mempcpy _FORTIFY paths. Fix: inline/self-host mempcpy (memcpy then return dst+n) on targets lacking it.
-      OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: b89692d7 | TS: 2026-08-18T16:10Z
       REF: INVESTIGATIONS.md#r28-mempcpy | DEPS: —
 - [ ] T-mac-30171 [S] Fix: [HIGH, data corruption] `__builtin_bzero(p,n)` zeros the WRONG byte count on macOS — the Apple macro `#define __builtin_bzero(p, ignored_size) bzero(p, sizeof(*(p)))` (`mccdefs.h:404`, block `:401-406`) DISCARDS the size arg + passes sizeof(*(char*))==1; `__builtin_bzero(z,8)` leaves 7 bytes non-zero (clang/gcc zero all 8). Also expands to a bare bzero() → needs `#include <strings.h>` or errors implicit-decl. Fix: `#define __builtin_bzero(p,n) __builtin_memset((p),0,(n))` (working redirect, no extra header).
-      OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: b89692d7 | TS: 2026-08-18T16:10Z
       REF: INVESTIGATIONS.md#r28-bzero | DEPS: —
 - [ ] T-mac-30172 [S] Fix: [MED, type-system] `long double` binary-arith result demotes to `double` — arm64-darwin sets MCC_USING_DOUBLE_FOR_LDOUBLE (`mcc.h:109-111`) so long double is VT_DOUBLE|VT_LONG; `combine_types` (`mccgen.c:4662-4668`) inspects only VT_BTYPE → the VT_LDOUBLE branch is dead, the VT_DOUBLE branch sets type.t=VT_DOUBLE dropping the VT_LONG tag. `a+b`/`a*b`/`?:` demote → `_Generic((a+b))` picks double, __typeof__/__auto_type yield double, tgmath dispatch on a long-double EXPRESSION picks non-l variant. No numeric/ABI error (LD==double) — C23 6.3.1.8 conformance bug. Bare vars/unary/-a/1.0L literals stay LD (correct). Fix: preserve VT_LONG in combine_types when either operand is VT_DOUBLE|VT_LONG.
       OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
