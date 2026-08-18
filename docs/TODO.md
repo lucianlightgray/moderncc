@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T21:58Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T21:56Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:04Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T21:59Z |
 
 ## Contracts — blocking, highest priority
@@ -189,9 +189,6 @@
       REF: INVESTIGATIONS.md#r35-dylib-flatns | DEPS: —
 - [ ] T-lin-10407 [S] Fix: [MED, silent wrong value — residual of T-mac-30226] generic bit builtins truncate `_BitInt(N)` beyond the `__mcc_gu_t` carrier — `runtime/include/mccdefs.h` casts the operand to `__mcc_gu_t` (unsigned __int128 on x86_64/!PE, else ull), so `_BitInt(N>128)` on x86_64 (`_BitInt(200) 1<<150` → clzg 200 vs gcc 49) and `_BitInt(N>64)` on no-__int128 targets (arm64/riscv64/PE) lose the high bits. Precision is now correct (T-mac-30226, `__builtin_bitprecisionof`), only the carrier is too narrow. Fix: a limb-wise path (loop over the _BitInt limbs like `__mcc_gbswap`) or handle `__builtin_clzg`/`ctzg`/`popcountg`/`stdc_*` natively in the compiler for wide `_BitInt`. Verify per-target; x86_64 exercises N in (128, 512].
       OWNER: — | STATE: OPEN | SHA: b1be2876 | TS: 2026-08-18T21:28Z
-      REF: DETAILS.md#t-mac-30226-bitint-bit-builtins-precision | DEPS: —
-- [ ] T-lin-10408 [S] Fix: [MED, reject-valid] `__typeof__` on a scalar `_BitInt` lvalue rejected "'typeof' applied to a bit-field" — `unsigned _BitInt(40) f; __typeof__(f) g;` errors (the scalar `_BitInt` carries `VT_BITFIELD` in its type tag, which the typeof/bit-field guard trips on); clang/gcc accept. Breaks `stdc_bit_floor`/`stdc_bit_ceil`/`__builtin_stdc_bit_reverse` (they use `(__typeof__(x))cast`). Found while fixing T-mac-30226; pre-existing (ref mcc rejects it too). Fix: let `__typeof__`/`typeof` resolve a `IS_BITINT`/`is_bitint_type` operand to its `_BitInt(N)` type instead of treating the `VT_BITFIELD` tag as a real bit-field.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: b1be2876 | TS: 2026-08-18T22:00Z
       REF: DETAILS.md#t-mac-30226-bitint-bit-builtins-precision | DEPS: —
 - [ ] T-mac-30229 [S] Fix: [MED, dylib] no export control + `-bundle` unsupported — a dylib exports ALL functions regardless of visibility("hidden")/-fvisibility=hidden (nm -gU unchanged; extends T-mac-30157), AND `-exported_symbols_list` is rejected → no mechanism to control the export set. `-bundle` (MH_BUNDLE, plugins) → `error: invalid option`. Fix: honor visibility in the export trie (ties 30157), accept -exported_symbols_list, support -bundle.
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
