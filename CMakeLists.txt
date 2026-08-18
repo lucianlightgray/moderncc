@@ -7394,6 +7394,12 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(has-builtin-name-recognized PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/codegen_hint_attrs.c")
+        add_test(NAME codegen-hint-attrs COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/codegen_hint_attrs.c")
+        set_tests_properties(codegen-hint-attrs PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_vla.c")
         add_test(NAME alignof-vla-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

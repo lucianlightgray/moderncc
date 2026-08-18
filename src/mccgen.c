@@ -6363,6 +6363,25 @@ ST_FUNC int exact_log2p1(int i) { MCC_TRACE("enter\n");
 	return ret;
 }
 
+static int attr_ignore_silently(int t) { MCC_TRACE("enter\n");
+	static const char *const hints[] = {
+		"hot", "cold", "flatten", "no_reorder", "no_stack_protector", "no_icf"
+	};
+	const char *n = get_tok_str(t, NULL);
+	char buf[32];
+	size_t l = strlen(n), i;
+	if (l > 4 && n[0] == '_' && n[1] == '_' && n[l - 1] == '_' && n[l - 2] == '_' &&
+			l - 4 < sizeof buf) { MCC_TRACE("br\n");
+		memcpy(buf, n + 2, l - 4);
+		buf[l - 4] = '\0';
+		n = buf;
+	}
+	for (i = 0; i < sizeof hints / sizeof hints[0]; i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(n, hints[i]))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 	int n;
 	char *astr;
@@ -6708,7 +6727,8 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			ad->a.dllimport = 1;
 			break;
 		default:
-			mcc_warning_c(warn_attributes)("'%s' attribute ignored", get_tok_str(t, NULL));
+			if (!attr_ignore_silently(t))
+				{ MCC_TRACE("br\n"); mcc_warning_c(warn_attributes)("'%s' attribute ignored", get_tok_str(t, NULL)); }
 		skip_param:
 			if (tok == '(') { MCC_TRACE("br\n");
 				int parenthesis = 0;
