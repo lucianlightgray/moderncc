@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30237 [S] Fix: [MED] `__has_cpp_attribute` unregistered as a pp-builtin (returns 0 in C mode) — register it like __has_c_attribute; handler already returns the std value
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:56Z
-      REF: DETAILS.md#t-mac-30237-has-cpp-attribute | DEPS: —
 
 
 
