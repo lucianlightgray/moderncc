@@ -12,9 +12,6 @@
 
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
-- [ ] T-mac-30042 [S] Fix: `(_Bool)&sym` unconditionally folds to constant `1` with no weak guard → miscompile (`(_Bool)&weak_var`, incl. `static _Bool b=(_Bool)&weak_var` → wrong `1` byte in `.data`); `gen_cast` `mccgen.c:5490-5493` inconsistent with the file's own weak folds (`condition_3way:14566`, `sym==sym:3807`)
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 0497a0fa | TS: 2026-08-17T23:21Z
-      REF: INVESTIGATIONS.md#r7-bool-weak-fold | DEPS: —
 - [ ] T-mac-30029 [S] Investigate: arm64/PE `long double` ABI (16-byte on every OS, should be 8 on Apple/Win arm64 — `arm64-gen.h:27`; system-libc interop break) + host-vs-target ld-constant hi-word (`mccast.c:2735`) + `__SIZEOF_WINT_T__`/`__WINT_TYPE__` PE mismatch + missing `__ARM_*`/i386 SSE feature predefines; family of x86_64-PE ld (T-lin-10394)
       OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 85483b94 | TS: 2026-08-17T22:35Z
       REF: DETAILS.md#t-mac-30029-slice-1-arm64-predefs | DEPS: — | NOTE: SLICE-1 DONE+GREEN (499aac4b) — added the 7 arm64 ISA-identity predefines gcc+clang agree on (__ARM_ARCH=8/__ARM_ARCH_ISA_A64/__ARM_64BIT_STATE/__ARM_ARCH_PROFILE='A'/__ARM_PCS_AAPCS64/__ARM_SIZEOF_MINIMAL_ENUM=4/__ARM_SIZEOF_WCHAR_T=4); NOT the optional feature macros (no arm_neon.h → __ARM_NEON would break intrinsic-gated code). New dg-error arm64_isa_predefs, exec/preprocess/dg-error green. HEARTBEAT INTENTIONALLY STALE — TTL-resumable by any session. RESIDUAL (stays IN_PROGRESS, cross-target, mac can't run to verify): long-double 16→8-byte ABI on Apple/Win arm64 (high-blast-radius, arm64 o0-baseline re-bank), __SIZEOF_WINT_T__/__WINT_TYPE__ PE + i386 SSE predefines, host-vs-target ld hi-word (mccast.c:2735).
