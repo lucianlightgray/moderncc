@@ -5070,6 +5070,21 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/wswitch-case-valid" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30184: a _Noreturn function that can fall off the end must warn
+        # "'noreturn' function does return"; one ending in an unconditional
+        # noreturn call stays clean (even under -Werror).
+        add_test(NAME "diag/noreturn-falloff" COMMAND ${_mcc_exe} -Wall -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/noreturn_falloff.c"
+                    -o "${CMAKE_BINARY_DIR}/noreturn-falloff.o")
+        set_tests_properties("diag/noreturn-falloff" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "'noreturn' function does return")
+        add_test(NAME "diag/noreturn-ok" COMMAND ${_mcc_exe} -Wall -Werror -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/noreturn_ok.c"
+                    -o "${CMAKE_BINARY_DIR}/noreturn-ok.o")
+        set_tests_properties("diag/noreturn-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"

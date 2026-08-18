@@ -15171,6 +15171,8 @@ static void gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 #endif
 
 static void check_func_return(void) { MCC_TRACE("enter\n");
+	if (cur_func_noreturn)
+		{ MCC_TRACE("br\n"); mcc_warning("'noreturn' function does return"); }
 	if ((func_vt.t & VT_BTYPE) == VT_VOID)
 		{ MCC_TRACE("br\n"); return; }
 	if ((!strcmp(funcname, "main") || func_old) && (func_vt.t & VT_BTYPE) == VT_INT) { MCC_TRACE("br\n");
