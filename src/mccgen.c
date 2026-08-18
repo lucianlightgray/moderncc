@@ -17301,6 +17301,53 @@ static int merge_str_kind(int merge_kind, int tk) {
 	return merge_kind;
 }
 
+static int str_emit_cp(CString *dst, unsigned int cp, int width) { MCC_TRACE("enter\n");
+	if (width == 2) { MCC_TRACE("br\n");
+		if (cp >= 0x10000) { MCC_TRACE("br\n");
+			unsigned short hi = (unsigned short)(0xD800 + ((cp - 0x10000) >> 10));
+			unsigned short lo = (unsigned short)(0xDC00 + ((cp - 0x10000) & 0x3FF));
+			cstr_cat(dst, (char *)&hi, 2);
+			cstr_cat(dst, (char *)&lo, 2);
+			return 2;
+		}
+		{ unsigned short v = (unsigned short)cp; cstr_cat(dst, (char *)&v, 2); }
+		return 1;
+	}
+	if (width == 4) { MCC_TRACE("br\n");
+		unsigned int v = cp;
+		cstr_cat(dst, (char *)&v, 4);
+		return 1;
+	}
+	{ unsigned char v = (unsigned char)cp; cstr_cat(dst, (char *)&v, 1); }
+	return 1;
+}
+
+static int str_widen_run(CString *dst, const void *data, int nbytes, int toksz,
+						 int width, int keep_nul) { MCC_TRACE("enter\n");
+	int emitted = 0;
+	if (toksz == 1) { MCC_TRACE("br\n");
+		const uint8_t *p = (const uint8_t *)data;
+		const uint8_t *pe = p + nbytes;
+		if (!keep_nul && pe > p)
+			{ MCC_TRACE("br\n"); pe -= 1; }
+		while (p < pe) { MCC_TRACE("br\n");
+			const uint8_t *pv = p;
+			int cp = utf8_next_cp(&p, pe);
+			if (cp < 0)
+				{ MCC_TRACE("br\n"); cp = *pv; }
+			emitted += str_emit_cp(dst, (unsigned int)cp, width);
+		}
+	} else { MCC_TRACE("br\n");
+		int nch = nbytes / toksz, i, last = keep_nul ? nch : nch - 1;
+		for (i = 0; i < last; i++) { MCC_TRACE("br\n");
+			unsigned int ch = toksz == 2 ? ((const unsigned short *)data)[i]
+										  : ((const unsigned int *)data)[i];
+			emitted += str_emit_cp(dst, ch, width);
+		}
+	}
+	return emitted;
+}
+
 static void decl_initializer_1(init_params *p, CType *type, unsigned long c, int flags);
 
 static void decl_initializer(init_params *p, CType *type, unsigned long c, int flags) {
@@ -17400,29 +17447,14 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 											"string literal in a concatenation"); }
 					if (initstr.size)
 						{ MCC_TRACE("br\n"); initstr.size -= size1; }
-					len += nch - 1;
 					if (toksz == size1) { MCC_TRACE("br\n");
+						len += nch - 1;
 						cstr_cat(&initstr, tokc.str.data, tokc.str.size);
 					} else { MCC_TRACE("br\n");
-						for (i = 0; i < nch; i++) { MCC_TRACE("br\n");
-							unsigned int ch =
-									toksz == 1
-											? ((unsigned char *)tokc.str.data)[i]
-									: toksz == 2
-											? ((unsigned short *)tokc.str.data)[i]
-											: ((unsigned int *)tokc.str.data)[i];
-							if (size1 == 1) { MCC_TRACE("br\n");
-								unsigned char v = ch;
-								cstr_cat(&initstr, (char *)&v, 1);
-							} else if (size1 == 2) { MCC_TRACE("br\n");
-								unsigned short v = ch;
-								cstr_cat(&initstr, (char *)&v, 2);
-							} else { MCC_TRACE("br\n");
-								unsigned int v = ch;
-								cstr_cat(&initstr, (char *)&v, 4);
-							}
-						}
+						len += str_widen_run(&initstr, tokc.str.data, tokc.str.size,
+											 toksz, size1, 1) - 1;
 					}
+					(void)i;
 					next();
 				}
 			}
@@ -17688,23 +17720,8 @@ static TokenString *gather_string_run(CType *type, int has_init) {
 		cstr_new(&cc);
 		for (j = 0; j < nparts; j++) { MCC_TRACE("br\n");
 			int tk = pkinds[j], toksz = MCC_STRSZ(tk);
-			int nch = parts[j].size / toksz;
 			merge_kind = merge_str_kind(merge_kind, tk);
-			for (i = 0; i < nch - 1; i++) { MCC_TRACE("br\n");
-				unsigned int ch =
-						toksz == 1
-								? ((unsigned char *)parts[j].data)[i]
-						: toksz == 2
-								? ((unsigned short *)parts[j].data)[i]
-								: ((unsigned int *)parts[j].data)[i];
-				if (wsz == 2) { MCC_TRACE("br\n");
-					unsigned short v = ch;
-					cstr_cat(&cc, (char *)&v, 2);
-				} else { MCC_TRACE("br\n");
-					unsigned int v = ch;
-					cstr_cat(&cc, (char *)&v, 4);
-				}
-			}
+			str_widen_run(&cc, parts[j].data, parts[j].size, toksz, wsz, 0);
 		}
 		{
 			unsigned int z = 0;
