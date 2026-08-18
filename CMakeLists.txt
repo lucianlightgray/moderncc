@@ -7670,6 +7670,23 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(asm-align-p2-arm64-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(MCC_CPU STREQUAL "arm64"
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/asm_word_arm64.S")
+        add_test(NAME asm-word-arm64-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/asm_word_arm64.S ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/asm_word_arm64_check.c"
+            --out ${CMAKE_BINARY_DIR}/asm_word_arm64${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(asm-word-arm64-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
+    if(MCC_CPU STREQUAL "arm64"
+       AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/asm_word_arm64_sym.s")
+        add_test(NAME asm-word-arm64-sym COMMAND ${_mcc_exe} -c
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/asm_word_arm64_sym.s"
+            -o "${CMAKE_BINARY_DIR}/asm_word_arm64_sym.o")
+        set_tests_properties(asm-word-arm64-sym PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/atomic_aggregate_align.c")
         add_test(NAME atomic-aggregate-align-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

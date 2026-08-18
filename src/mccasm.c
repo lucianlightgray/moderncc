@@ -535,6 +535,10 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		size = 1;
 		goto asm_data;
 	case TOK_ASMDIR_word:
+#ifdef MCC_TARGET_ARM64
+		size = 4;
+		goto asm_data;
+#endif
 	case TOK_ASMDIR_short:
 		size = 2;
 		goto asm_data;
