@@ -300,8 +300,8 @@
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-packed-alignof | DEPS: —
 - [ ] T-mac-30168 [S] Fix: [LOW cluster] diagnostic/cosmetic — (1) no `-Waddress-of-packed-member` (flag itself rejected `unsupported option`; clang -Wall, gcc default warn); (2) `dllexport`/`dllimport` on Mach-O parsed+dropped no warning (both oracles warn); (3) `visibility("protected")` on Mach-O accepted silently (both warn "target does not support protected"); (4) `#pragma region`/`endregion` treated as unknown-pragma (clang/gcc recognize+silent); (5) unhandled `#pragma GCC …` all print identical `#pragma GCC ignored` (first token only) — indistinguishable; (6) redeclaring `__builtin_alloca_with_align` as a prototype fails (`error: ')' expected`) — it's a predefined macro (`mccdefs.h:1193`) not a real builtin; (7) `__builtin_*_overflow` `_Bool*` result (clang also accepts → gcc-only).
-      OWNER: lin-x64 | STATE: IN_PROGRESS (sub-item 4: #pragma region/endregion) | SHA: 297275c2 | TS: 2026-08-18T22:52Z
-      REF: INVESTIGATIONS.md#r27-low-cluster | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS (sub-item 4 DONE d9977f18 — #pragma region/endregion silent; sub-items 1/2/3/5 residual, mostly Mach-O/new-flag) | SHA: d9977f18 | TS: 2026-08-18T22:56Z | HEARTBEAT INTENTIONALLY STALE — TTL-resumable
+      REF: DETAILS.md#t-mac-30168-pragma-region | DEPS: —
 - [ ] T-mac-30149 [S] Fix: [MED, conservative-weaker] `__builtin_constant_p` never folds under optimization — pure front-end check (`(vtop->r & (VT_VALMASK|VT_LVAL))!=VT_CONST → 0`, `mccgen.c:13327-13334`), never survives to the optimizer; at -O2 returns 0 for an optimizer-provable constant (literal-init var, `const` object, comma expr) where BOTH clang+gcc-16 return 1. -O2 output == -O0. Standard-legal (0 is always allowed) → CANNOT miscompile, but constant_p-driven macros always take the slow path. At -O0 mcc==gcc (both 0). Fix: a builtin_constant_p lowering the optimizer can re-evaluate.
       OWNER: — | STATE: OPEN | SHA: c35c291e | TS: 2026-08-18T11:45Z
       REF: INVESTIGATIONS.md#r26-constant-p-noopt | DEPS: —
