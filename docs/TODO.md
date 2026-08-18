@@ -81,7 +81,7 @@
       OWNER: — | STATE: OPEN | SHA: 1a5b344d | TS: 2026-08-18T17:30Z
       REF: INVESTIGATIONS.md#r30-knr-return | DEPS: —
 - [ ] T-mac-30192 [S] Fix: [MED, rejects-valid + inconsistent] `_Alignof(void)` hard-rejected — `mccgen.c:13234-13238` errors for VT_VOID alignof while sizeof(void) is a pedantic-warn returning 1 (GNU void-size ext). clang+gcc BOTH accept _Alignof(void)==1 (pedantic-warn), uniformly with their sizeof(void). mcc's asymmetry (sizeof→warn+1, alignof→hard error) is inconsistent w/ its own sizeof(void)/sizeof(fn). Fix: treat _Alignof(void) as pedantic-warn returning 1, like sizeof(void).
-      OWNER: — | STATE: OPEN | SHA: 1a5b344d | TS: 2026-08-18T17:30Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: a016d7ce | TS: 2026-08-18T17:40Z
       REF: INVESTIGATIONS.md#r30-alignof-void | DEPS: —
 - [ ] T-mac-30193 [S] Fix: [MED, missing diagnostic] `-Wpointer-sign` entirely unimplemented — sign-mismatched integer-pointer assigns silently accepted (`unsigned int *u=int_ptr;`, `signed char *s=char_ptr;`) in all modes; clang warns default, gcc under -Wall (both -Wpointer-sign). `mccgen.c:5925` treats same-btype integer pointees differing only in VT_UNSIGNED (or one enum) as compatible-enough to skip incompatible_ptr_diag() with no substitute; no warn_pointer_sign class (`mcc.h:720-728`). int*↔long* still correctly errors. C11 6.5.16.1. Fix: add a -Wpointer-sign class emitted at the :5925 sign-only-mismatch site.
       OWNER: — | STATE: OPEN | SHA: 1a5b344d | TS: 2026-08-18T17:30Z
