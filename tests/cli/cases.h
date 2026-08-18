@@ -456,6 +456,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'bad=%s ok=%s\\n' $(grep -c 'storage class' {W}/sm_bad.err) $(grep -c 'error' {W}/sm_ok.err)",
 		 "bad=1 ok=0\n"},
 
+		{"constexpr_unsigned_overflow_rejected", "",
+		 "printf 'constexpr int i = 0xFFFFFFFFFFFFFFFFULL;\\n' > {W}/cx_bad.c && "
+		 "{MCC} -B{B} -I{I} -std=c23 -c {W}/cx_bad.c -o {W}/cx_bad.o 2>{W}/cx_bad.err; "
+		 "printf 'constexpr unsigned long long u = 0xFFFFFFFFFFFFFFFFULL;\\n' > {W}/cx_ok.c && "
+		 "{MCC} -B{B} -I{I} -std=c23 -c {W}/cx_ok.c -o {W}/cx_ok.o 2>{W}/cx_ok.err; "
+		 "printf 'bad=%s ok=%s\\n' $(grep -c 'changes value' {W}/cx_bad.err) $(grep -c 'error' {W}/cx_ok.err)",
+		 "bad=1 ok=0\n"},
+
 		{"dM_dump_macros", "",
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},

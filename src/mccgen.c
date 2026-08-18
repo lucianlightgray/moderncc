@@ -18729,6 +18729,9 @@ static void decl_constexpr(CType *type, int v) { MCC_TRACE("enter\n");
 			} else if (!in_range(ll, dt.t)) { MCC_TRACE("br\n");
 				mcc_error("'constexpr' initializer changes value on conversion");
 			}
+			if ((vtop->type.t & VT_UNSIGNED) && ll < 0 &&
+					!((dt.t & VT_UNSIGNED) && btype_size(bt) >= 8))
+				{ MCC_TRACE("br\n"); mcc_error("'constexpr' initializer changes value on conversion"); }
 			cv.i = (uint64_t)ll;
 		}
 	}
