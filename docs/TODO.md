@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30228 [S] Fix: [MED, driver] `-Xpreprocessor`/`-Xassembler`/`-save-temps` hard-error → both oracles accept; route -Xpreprocessor like -Wp,, accept -Xassembler/-save-temps
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:25Z
+      REF: DETAILS.md#t-mac-30228-driver-x-opts | DEPS: —
+
 - [ ] T-lin-10399 [S] Research: strategies to run AST/RIR slices MAXIMALLY on GPU for a self-hosted mcc-JIT — coverage is the sole objective (wall-clock irrelevant); publish gap taxonomy + ranked strategies + code loci, then taskify per-strategy follow-ups
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:20Z
       REF: DETAILS.md#t-lin-10398-selfhost-jit-gpu-coverage | DEPS: — | NOTE: 2 research agents dispatched at mint (§6); findings append to the DETAILS anchor
@@ -144,9 +148,6 @@
 - [ ] T-mac-30227 [S] Fix: [MED cluster, driver] (1) stdin input named `-` not `<stdin>` — `_mcc_open` (`libmcc.c:810-828`) intends `<stdin>` (`:811`) but the rename is to a local + lost across the call → `__FILE__`=`[-]`, -E `# 1 "-"` (oracles `<stdin>`); (2) `-arch x86_64` accepted-and-ignored (`libmcc.c:2349` value 0) → produces an arm64 binary at exit 0 (silent WRONG arch claiming success; mcc is arm64-only → should error); (3) `-dumpversion` prints a build datestamp `20260707.94756` (`libmcc.c:3373`) → breaks autoconf/CMake numeric-version probes (gcc 16, clang 21.0.0). Fix: propagate <stdin>; error on unsupported -arch; plain numeric -dumpversion.
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
       REF: INVESTIGATIONS.md#r35-driver-a | DEPS: —
-- [ ] T-mac-30228 [S] Fix: [MED, driver] `-Xpreprocessor`/`-Xassembler`/`-save-temps` hard-error (exit 1) — no `-X*` entries (`libmcc.c:2286-2365`), no `-save-temps` entry; but the comma forms `-Wp,`/`-Wa,` work. Both oracles accept all three → build systems passing them fail hard on mcc. Fix: add -Xpreprocessor/-Xassembler (route like -Wp,/-Wa,) + accept/implement -save-temps.
-      OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
-      REF: INVESTIGATIONS.md#r35-driver-b | DEPS: —
 - [ ] T-mac-30229 [S] Fix: [MED, dylib] no export control + `-bundle` unsupported — a dylib exports ALL functions regardless of visibility("hidden")/-fvisibility=hidden (nm -gU unchanged; extends T-mac-30157), AND `-exported_symbols_list` is rejected → no mechanism to control the export set. `-bundle` (MH_BUNDLE, plugins) → `error: invalid option`. Fix: honor visibility in the export trie (ties 30157), accept -exported_symbols_list, support -bundle.
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
       REF: INVESTIGATIONS.md#r35-dylib-exports | DEPS: T-mac-30157
