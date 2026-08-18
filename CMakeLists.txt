@@ -4955,6 +4955,21 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("volatile/discard-read" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "fix is volatile-specific")
+
+        # T-mac-30151: initializing a FAM of an automatic-storage object is a
+        # hard error (both oracles reject); static/file-scope FAM init stays a
+        # GNU extension (known-positive).
+        add_test(NAME "fam/auto-init-error"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fam/auto_init.c"
+                    -o "${CMAKE_BINARY_DIR}/fam-auto.o")
+        set_tests_properties("fam/auto-init-error" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "fam/static-init-ok"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/fam/static_init.c")
+        set_tests_properties("fam/static-init-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"

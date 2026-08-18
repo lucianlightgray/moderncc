@@ -364,6 +364,7 @@ typedef struct
 	int local_offset;
 	Sym *flex_array_ref;
 	char flex_is_member;
+	char flex_auto;
 	char flex_warned;
 	char excess_warned;
 	int llocal;
@@ -16628,8 +16629,12 @@ static void decl_design_flex(init_params *p, Sym *ref, int index) { MCC_TRACE("e
 	if (ref == p->flex_array_ref) { MCC_TRACE("br\n");
 		if (p->flex_is_member && index >= 0 && !p->flex_warned) { MCC_TRACE("br\n");
 			p->flex_warned = 1;
-			mcc_pedantic("initialization of a flexible array member is not "
-									 "allowed in ISO C");
+			if (p->flex_auto) { MCC_TRACE("br\n");
+				mcc_error("non-static initialization of a flexible array member");
+			} else {
+				mcc_pedantic("initialization of a flexible array member is not "
+										 "allowed in ISO C");
+			}
 		}
 		if (index >= ref->c)
 			{ MCC_TRACE("br\n"); ref->c = index + 1; }
@@ -17581,6 +17586,9 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 				flexible_array = field;
 				p.flex_array_ref = field->type.ref;
 				p.flex_is_member = 1;
+				/* T-mac-30151: initializing a FAM is a GNU extension only for
+				 * static-storage objects; automatic storage is a hard error. */
+				p.flex_auto = ((r & VT_VALMASK) == VT_LOCAL);
 				size = -1;
 			}
 		}
