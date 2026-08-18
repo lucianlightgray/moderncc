@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30188 [S] Fix: [MED] tag first-declared in a prototype parameter list draws no visibility warning — add "declared inside parameter list will not be visible outside" (in_func_params counter + warn on new named tag, -Wall-gated)
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:35Z
+      REF: DETAILS.md#t-mac-30188-param-tag-visibility | DEPS: —
+
 - [ ] T-mac-30130 [S] Fix: [LOW cluster] SLICE-1 DONE (fec2f992: -Wunused-label, DETAILS#t-mac-30130-unused-label) + SLICE-2 DONE (bab5c86d: dup __label__ errors via block-boundary label-stack scan, DETAILS#t-mac-30130-dup-label) + (3) DONE earlier (pack-pop-warn). HEARTBEAT INTENTIONALLY STALE — TTL-resumable. RESIDUAL: (4) malformed #pragma pack always-on — the clean fix is warn_unknown_pragmas default-on (matching gcc -Wpragmas), a broader change (an always-on warning breaks the cli/malformed_pragma_is_not_fatal -Wno-unknown-pragmas-suppressible contract); (5) further minor items
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: fec2f992 | TS: 2026-08-18T15:20Z
       REF: DETAILS.md#t-mac-30130-unused-label | DEPS: —
@@ -277,9 +281,6 @@
 - [ ] T-mac-30187 [S] Fix: [MED, missing diagnostic] `extern int x=5;` no -Wextern-initializer — extern-with-const-init routes to definition emission with no warning path (`mccgen.c:18894`); mcc silent even under -Wall -Wextra (emits D _x, returns 5 — codegen correct); clang -Wextern-initializer, gcc "initialized and declared extern". C11 6.9.2. Fix: warn when extern is combined with an initializer.
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-extern-init | DEPS: —
-- [ ] T-mac-30188 [S] Fix: [MED, diagnostic] tag declared in a prototype parameter list draws no visibility warning — `void f(struct Local *p);` compiles silently even w/ -Wall -Wextra (no such diagnostic in src); clang -Wvisibility, gcc "declared inside parameter list will not be visible outside". Semantics CORRECT (prototype-scoped tag is a distinct incomplete type; later file-scope struct Local{} correctly conflicts). Also LOW: enum-const-vs-object conflict (`enum E{A}; int A;`) correctly rejected but misleading msg ("non-static declaration follows static declaration" vs "redeclared as different kind of symbol"). Fix: add the param-list-scope warning; correct the enum-const conflict wording.
-      OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
-      REF: INVESTIGATIONS.md#r29-proto-scope-diag | DEPS: —
 - [ ] T-mac-30189 [S] Fix: [LOW cluster] UB-fold/optimization/cosmetic — (1) UB shift-count>=width const-folds differently across all three (`mccgen.c:3661,3746-3753` masks; mcc self-consistent w/ its own runtime — pure UB); (2) `alloc_size` not fed into __builtin_object_size (→SIZE_MAX "unknown", safe; _FORTIFY gets no allocator info); (3) `pure`/`const` fn attrs don't enable call CSE at -O2 (`mccgen.c:6553-6558` no-op; correct results); (4) misplaced attribute (warn_unused_result on a var) → generic "ignored" vs oracles' specific "only applies to functions"; (5) no -Wimplicit-fallthrough warning class ([[fallthrough]] accepted, nothing to suppress); (6) tentative incomplete-array "assumed one element" warning -Wall-gated + mislocated to TU-end/EOF instead of the decl line (`mccgen.c:1138`).
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
       REF: INVESTIGATIONS.md#r29-low-cluster | DEPS: —
