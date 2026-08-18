@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T22:09Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:04Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:14Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T22:11Z |
 
 ## Contracts — blocking, highest priority
@@ -286,9 +286,6 @@
 - [ ] T-mac-30158 [S] Fix: [MED, wrong init order] constructor/destructor priority silently discarded — `ctor_priority:` (`mccgen.c:6388-6393`) evaluates the priority via expr_const() then throws it away; `FuncAttr` (`mcc.h:311-324`) has func_ctor/func_dtor bits but NO priority field; emission uses fixed `.init_array`/`.fini_array` (`:18158-18161`, `mccelf.c:1502-1509` add_array) with no `.init_array.NNNNN` sections. Prioritized ctors run in SOURCE order not ascending-priority, unprioritized-after-prioritized violated, silently. Confirmed on ELF too. Basic before/after-main + dtor-vs-atexit LIFO + exit()-skip are CORRECT. Fix: store priority in FuncAttr, emit `.init_array.NNNNN`/`.fini_array.NNNNN` (ELF) + order Mach-O __mod_init_func.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-ctor-priority | DEPS: —
-- [ ] T-mac-30159 [S] Fix: [MED] `#pragma GCC diagnostic push/pop/ignored/error` is a no-op — no handler in `pragma_parse` (`mccpp.c:2601`), falls to catch-all `else` (`:2807`) warn-as-unknown. `#pragma GCC diagnostic ignored "-Wsign-compare"` does NOT suppress + `... error "-Wunused-variable"` does NOT escalate (clang/gcc honor push/pop regions). Widely used to locally silence a warning. Fix: push/pop stack of per-warning overrides keyed off the -W name.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 75fa28a3 | TS: 2026-08-18T22:10Z
-      REF: INVESTIGATIONS.md#r27-pragma-diagnostic | DEPS: —
 - [ ] T-mac-30162 [S] Fix: [MED, link correctness] `#pragma weak` ignored → symbol strong, alias dropped — `#pragma weak wsym` leaves wsym STRONG (nm: mcc `D _wsym` vs clang/gcc `weak external`); `#pragma weak alias = target` dropped entirely (no alias symbol). No handler in pragma_parse (`mccpp.c:2807`). Dup-symbol link errors / missing weak-override. Clusters w/ T-mac-30135 weak/weakref attr. Fix: weak pragma handler marking the sym weak (reuse a.weak) + weak-alias to target.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-weak | DEPS: —
