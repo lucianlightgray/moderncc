@@ -6514,6 +6514,8 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			break;
 		case TOK_USED1:
 		case TOK_USED2:
+			ad->a.used = 1;
+			break;
 		case TOK_UNUSED1:
 		case TOK_UNUSED2:
 		case TOK_MAYBE_UNUSED1:
@@ -18160,7 +18162,7 @@ static void gen_inline_functions(MCCState *s) {
 			if (!sym)
 				{ MCC_TRACE("br\n"); continue; }
 			int emit = !(sym->type.t & VT_INLINE) ||
-								 ((sym->type.t & VT_STATIC) && sym->c);
+								 ((sym->type.t & VT_STATIC) && (sym->c || sym->a.used));
 			if (mcc_state->c99_inline_body && !emit && sym->c &&
 					(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC)) { MCC_TRACE("br\n");
 				sym->type.t &= ~VT_INLINE;

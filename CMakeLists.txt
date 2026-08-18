@@ -4856,6 +4856,16 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/excess-string-init-nowarn" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        if(UNIX)
+            add_test(NAME "inline/used-static-inline"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/inline/used-emit.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/inline/used_static_inline.c"
+                        "${CMAKE_BINARY_DIR}/usi.o")
+            set_tests_properties("inline/used-static-inline" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77)
+        endif()
+
         add_executable(smokerun tools/smokerun.c tools/toolsupport.c)
         target_include_directories(smokerun PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src")
