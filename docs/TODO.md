@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30233 [S] Fix: [HIGH] `__has_builtin` false-negative for name-recognized builtins mcc implements (mem/str/alloca/offsetof/abs family) — make pp_has_builtin_arg mirror the parser's real recognition set
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T13:52Z
+      REF: DETAILS.md#t-mac-30233-has-builtin-name-recognized | DEPS: —
+
 
 
 
@@ -100,9 +104,6 @@
 - [ ] T-mac-30250 [S] Fix: [MED, over-defined macro] `__STDC_ISO_10646__` defined by mcc, undefined by both oracles on Apple arm64 — mcc predefines `__STDC_ISO_10646__ = 201706L` (`mccdefs.h:54`); clang+gcc-16 both leave it UNDEFINED on this target (`__STDC_UTF_16__`/`__STDC_UTF_32__`==1 agree). Can flip `#ifdef` feature paths (wchar_t-is-Unicode assumptions). Arguably defensible (wchar_t holds code points) but diverges from both toolchains. Fix: match the platform — drop the define on Apple targets (or gate per target).
       OWNER: — | STATE: OPEN | SHA: 9d5dd812 | TS: 2026-08-18T22:45Z
       REF: INVESTIGATIONS.md#r37-iso10646 | DEPS: —
-- [ ] T-mac-30233 [S] Fix: [HIGH, silent wrong path-selection] `__has_builtin` false-negative for name-recognized builtins mcc actually implements — `#if __has_builtin(__builtin_memcpy)` (+ memmove/memset/memcmp/strlen/strcpy/alloca/offsetof/abs) → 0 on mcc, 1 on clang+gcc-16, even though all compile+run cleanly on mcc → portable code guarding a fast path behind `#if __has_builtin(...)` silently takes the fallback. `pp_has_builtin_arg` (`mccpp.c:2098`) returns true only for predefined-token-range builtins (`:2118`), a tiny hard-coded `untokenized[]` list (`:2099-2109`, va_*/__*_chk), or `define_find` (`:2124`); the mem/str/alloca/offsetof/abs family (recognized by NAME at parse/codegen, not by token) falls through → 0. Token-backed builtins (expect/constant_p/bswap32/clz/popcount/…) correctly return 1. Fix: consult the same builtin table the parser lowers from so __has_builtin can't drift from real support.
-      OWNER: — | STATE: OPEN | SHA: 99a5df23 | TS: 2026-08-18T21:30Z
-      REF: INVESTIGATIONS.md#r36-has-builtin | DEPS: —
 - [ ] T-mac-30235 [S] Fix: [MED, -E self-inconsistent] `_Pragma("push_macro"/"pop_macro")` not applied in `-E` mode — under -E the `_Pragma` operator form is emitted as `#pragma` TEXT but never fed to `pragma_parse`, so a later pop_macro fails to restore: mcc `V 2`/`W 2` vs clang+gcc-16 `V 2`/`W M`. The `#pragma push_macro` DIRECTIVE form works in -E, and `_Pragma` push/pop works in normal compile — bug is -E-only for the _Pragma form. `next()` gates real _Pragma handling on `output_type != MCC_OUTPUT_PREPROCESS` (`mccpp.c:5603/:5614`) so in -E it reaches `pp_pragma_operator` (`:6186-6221`) which only prints `#pragma <content>` (`:6216-6218`), never `pragma_parse` (cf. directive path `:3099`). Fix: invoke pragma_parse for state-mutating pragmas (≥push_macro/pop_macro) in pp_pragma_operator before/instead of emitting.
       OWNER: — | STATE: OPEN | SHA: 99a5df23 | TS: 2026-08-18T21:30Z
       REF: INVESTIGATIONS.md#r36-pragma-op-E | DEPS: —
