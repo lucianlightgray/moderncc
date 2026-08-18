@@ -401,7 +401,10 @@
 #if !defined __linux__ && !defined _WIN32
 # if defined __APPLE__
 	#define __builtin_flt_rounds() 1
-	#define __builtin_bzero(p, ignored_size) bzero(p, sizeof(*(p)))
+	/* T-mac-30171: bzero(p,n) zeros n bytes; the old macro dropped the size
+	 * and zeroed sizeof(*p). Delegate to memset (a working redirect that
+	 * needs no <strings.h>). */
+	#define __builtin_bzero(p, n) __builtin_memset((p), 0, (n))
 # endif
 #endif
 	__mcc_float_t __mcc_nansf(const char *);
@@ -712,7 +715,17 @@
 	__BUILTIN(int, printf_unlocked, (const char*, ...))
 	__BUILTIN(void, exit, (int))
 	__BUILTIN(void*, memchr, (const void*, int, __SIZE_TYPE__))
+#if defined __APPLE__
+	/* T-mac-30170: macOS libc has no mempcpy symbol, so the __asm__ redirect
+	 * would leave an unresolved reference. Provide it inline (memcpy then
+	 * return dst+n, the GNU semantics). */
+	static __inline void *__builtin_mempcpy(void *__d, const void *__s, __SIZE_TYPE__ __n) {
+		__builtin_memcpy(__d, __s, __n);
+		return (char *)__d + __n;
+	}
+#else
 	__BUILTIN(void*, mempcpy, (void*, const void*, __SIZE_TYPE__))
+#endif
 	__BUILTIN(char*, stpcpy, (char*, const char*))
 	__BUILTIN(char*, stpncpy, (char*, const char*, __SIZE_TYPE__))
 	__BUILTIN(__SIZE_TYPE__, strnlen, (const char*, __SIZE_TYPE__))

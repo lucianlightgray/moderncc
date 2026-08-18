@@ -5040,6 +5040,14 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/ckdint/ckd_basic.c")
         set_tests_properties("ckdint/ckd-basic" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
+
+        # T-mac-30170/30171: on macOS __builtin_mempcpy must link and
+        # __builtin_bzero(p,n) must zero n bytes (pre-fix: link error / 1 byte).
+        add_test(NAME "builtins/macos-mem"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/builtins/macos_mem.c")
+        set_tests_properties("builtins/macos-mem" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
         add_test(NAME "diag/global-addr-static-init"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/diag/global_addr_static_init.c"
