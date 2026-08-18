@@ -741,7 +741,12 @@ redo:
 				if (align < 64)
 					{ MCC_TRACE("br\n"); align = 64; }
 #endif
-				if (k <= HOST_RUNMEM_RO)
+				/* T-mac-30196: when RO is separately protectable, each group
+				 * (RX/RO/RW) must start on its own page so the RO group's
+				 * page-rounded mprotect does not spill into the following RW
+				 * group. (Without this, RO-protecting k=1 also froze the .data/
+				 * .bss that shared its last page.) */
+				if (k <= HOST_RUNMEM_RO || (HOST_RUNMEM_RO && k == 2))
 					{ MCC_TRACE("br\n"); align = PAGESIZE; }
 			}
 			s->sh_addralign = align;
@@ -757,9 +762,17 @@ redo:
 				{ MCC_TRACE("br\n"); continue; }
 			f = k;
 			if (f >= HOST_RUNMEM_RO) { MCC_TRACE("br\n");
-				if (f != 0)
+				/* T-mac-30196: only the RW group (k=2) is left at its default
+				 * writable protection. The RO group sits at index HOST_RUNMEM_RO
+				 * (k==1 on hosts where RO is separately protectable) and MUST be
+				 * made read-only — the old `f != 0` skipped it too, leaving const
+				 * data writable under -run (mutable where AOT SIGBUSes). When RO
+				 * is not separable (HOST_RUNMEM_RO==0) the RX group instead becomes
+				 * RWX (f=3) and RO/RW are skipped. */
+				if (f != HOST_RUNMEM_RO)
 					{ MCC_TRACE("br\n"); continue; }
-				f = 3;
+				if (f == 0)
+					{ MCC_TRACE("br\n"); f = 3; }
 			}
 			n = PAGEALIGN(n);
 			if (MCC_VTIER(s1->verbose) == MCC_V2) { MCC_TRACE("br\n");

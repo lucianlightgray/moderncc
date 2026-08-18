@@ -5049,6 +5049,15 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("builtins/macos-mem" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30196: under -run, rodata must be read-only (write faults) while
+        # .data/.bss stay writable — matching AOT (Darwin-gated).
+        add_test(NAME "jit/run-rodata-ro"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/jit/run-rodata-ro.sh"
+                    ${_mcc_exe} "${CMAKE_CURRENT_SOURCE_DIR}")
+        set_tests_properties("jit/run-rodata-ro" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+            PASS_REGULAR_EXPRESSION "const write faults under -run")
+
         # T-mac-30192: _Alignof(void) is a GNU void-size extension (value 1),
         # not a hard error — parity with sizeof(void).
         add_test(NAME "sizeof/alignof-void"
