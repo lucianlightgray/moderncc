@@ -5098,6 +5098,18 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/pointer-sign-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30166: __builtin_*_overflow with a non-integer (float*) result
+        # must be rejected; integer results still work.
+        add_test(NAME "diag/overflow-float-rejected" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/overflow_float_result.c"
+                    -o "${CMAKE_BINARY_DIR}/overflow-float.o")
+        set_tests_properties("diag/overflow-float-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
+        add_test(NAME "diag/overflow-int-ok" COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/overflow_int_ok.c")
+        set_tests_properties("diag/overflow-int-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"

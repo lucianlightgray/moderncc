@@ -1039,6 +1039,7 @@
 	__mcc_ullong_t __mcc_ovv;				\
 	__mcc_ov_wide_t __mcc_ovw;				\
 	int __mcc_ovf;						\
+	(void)sizeof((__typeof__(*__mcc_ovp))1 % 1);		\
 	if (__mcc_ov_is_wide(*__mcc_ovp) || __mcc_ov_is_wide(__mcc_ova)	\
 	|| __mcc_ov_is_wide(__mcc_ovb)) {			\
 	__mcc_ovf = __mcc_ov_calc_w((code),			\
