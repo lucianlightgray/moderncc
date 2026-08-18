@@ -423,6 +423,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/syncnand.c -o {W}/snd && {W}/snd",
 		 "OK\n"},
 
+		{"cgoto_into_vla_rejected", "",
+		 "{MCC} -B{B} -I{I} -c {D}/cgoto_vla.c -o {W}/cg.o 2>{W}/cg.err; "
+		 "grep -c 'variably modified' {W}/cg.err",
+		 "1\n"},
+
 		{"dM_dump_macros", "",
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},

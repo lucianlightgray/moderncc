@@ -14236,6 +14236,10 @@ tok_next:
 				{ MCC_TRACE("br\n"); s->r = LABEL_FORWARD; }
 		}
 		s->a.used = 1;
+		if (s->r & LABEL_FORWARD) { MCC_TRACE("br\n");
+			if (vla_seq < s->vla_min_goto_gpp)
+				{ MCC_TRACE("br\n"); s->vla_min_goto_gpp = vla_seq; }
+		}
 		if ((s->type.t & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
 			s->type.t = VT_VOID;
 			mk_pointer(&s->type);
