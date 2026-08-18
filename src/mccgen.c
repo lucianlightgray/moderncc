@@ -5512,10 +5512,33 @@ again:
 				vtop->c.i = (vtop->c.ld != 0);
 			} else { MCC_TRACE("br\n");
 				if (sf) { MCC_TRACE("br\n");
-					if (dbt & VT_UNSIGNED)
-						{ MCC_TRACE("br\n"); vtop->c.i = vtop->c.ld < 0 ? (uint64_t)(int64_t)vtop->c.ld : (uint64_t)vtop->c.ld; }
-					else
-						{ MCC_TRACE("br\n"); vtop->c.i = (int64_t)vtop->c.ld; }
+					if (dbt_bt == VT_INT128) { MCC_TRACE("br\n");
+						if (dbt & VT_UNSIGNED)
+							{ MCC_TRACE("br\n"); vtop->c.i = vtop->c.ld < 0 ? (uint64_t)(int64_t)vtop->c.ld : (uint64_t)vtop->c.ld; }
+						else
+							{ MCC_TRACE("br\n"); vtop->c.i = (int64_t)vtop->c.ld; }
+					} else { MCC_TRACE("br\n");
+						long double fv = vtop->c.ld;
+						int ftoi_wide = (dbt_bt == VT_LLONG);
+						int ftoi_uns = ftoi_wide ? (dbt & VT_UNSIGNED) : (dbt_bt == VT_INT ? (dbt & VT_UNSIGNED) : 0);
+						if (fv != fv)
+							{ MCC_TRACE("br\n"); vtop->c.i = 0; }
+						else if (ftoi_uns) { MCC_TRACE("br\n");
+							if (fv <= 0)
+								{ MCC_TRACE("br\n"); vtop->c.i = 0; }
+							else if (fv >= (ftoi_wide ? (long double)ULLONG_MAX : (long double)UINT_MAX))
+								{ MCC_TRACE("br\n"); vtop->c.i = ftoi_wide ? (int64_t)ULLONG_MAX : (int64_t)(uint64_t)UINT_MAX; }
+							else
+								{ MCC_TRACE("br\n"); vtop->c.i = (int64_t)(uint64_t)fv; }
+						} else { MCC_TRACE("br\n");
+							if (fv >= (ftoi_wide ? (long double)LLONG_MAX : (long double)INT_MAX))
+								{ MCC_TRACE("br\n"); vtop->c.i = ftoi_wide ? (int64_t)LLONG_MAX : (int64_t)INT_MAX; }
+							else if (fv <= (ftoi_wide ? (long double)LLONG_MIN : (long double)INT_MIN))
+								{ MCC_TRACE("br\n"); vtop->c.i = ftoi_wide ? (int64_t)LLONG_MIN : (int64_t)INT_MIN; }
+							else
+								{ MCC_TRACE("br\n"); vtop->c.i = (int64_t)fv; }
+						}
+					}
 				} else if (sbt_bt == VT_LLONG || sbt_bt == VT_INT128 || (MCC_PTR_SIZE == 8 && sbt == VT_PTR))
 					{ MCC_TRACE("br\n"); ; }
 				else if (sbt & VT_UNSIGNED)

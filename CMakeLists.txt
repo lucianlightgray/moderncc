@@ -7629,6 +7629,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(bitint-int128-signext-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/ftoi_fold_saturate.c")
+        add_test(NAME ftoi-fold-saturate-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/ftoi_fold_saturate.c
+            --out ${CMAKE_BINARY_DIR}/ftoi_fold_saturate${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(ftoi-fold-saturate-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/atomic_aggregate_align.c")
         add_test(NAME atomic-aggregate-align-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
