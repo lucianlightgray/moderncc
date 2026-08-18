@@ -5173,6 +5173,12 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/fp16_type.c")
         set_tests_properties("type/fp16" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30221: -pg is warn-and-ignore (no profiling codegen), consistent
+        # with -finstrument-functions -- it must not hard-error the build.
+        add_test(NAME "driver/pg-warn-and-ignore" COMMAND ${_mcc_exe} -pg -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pg_flag.c")
+        set_tests_properties("driver/pg-warn-and-ignore" PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30130 slice-1: -Wunused-label for an ordinary defined-but-
         # unreferenced label; goto'd / address-taken labels stay clean.
         add_test(NAME "diag/unused-label" COMMAND ${_mcc_exe} -Wall -c

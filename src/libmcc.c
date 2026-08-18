@@ -2191,6 +2191,7 @@ enum {
 	MCC_OPTION_mfloat_abi,
 	MCC_OPTION_m,
 	MCC_OPTION_f,
+	MCC_OPTION_pg,
 	MCC_OPTION_isystem,
 	MCC_OPTION_sysroot,
 	MCC_OPTION_isysroot,
@@ -2322,6 +2323,7 @@ static const MCCOption mcc_options[] = {
 #endif
 		{"m", MCC_OPTION_m, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"f", MCC_OPTION_f, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"pg", MCC_OPTION_pg, 0},
 		{"isystem", MCC_OPTION_isystem, MCC_OPTION_HAS_ARG},
 		{"iquote", MCC_OPTION_iquote, MCC_OPTION_HAS_ARG},
 		{"idirafter", MCC_OPTION_idirafter, MCC_OPTION_HAS_ARG},
@@ -3258,6 +3260,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 					{ MCC_TRACE("br\n"); goto unsupported_option; }
 			}
 		} break;
+		case MCC_OPTION_pg:
+			goto unsupported_option;
 #ifdef MCC_TARGET_ARM
 		case MCC_OPTION_mfloat_abi:
 			if (!strcmp(optarg, "softfp")) { MCC_TRACE("br\n");
