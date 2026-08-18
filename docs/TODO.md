@@ -53,10 +53,10 @@
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
 - [ ] T-mac-30183 [S] Fix: [MED] nonnull/returns_nonnull/sentinel warn "attribute ignored" -> fail under -Werror; accept them silently (extend attr_ignore_silently). RESIDUAL: the -Wnonnull/missing-sentinel call-site diagnostics.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:30Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS (accept-slice DONE 9e97f027; misuse-diagnostic residual) | SHA: 9e97f027 | TS: 2026-08-18T16:30Z
       REF: DETAILS.md#t-mac-30183-30181-accept-attrs | DEPS: —
 - [ ] T-mac-30181 [S] Fix: [MED] warn_unused_result warns "attribute ignored" -> fail under -Werror; accept it silently (same change as T-mac-30183). RESIDUAL: the -Wunused-result discard diagnostic.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T16:30Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS (accept-slice DONE 9e97f027; misuse-diagnostic residual) | SHA: 9e97f027 | TS: 2026-08-18T16:30Z
       REF: DETAILS.md#t-mac-30183-30181-accept-attrs | DEPS: —
 
 - [ ] T-lin-10405 [S] Formalize + implement the CPU<->GPU transaction in the JIT (user-directed). DELIVERED: formal design + grounded marshalling ABI + gap analysis (DETAILS#t-lin-10405-cpu-gpu-transaction), and Phase A/B DEMONSTRATION (e91e4218): tools/slicerun.c suite_txn / ctest slice/txn — CPU seeds live-in, GPU runs { c=a+b; a=c*a; }, CPU consumes live-out c=17 a=170 (a transaction, not an oracle). Mechanism validated by slice/real+src green on RTX 5070 Ti; slice/txn run-verification deferred (user gaming on GPU). RESIDUAL: Phase C (frame-equivalence gate) + Phase D (inline into JIT-generated bodies, gaps 4-6). TTL-resumable.
