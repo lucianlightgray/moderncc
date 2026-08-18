@@ -4669,6 +4669,9 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 			type.t = VT_LDOUBLE;
 		} else if (bt1 == VT_DOUBLE || bt2 == VT_DOUBLE) { MCC_TRACE("br\n");
 			type.t = VT_DOUBLE;
+			if ((t1 & (VT_BTYPE | VT_LONG)) == (VT_DOUBLE | VT_LONG) ||
+					(t2 & (VT_BTYPE | VT_LONG)) == (VT_DOUBLE | VT_LONG))
+				{ MCC_TRACE("br\n"); type.t |= VT_LONG; }
 		} else if (bt1 == VT_FLOAT || bt2 == VT_FLOAT) { MCC_TRACE("br\n");
 			type.t = VT_FLOAT;
 		} else if (bt1 == VT_FLOAT16 || bt2 == VT_FLOAT16) { MCC_TRACE("br\n");
