@@ -5110,6 +5110,19 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/overflow-int-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30186: too many braces around a scalar initializer is diagnosed
+        # at the default level (was -Wall-gated); single-brace stays clean.
+        add_test(NAME "diag/scalar-extra-braces" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/scalar_extra_braces.c"
+                    -o "${CMAKE_BINARY_DIR}/scalar-extra-braces.o")
+        set_tests_properties("diag/scalar-extra-braces" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "too many braces around scalar initializer")
+        add_test(NAME "diag/scalar-braces-ok" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/scalar_braces_ok.c")
+        set_tests_properties("diag/scalar-braces-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"

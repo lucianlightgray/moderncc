@@ -17490,7 +17490,7 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 			if (mcc_state->warn_pedantic || mcc_state->pedantic_errors)
 				{ MCC_TRACE("br\n"); mcc_pedantic("too many braces around scalar initializer"); }
 			else
-				{ MCC_TRACE("br\n"); mcc_warning_c(warn_all)(
+				{ MCC_TRACE("br\n"); mcc_warning(
 						"too many braces around scalar initializer"); }
 		}
 		decl_initializer(p, type, c, flags & ~DIF_HAVE_ELEM);
