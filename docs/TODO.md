@@ -52,9 +52,6 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30186 [S] Fix: [MED] `int z={{5}}` (too many braces around scalar) not diagnosed at default — make the check a default-ON warning (was -Wall-gated); diagnoses the constraint violation, error under -Werror
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T15:05Z
-      REF: DETAILS.md#t-mac-30186-scalar-braces | DEPS: —
 
 
 
