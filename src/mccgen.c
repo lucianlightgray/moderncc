@@ -16485,6 +16485,8 @@ again:
 		seqp_check();
 		if (!is_integer_btype(vtop->type.t & VT_BTYPE))
 			{ MCC_TRACE("br\n"); mcc_error("switch value not an integer"); }
+		if ((vtop->type.t & VT_BTYPE) == VT_BOOL)
+			{ MCC_TRACE("br\n"); gen_cast_s(VT_INT); }
 		skip(')');
 		rir_hook_switch_begin();
 		sw->sv = *vtop--;

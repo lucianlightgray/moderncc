@@ -7613,6 +7613,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(bitint-bool-store-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/switch_bool_promote.c")
+        add_test(NAME switch-bool-promote-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/switch_bool_promote.c
+            --out ${CMAKE_BINARY_DIR}/switch_bool_promote${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(switch-bool-promote-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/bitint_bit_builtins.c")
         add_test(NAME bitint-bit-builtins-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
