@@ -2615,6 +2615,32 @@ static CachedInclude *search_cached_include(MCCState *s1, const char *filename, 
 	return e;
 }
 
+struct pp_diag_snap {
+	unsigned char a[offsetof(MCCState, warn_extra_ptr_zero_cmp) - offsetof(MCCState, warn_none) + 1];
+	unsigned char b[offsetof(MCCState, pedantic_errors) - offsetof(MCCState, warn_pedantic) + 1];
+};
+static struct pp_diag_snap *pp_diag_stack;
+static int pp_diag_stack_n;
+
+static void pp_diag_push(MCCState *s) { MCC_TRACE("enter\n");
+	struct pp_diag_snap snap;
+	memcpy(snap.a, (char *)s + offsetof(MCCState, warn_none), sizeof snap.a);
+	memcpy(snap.b, (char *)s + offsetof(MCCState, warn_pedantic), sizeof snap.b);
+	pp_diag_stack = mcc_realloc(pp_diag_stack, (pp_diag_stack_n + 1) * sizeof(*pp_diag_stack));
+	pp_diag_stack[pp_diag_stack_n++] = snap;
+}
+
+static void pp_diag_pop(MCCState *s) { MCC_TRACE("enter\n");
+	struct pp_diag_snap *snap;
+	if (pp_diag_stack_n <= 0) { MCC_TRACE("br\n");
+		mcc_warning("#pragma GCC diagnostic pop without matching push");
+		return;
+	}
+	snap = &pp_diag_stack[--pp_diag_stack_n];
+	memcpy((char *)s + offsetof(MCCState, warn_none), snap->a, sizeof snap->a);
+	memcpy((char *)s + offsetof(MCCState, warn_pedantic), snap->b, sizeof snap->b);
+}
+
 static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 	next_nomacro();
 	if (tok == TOK_push_macro || tok == TOK_pop_macro) { MCC_TRACE("br\n");
@@ -2850,6 +2876,47 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); mcc_warning("%s", msg ? msg : "#pragma GCC warning"); }
 			if (msg)
 				{ MCC_TRACE("br\n"); mcc_free(msg); }
+			return 1;
+		}
+		if (tok >= TOK_IDENT && !strcmp(get_tok_str(tok, NULL), "diagnostic")) { MCC_TRACE("br\n");
+			next_nomacro();
+			const char *sub = tok >= TOK_IDENT ? get_tok_str(tok, NULL) : "";
+			if (!strcmp(sub, "push")) { MCC_TRACE("br\n"); pp_diag_push(s1); }
+			else if (!strcmp(sub, "pop")) { MCC_TRACE("br\n"); pp_diag_pop(s1); }
+			else { MCC_TRACE("br\n");
+				int mode = !strcmp(sub, "ignored") ? 0
+						: !strcmp(sub, "error") ? 2
+						: (!strcmp(sub, "warning") || !strcmp(sub, "default")) ? 1
+						: -1;
+				if (mode >= 0) { MCC_TRACE("br\n");
+					next_nomacro();
+					if (tok == TOK_STR || tok == TOK_PPSTR) { MCC_TRACE("br\n");
+						const char *raw = (const char *)tokc.str.data;
+						char nm[128];
+						int k = 0;
+						if (tok == TOK_PPSTR && raw[0] == '"') { MCC_TRACE("br\n");
+							raw++;
+							while (*raw && *raw != '"' && k < (int)sizeof nm - 1)
+								{ MCC_TRACE("br\n"); nm[k++] = *raw++; }
+							nm[k] = 0;
+						} else { MCC_TRACE("br\n");
+							snprintf(nm, sizeof nm, "%s", raw);
+						}
+						if (nm[0] == '-' && nm[1] == 'W') { MCC_TRACE("br\n");
+							char buf[128];
+							if (mode == 0)
+								{ MCC_TRACE("br\n"); snprintf(buf, sizeof buf, "no-%s", nm + 2); }
+							else if (mode == 2)
+								{ MCC_TRACE("br\n"); snprintf(buf, sizeof buf, "error=%s", nm + 2); }
+							else
+								{ MCC_TRACE("br\n"); snprintf(buf, sizeof buf, "%s", nm + 2); }
+							pp_diag_set_flag(s1, buf);
+						}
+					}
+				}
+			}
+			while (tok != TOK_LINEFEED && tok != TOK_EOF)
+				{ MCC_TRACE("br\n"); next_nomacro(); }
 			return 1;
 		}
 		while (tok != TOK_LINEFEED && tok != TOK_EOF)
@@ -5881,6 +5948,7 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 	mcc_parse_depth = 0;
 	pp_expr = 0;
 	pp_counter = 0;
+	pp_diag_stack_n = 0;
 	pp_debug_tok = pp_debug_symv = 0;
 	s1->pack_stack[0] = 0;
 	s1->pack_stack_ptr = s1->pack_stack;

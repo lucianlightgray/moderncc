@@ -5,6 +5,7 @@
 #if MCC_AMALGAMATED
 #include "mcchost.c"
 #include "mccstats.c"
+static int pp_diag_set_flag(MCCState *s, const char *name);
 #include "mccpp.c"
 #include "mccgen.c"
 #include "mcccst.c"
@@ -2576,6 +2577,10 @@ static int set_flag(MCCState *s, const FlagDef *flags, const char *name) { MCC_T
 		}
 	}
 	return ret;
+}
+
+static int pp_diag_set_flag(MCCState *s, const char *name) { MCC_TRACE("enter\n");
+	return set_flag(s, options_W, name);
 }
 
 static int opt_level_top(void) { MCC_TRACE("enter\n");
