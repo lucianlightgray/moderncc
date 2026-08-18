@@ -7326,6 +7326,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(atomic-aggregate-align-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/u16_hex_escape.c")
+        add_test(NAME u16-hex-escape-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/u16_hex_escape.c
+            --out ${CMAKE_BINARY_DIR}/u16_hex_escape${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(u16-hex-escape-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/behavior/c99inline_a.c")
         add_test(NAME c99-inline-body-2tu COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

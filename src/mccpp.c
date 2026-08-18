@@ -3123,7 +3123,7 @@ the_end:
 	parse_flags = saved_parse_flags;
 }
 
-static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long) { MCC_TRACE("enter\n");
+static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long, int prefix) { MCC_TRACE("enter\n");
 	int c, n, i, is_ucn;
 	const uint8_t *p;
 
@@ -3206,6 +3206,10 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 				}
 				if (is_long) { MCC_TRACE("br\n");
 				add_hex_or_ucn:
+					if (!is_ucn && prefix == 'u' && (unsigned)n > 0xFFFF) { MCC_TRACE("br\n");
+						mcc_warning("hex escape sequence out of range");
+						n &= 0xFFFF;
+					}
 					c = n;
 					goto add_char_nonext;
 				}
@@ -3358,7 +3362,7 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 	p[len] = 0;
 
 	cstr_reset(&tokcstr);
-	parse_escape_string(&tokcstr, p, is_long);
+	parse_escape_string(&tokcstr, p, is_long, prefix);
 	if (p != buf)
 		{ MCC_TRACE("br\n"); mcc_free(p); }
 
