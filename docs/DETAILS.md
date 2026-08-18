@@ -51366,3 +51366,17 @@ object-identity corpus (`find tests/exec -name '*.c'`).
 `__BITINT_MAXWIDTH__`=512 (bitint256.c golden already reads "maxwidth 512"), so
 `_BitInt(257)` compiles and `_BitInt(513)` is the first rejected width. This red
 is present on clean HEAD independent of this task — see T-mac-30079.
+
+<a id="t-mac-30082-int64-float-fold"></a>
+
+## T-mac-30082 int64→float constant fold double-rounds via host long double (RESOLVED, mac-arm64)
+
+**Type** `[S]` — **State** DONE — **DEPS** — — investigation `INVESTIGATIONS.md#r16-int64-float-fold`.
+
+**Root cause.** `gen_cast`'s float-destination constant-fold (`src/mccgen.c`, the `if (df)` branch) built the value in `vtop->c.ld` and then did `vtop->c.f = (float)vtop->c.ld`. On an arm64 host `long double` is 64-bit `double` (53-bit mantissa), so a 64-bit integer source rounded twice — 64→53 (int→ld) then 53→24 (ld→float) — while the runtime path (`gen_cvt_itof1` → arm64 `SCVTF/UCVTF`) is a single correctly-rounded conversion. Per ISO C 6.3.1.4 the conversion must round exactly once, so the fold was wrong: a constant operand and a variable operand of the identical `(float)` cast disagreed. Because the defect is in the compiler's HOST arithmetic, an arm64-hosted mcc miscompiled the constant for every target. `(float)18014399583223809LL` folded to `0x5A800000`; the correct single-rounded value (and the runtime/clang result) is `0x5A800001`.
+
+**Fix.** In the `dbt == VT_FLOAT` case, when the source is a 64-bit integer (`sbt_bt == VT_LLONG`, or a 64-bit `VT_PTR`), convert directly from the original integer — `vtop->c.f = (sbt & VT_UNSIGNED) ? (float)(uint64_t)cpre : (float)(int64_t)cpre` — where `cpre` is the integer captured at the top of the fold before the union-overlapping `c.ld` write clobbers `c.i`. (A first attempt read `vtop->c.i` directly and got garbage precisely because the earlier `c.ld = c.i` had already overwritten the shared `CValue` union; `cpre` is the pre-captured copy.) 32-bit integer sources are exact in `double` so they keep the `(float)c.ld` path (single rounding); float/double sources and the `double` destination are unchanged.
+
+**Scope-adjacent (NOT fixed here).** The corollary `_Float16`/`__bf16` const path (`src/mccgen.c:5325-5331`, `f32_to_f16_bits((float)lv)`) triple-rounds a 64-bit integer via the same `(float)lv` step; captured as a LOW item under `INVESTIGATIONS.md#r16-int64-float-fold` — a follow-up, low impact (needs a 64-bit source whose int→float→half path double-rounds at the float step).
+
+**Verification.** `ctest -R 'fold/int64-float'` (native, `NOT CMAKE_CROSSCOMPILING`, FIXTURES MCC_BUILT): `fold/int64-float` runs `mcc -run tests/fold/int64_float.c` and must print `i2f checks=9 fails=0`; the test compares the const-fold against BOTH the runtime `SCVTF/UCVTF` conversion of the same value (through a `volatile`) and baked correctly-single-rounded bits computed by `tests/fold/gen_i2f.py` (round-half-to-even int→binary32), across 9 signed/unsigned values with >53 significant bits near a float rounding boundary. `fold/int64-float-known-positive` compiles the same source with `-DMCC_I2F_MUTATE` (one expected bit flipped) and is `WILL_FAIL TRUE`, proving the harness is non-vacuous. Pre-fix the source reports 6 fails; post-fix 0. Kept out of `tests/exec` so it never enters the `o0_ab.sh` object-identity corpus. Regression-free: `ast/o0-baseline` unchanged (zero codegen drift — no corpus TU exercises this fold), FP exec + wide256 + bitint families green.
