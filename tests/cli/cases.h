@@ -1849,7 +1849,7 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'int f(int x){return _Alignof(x);}\\n' > {W}/sae.c && "
 		 "printf 'unsigned long g(void){return sizeof(void);}\\n' > {W}/ssv.c && "
 		 "printf 'int h(int x){return __alignof__(x)+__alignof__(void);}\\nint main(void){return 0;}\\n' > {W}/sgnu.c && "
-		 "{ {MCC} -B{B} -I{I} -c {W}/sav.c -o {W}/sav.o 2>&1; "
+		 "{ {MCC} -B{B} -I{I} -pedantic -c {W}/sav.c -o {W}/sav.o 2>&1; "
 		 "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/sae.c -o {W}/sae.o 2>&1; "
 		 "{MCC} -B{B} -I{I} -pedantic-errors -c {W}/ssv.c -o {W}/ssv.o 2>&1; "
 		 "{MCC} -B{B} -I{I} -Werror -c {W}/sgnu.c -o {W}/sgnu.o 2>&1 && echo CLEAN_OK; } | "
