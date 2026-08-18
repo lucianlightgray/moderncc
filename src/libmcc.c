@@ -2948,7 +2948,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_c:
 			x = MCC_OUTPUT_OBJ;
 		set_output_type:
-			if (s->output_type)
+			if (s->output_type && s->output_type != x)
 				{ MCC_TRACE("br\n"); mcc_warning("-%s: overriding compiler action already specified", popt->name); }
 			s->output_type = x;
 			break;

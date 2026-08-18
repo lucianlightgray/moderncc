@@ -441,6 +441,13 @@ static const cli_case_t cli_cases[] = {
 		 "grep -Fc 'a$$b\\#c.h' {W}/depd/out.mk",
 		 "1\n"},
 
+		{"output_type_same_action_no_warn", "",
+		 "printf 'int x;\\n' > {W}/ot.c && "
+		 "{MCC} -B{B} -I{I} -c -c -o {W}/ot.o {W}/ot.c 2>{W}/ot.same.err; "
+		 "{MCC} -B{B} -I{I} -c -S -o {W}/ot.s {W}/ot.c 2>{W}/ot.diff.err; "
+		 "printf 'same=%s diff=%s\\n' $(grep -c 'overriding' {W}/ot.same.err) $(grep -c 'overriding' {W}/ot.diff.err)",
+		 "same=0 diff=1\n"},
+
 		{"dM_dump_macros", "",
 		 "printf '\\n' > {W}/empty.c && {MCC} -B{B} -E -dM {W}/empty.c | grep -cE '^#define __STDC__ '",
 		 "1\n"},
