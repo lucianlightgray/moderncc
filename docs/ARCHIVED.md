@@ -444,3 +444,4 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-mac-30137 Fix #ifdef/#elifdef __has_embed (+ #elifdef __has_include) not recognized vs defined() | DONE 2026-08-18T08:40Z | SHA 991556ae | REF DETAILS.md#t-mac-30137-has-embed-ifdef
 - (correction) T-mac-30137 code SHA is caf123f8 (the record above cited the claim commit 991556ae).
 - T-mac-30124 Fix _Generic elaborated enum-tag association misparsed as C23 fixed-underlying-type (unget ':' when not a type) | DONE 2026-08-18T09:10Z | SHA 0ed7ccf5 | REF DETAILS.md#t-mac-30124-generic-enum-tag
+- T-mac-30133 Fix __extension__ not silencing -pedantic for declspecs/declarators/_Static_assert (parse_btype self-suppress + decl-scoped re-suppress via AttributeDef.ext_seen; no leak) | DONE 2026-08-18T09:45Z | SHA 29859aab | REF DETAILS.md#t-mac-30133-extension-pedantic
