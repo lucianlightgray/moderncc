@@ -436,6 +436,7 @@ static void gen_bitint_cast(CType *dt) { MCC_TRACE("enter\n");
 	if (sb) { MCC_TRACE("br\n");
 		int suns = bitint_is_unsigned(&vtop->type);
 		int i, nl = bitint_nlimbs(&vtop->type);
+		int sn = bitint_prec(&vtop->type);
 		SValue a;
 		if (dbt == VT_VOID) { MCC_TRACE("br\n");
 			vtop->type = *dt;
@@ -461,7 +462,15 @@ static void gen_bitint_cast(CType *dt) { MCC_TRACE("enter\n");
 			vpop();
 			if (dbt == VT_BOOL)
 				{ MCC_TRACE("br\n"); vpushi(nz); }
-			else
+			else if (dbt == VT_INT128) { MCC_TRACE("br\n");
+				CValue cv;
+				bitint_reduce_limbs(w, sn, suns);
+				memset(&cv, 0, sizeof cv);
+				cv.q.lo = w[0];
+				cv.q.hi = w[1];
+				vsetc(dt, VT_CONST, &cv);
+				return;
+			} else
 				{ MCC_TRACE("br\n"); vpush64(VT_LLONG | VT_UNSIGNED, w[0]); }
 			gen_cast(dt);
 			return;
@@ -469,6 +478,25 @@ static void gen_bitint_cast(CType *dt) { MCC_TRACE("enter\n");
 		if (nocode_wanted & DATA_ONLY_WANTED)
 			{ MCC_TRACE("br\n"); mcc_error("initializer element is not computable at load "
 												"time"); }
+		if (dbt == VT_INT128) { MCC_TRACE("br\n");
+			CType u128;
+			SValue wa;
+			u128.t = VT_INT128 | VT_UNSIGNED;
+			u128.bp = 0;
+			u128.bs = 0;
+			u128.ref = NULL;
+			bitint_to_wide(suns);
+			wideint_materialize(&vtop->type, &wa);
+			wideint_limb_lval(&wa, 1, 1);
+			gen_cast(&u128);
+			vpushi(64);
+			gen_op(TOK_SHL);
+			wideint_limb_lval(&wa, 0, 1);
+			gen_cast(&u128);
+			gen_op('|');
+			vtop->type = *dt;
+			return;
+		}
 		bitint_materialize(&vtop->type, &a);
 		wideint_limb_lval(&a, 0, 1);
 		if (dbt == VT_BOOL) { MCC_TRACE("br\n");

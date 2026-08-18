@@ -7613,6 +7613,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(bitint-bool-store-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/bitint_int128_signext.c")
+        add_test(NAME bitint-int128-signext-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/bitint_int128_signext.c
+            --out ${CMAKE_BINARY_DIR}/bitint_int128_signext${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(bitint-int128-signext-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/atomic_aggregate_align.c")
         add_test(NAME atomic-aggregate-align-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
