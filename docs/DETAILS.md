@@ -51442,3 +51442,18 @@ Regression-free: diagnostics + `ast/o0-baseline` + init/decl exec (34 cells) gre
 **Root cause + fix.** `init_putv`'s load-time-computability guard (`src/mccgen.c:16909`) did not reject a `VT_TLS` symbol, so `__thread int t; int *p = &t;` was accepted and the reloc emit (`:17004`/`:17018`) wrote a plain absolute `R_DATA_PTR` (R_X86_64_64 / R_AARCH64_ABS64 / R_RISCV_64) against the TLS symbol, giving `p` the link-time section offset rather than the thread-local runtime address (verified native: `p != &t`). A TLS address is TP-relative and only known at runtime, so it is not a compile-time constant. Added, right after the existing guard, `if ((vtop->r & VT_SYM) && vtop->sym && (vtop->sym->type.t & VT_TLS)) mcc_error("initializer element is not a compile-time constant")` — the same message clang/gcc emit (byte-identical), all backends.
 
 **Verification.** `ctest -R 'diag/tls-addr-static-init|diag/global-addr-static-init'`: `diag/tls-addr-static-init` (`__thread int t; int *p=&t;`, WILL_FAIL — now errors) + `diag/global-addr-static-init` (an ordinary global's address is still a valid static initializer, compiles). Runtime `&t` (in a function) and normal-global static init unaffected. Regression-free: `ast/o0-baseline` + tls exec + init (49 cells) green.
+
+<a id="t-mac-30125-30129-intrinsics"></a>
+
+## T-mac-30125 (partial→DONE) + T-mac-30129 intrinsic/typeof fixes (RESOLVED, mac-arm64)
+
+**Type** `[S]` — investigations `INVESTIGATIONS.md#r22-intrinsic-builtins` (30125), `#r23-typeof-bitfield` (30129). Code SHA c0a44d92 (with revert 0ca7cbd8).
+
+**T-mac-30125 (DONE for 2 of 3 sub-items; 3rd split to T-mac-30131).**
+- `__builtin_assume` promoted from a no-op macro `((void)0)` (removed from `runtime/include/mccdefs.h`) to a real intrinsic (new `TOK_builtin_assume`, `src/mcctok.h`): parses+typechecks its operand under `nocode_wanted` (an undeclared identifier now errors, matching clang) with the operand UNEVALUATED (no side effects), pushes void.
+- `__builtin_unreachable`/`__builtin_trap`/`__builtin_assume` statements set `expr_has_effect = 1` so they no longer trip a spurious `-Wunused-value`.
+- **Split out:** the `__builtin_expect` result-type-is-`long` fix (sizeof/_Generic) was implemented then REVERTED (0ca7cbd8) because casting the result to `long` changes the emitted object for the sole corpus TU using it (`tests/exec/codegen/codeopt.c`), turning `ast/o0-baseline` red — a legitimate codegen change that needs a fleet-wide o0-baseline re-bank. Re-filed as **T-mac-30131**.
+
+**T-mac-30129 (DONE).** `typeof`/`typeof_unqual` of a bit-field is now rejected (`if (type1.t & VT_BITFIELD) mcc_error("'typeof' applied to a bit-field")` in the TOK_TYPEOF* arm of `parse_btype`, `src/mccgen.c`) instead of creating a bit-field-typed object that miscompiles; matches clang/gcc.
+
+**Verification.** `ctest -R 'builtins/expect-assume|builtins/assume-typecheck|diag/typeof-bitfield'`: `builtins/expect-assume` (`-run`: `__builtin_expect` value preserved, `__builtin_assume` operand unevaluated, no `-Wunused-value` even under `-Wall -Werror`, prints `expect_assume fails=0`); `builtins/assume-typecheck` (WILL_FAIL: `__builtin_assume(undeclared)` errors); `diag/typeof-bitfield` (WILL_FAIL: `typeof(bitfield)` rejected). o0-baseline green (post-revert); builtin/typeof/generic exec families green.
