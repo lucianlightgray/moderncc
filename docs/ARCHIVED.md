@@ -433,3 +433,5 @@ Records below `SHA n/a` predate this protocol: they were retro-minted on 2026-08
 - T-mac-30089 Fix #if/#elif rejecting valid >32-bit controlling constants (expr_preprocess now uses expr_const64_pub, not 32-bit expr_const) | DONE 2026-08-18T06:30Z | SHA <codesha> | REF DETAILS.md#t-mac-30089-pp-if64
 - (correction) T-mac-30089 code SHA is c62a5f19 (the ARCHIVED line above recorded a `<codesha>` placeholder); DETAILS.md#t-mac-30089-pp-if64 has full context.
 - T-mac-30110 Fix runtime clz/ctz(0) disagreeing with the const-fold path (guard x==0 to return the bit width in CLZI/CLZL/CTZI/CTZL) | DONE 2026-08-18T06:45Z | SHA aafecdb4 | REF DETAILS.md#t-mac-30110-clz-ctz-zero
+- T-mac-30092 Fix too-long string-initializer warning ungated → route through -Wexcess-initializers | DONE 2026-08-18T07:05Z | SHA 61281d1c | REF DETAILS.md#t-mac-30092-30093-diag-gate
+- T-mac-30093 Fix implicit-int variable declarator ungated → -Wimplicit-int + C99 permerror (mccgen.c:18557) | DONE 2026-08-18T07:05Z | SHA 61281d1c | REF DETAILS.md#t-mac-30092-30093-diag-gate
