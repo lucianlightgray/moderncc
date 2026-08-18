@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T22:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:44Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T22:56Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50031   | 2026-08-18T23:16Z |
 
 ## Contracts — blocking, highest priority
 
@@ -575,9 +575,6 @@
 - [ ] T-lin-10395 [S] Decimal literal in `[2^63,2^64)` typed `unsigned long` not `unsigned long long` on LP64 (`mccpp.c:3776/3780`) — `_Generic(10000000000000000000,…)` returns default vs gcc/clang's `unsigned long long`; + "integer constant overflow" warning less apt than gcc's "so large that it is unsigned"
       OWNER: — | STATE: OPEN | SHA: 41e71bad | TS: 2026-08-17T21:25Z
       REF: DETAILS.md#t-mac-30032-landed-lin-x64 | DEPS: — | NOTE: LOW — split from T-mac-30032 (sub-item 4). CORRECTED after measuring (lin, 2026-08-17): this is a 3-WAY divergence, NOT a simple ul→ull. On LP64 an unsuffixed decimal in [2^63,2^64): gcc → `__int128` (doesn't fit long long, extends to the signed 128-bit type), clang → `unsigned long long`, mcc → `unsigned long` (matches NEITHER; `_Generic` returns default). mcc DOES support `__int128` (VT_INT128, sizeof 16 verified), so a gcc-faithful fix routes the literal to `__int128` — but that's (a) a DESIGN CHOICE (gcc `__int128` vs clang `ull`; mcc emulates gcc/CC_NAME) and (b) non-trivial (the decimal path at mccpp.c:3910-3917 only produces CINT/CLONG/CLLONG from the 64-bit `n`; a 128-bit constant needs the wide carrier). Careful: an explicit `L`/`LL` suffix must NOT be rerouted (gcc gives `L`→`unsigned long`/`__int128`, `LL`→`__int128` per fit), and value is correct today (`%llu` prints right) — only rank/_Generic differs. `__bf16` const path (sub-item 3) was a NON-ISSUE — verified working (DETAILS anchor).
-- [ ] T-win-50030 [S] int256/bitint128/bitint256 `test_float` reds on win are float-print platform quirks (long double==double, msvcrt `e+060`/`1.#INF`), not miscompiles — guard/win-expect them
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: e3a7cfc8 | TS: 2026-08-18T23:01Z
-      REF: DETAILS.md#t-win-50030-int256-bitint-float-print-win | DEPS: — | NOTE: ~66 of the T-lin-10092/win NOTE-8 102 reds. Only the test_float sections differ (hex-integer sections byte-identical, layout correct); win long double==double (64-bit) + msvcrt printf exponent/inf format. Fix like T-win-50029: `#ifndef _WIN32`-guard the long-double-precision/exponent-sensitive asserts (or win-expected lines) in tests/exec/types/{int256,bitint128,bitint256}.c — coordinate, these are lin/mac's freshly-merged wide-int tests. Verified NOT a wideint-unify regression (fails on pre-merge baseline c49270b2).
 - [ ] T-mac-30030 [S] Investigate: long-double self-host determinism hole — folding uses HOST long double (`mccgen.c:4019`), mcc's own `parse_number` depends on it (`mccpp.c:3379`), `LDOUBLE_WORDS` host-derived; no gate catches a STABLE stage-0→stage-1 divergence, `selftest.c` has no float coverage; self-host face of T-mac-30029
       OWNER: — | STATE: OPEN | SHA: 8b0abb63 | TS: 2026-08-17T20:40Z
       REF: INVESTIGATIONS.md#longdouble-selfhost-determinism | DEPS: —
