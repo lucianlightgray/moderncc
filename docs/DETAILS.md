@@ -51595,3 +51595,11 @@ Verified: `builtins/macos-mem` — bzero zeros exactly n bytes (incl. n=0), memp
 **Type** `[S]` — **State** DONE — investigation `INVESTIGATIONS.md#r29-unused-attr`. Code SHA 22d93805.
 
 `__attribute__((unused))` and C23 `[[maybe_unused]]` were parsed to a bare `break` in `parse_one_attribute` and recorded nothing (there was no `unused` bit in `SymAttr`), so annotated variables and static functions STILL drew `-Wunused-variable` / `-Wunused-function` — the precise false positives the annotation exists to silence, making `-Wall` builds noisy. Fix: add `SymAttr.unused : 1` (`src/mcc.h`), set `ad->a.unused = 1` for the `TOK_UNUSED*`/`TOK_MAYBE_UNUSED*` cases (split out from the `fallthrough`/`unsequenced`/`reproducible` no-op group), and add `a.unused` to the skip conditions at the two warning sites — the unused-function loop (`src/mccgen.c:1082`, alongside the existing `a.used`) and the unused-variable loop (`:15563`). `sym->a = ad->a` propagates the bit to the declared entity. Verified: annotated function+variable and `[[maybe_unused]]` are suppressed while un-annotated ones still warn (the fix is specific). Test `attr/unused-suppress`. o0-baseline byte-identical.
+
+<a id="t-mac-30192-alignof-void"></a>
+
+## T-mac-30192 _Alignof(void) hard-rejected (RESOLVED, mac-arm64)
+
+**Type** `[S]` — **State** DONE — investigation `INVESTIGATIONS.md#r30-alignof-void`. Code SHA 443a469c.
+
+`_Alignof(void)` called `mcc_error("'_Alignof' applied to a void type")` (`src/mccgen.c:13238`) while the adjacent `sizeof(void)` used `mcc_pedantic` and yielded 1 — the GNU void-size extension. clang and gcc-16 both accept `_Alignof(void)`==1 (pedantic-warn under `-pedantic`), uniformly with their `sizeof(void)`; mcc's asymmetry (sizeof→warn+1, alignof→hard error) was inconsistent with its own `sizeof(void)`/`sizeof(fn)` and with both oracles. Fix: change the VT_VOID alignof case to `mcc_pedantic`, so execution falls through to the alignof computation (`type_size(void)`=1 → align 1). Verified: `_Alignof(void)`==1 at the default level (matches gcc/clang `1 1`), `-pedantic` warns on both sizeof and alignof, `-pedantic-errors` still errors (GNU ext). Test `sizeof/alignof-void`. o0-baseline byte-identical.
