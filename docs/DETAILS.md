@@ -51457,3 +51457,11 @@ Regression-free: diagnostics + `ast/o0-baseline` + init/decl exec (34 cells) gre
 **T-mac-30129 (DONE).** `typeof`/`typeof_unqual` of a bit-field is now rejected (`if (type1.t & VT_BITFIELD) mcc_error("'typeof' applied to a bit-field")` in the TOK_TYPEOF* arm of `parse_btype`, `src/mccgen.c`) instead of creating a bit-field-typed object that miscompiles; matches clang/gcc.
 
 **Verification.** `ctest -R 'builtins/expect-assume|builtins/assume-typecheck|diag/typeof-bitfield'`: `builtins/expect-assume` (`-run`: `__builtin_expect` value preserved, `__builtin_assume` operand unevaluated, no `-Wunused-value` even under `-Wall -Werror`, prints `expect_assume fails=0`); `builtins/assume-typecheck` (WILL_FAIL: `__builtin_assume(undeclared)` errors); `diag/typeof-bitfield` (WILL_FAIL: `typeof(bitfield)` rejected). o0-baseline green (post-revert); builtin/typeof/generic exec families green.
+
+<a id="t-mac-30132-static-assert-wide"></a>
+
+## T-mac-30132 _Static_assert controlling constant capped at 32 bits (RESOLVED, mac-arm64)
+
+**Type** `[S]` — **State** DONE — investigation `INVESTIGATIONS.md#r24-static-assert`.
+
+`do_Static_assert` (`src/mccgen.c`) evaluated the controlling expression with the 32-bit `expr_const()` wrapper, which hard-errors "constant exceeds 32 bit" for any value outside int32/uint32 — so `_Static_assert(1LL<<32,"")`, `_Static_assert(0x100000000,"")`, and `(__int128)1<<100` were fatally rejected though the value is non-zero (the assertion is true). clang/gcc accept. A THIRD distinct consumer of the `expr_const` 32-bit cap, after `#if`/`#elif` (T-mac-30089) and array-size/designated-init (T-mac-30070); reject-valid, never a miscompile (the guard errors rather than mis-evaluating zero-ness). Fix: `c` retyped `int64_t`, evaluate via `expr_const64_pub()`, keep the `c == 0` failure test. Verification: `ctest -R 'diag/static-assert-wide|diag/static-assert-false'` — wide non-zero values accepted (with `==0` guards proving no truncation to zero) + a genuinely-zero wide value (`(1LL<<32)==(1LL<<33)`) still fails (WILL_FAIL). No codegen impact; o0-baseline green. Float-controlling-expr rejection and all other static_assert diagnostics were verified ISO-correct (unchanged).
