@@ -13252,7 +13252,12 @@ tok_next:
 			vpush_type_size(&type, &align);
 			gen_cast_s(VT_SIZE_T);
 		} else { MCC_TRACE("br\n");
-			if (type_size(&type, &align) < 0 &&
+			if (type.t & VT_VLA) { MCC_TRACE("br\n");
+				CType et = type;
+				while ((et.t & VT_BTYPE) == VT_PTR && (et.t & (VT_ARRAY | VT_VLA)))
+					{ MCC_TRACE("br\n"); et = *pointed_type(&et); }
+				type_size(&et, &align);
+			} else if (type_size(&type, &align) < 0 &&
 					!((type.t & (VT_ARRAY | VT_VLA)) && mcc_state->cversion >= 202400))
 				{ MCC_TRACE("br\n"); mcc_error("'_Alignof' applied to an incomplete type"); }
 			s = NULL;
