@@ -431,7 +431,7 @@
       OWNER: — | STATE: OPEN | SHA: 12b38cd6 | TS: 2026-08-18T04:30Z
       REF: INVESTIGATIONS.md#r18-low-cluster | DEPS: —
 - [ ] T-mac-30091 [S] Fix: [HIGH, SECURITY] ELF `.o` loader `mcc_load_object_file` indexes `shdr[]`/`sm_table[]` (sized by `e_shnum`, `mccelf.c:3423-3425`) with file-controlled fields never bounded vs `e_shnum` — `e_shstrndx` (`:3427`→feeds `load_data` w/ attacker offset), `sh_link` (`:3449,3554`), `sh_info` (`:3461,3556,3601`), `st_shndx` (`:3570`, only guarded `<0xff00`). Crafted `.o`/`.a`/dylib → OOB heap read (info-disclosure/crash). Mach-O (`mccmacho.c:3116`) + COFF (`mccpe.c:2584,2617`) already bound theirs. Distinct from T-mac-30023/T-lin-10396. Fix: reject `e_shstrndx>=e_shnum` + clamp sh_link/sh_info/st_shndx before every index.
-      OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: d2141b72 | TS: 2026-08-18T21:40Z
       REF: INVESTIGATIONS.md#r17-elf-loader-oob | DEPS: —
 - [ ] T-mac-30094 [S] Fix: [MED] empty-paren function DEFINITION after a prototype merged as a 0-param prototype (accept-invalid, order-dependent) — `is_compatible_func` treats a no-param `FUNC_OLD` as compatible w/ any prototype (`mccgen.c:4406-4412`) and the definition merge adopts the def's empty param list while flagging prototyped (`:1867-1873`). `int f(int,int); int f(){return 42;}` accepted (clang/gcc reject), then `f(1,2)`→spurious "too many arguments"; reverse order merges to 2 params. C 6.7.6.3p14: a def's `()` = 0 params. Fix: diagnose a 0-param def against a prior N-param prototype.
       OWNER: — | STATE: OPEN | SHA: d2141b72 | TS: 2026-08-18T04:05Z
