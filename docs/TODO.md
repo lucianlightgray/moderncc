@@ -78,7 +78,7 @@
       OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
       REF: INVESTIGATIONS.md#r24-regvar | DEPS: —
 - [ ] T-mac-30135 [S] Fix: [MED] `weakref` non-functional → emits a STRONG global UNDEF to the alias's own name (not a weak ref to the target) → link failure — `weakref` not a token, falls to attr default: (`mccgen.c:6683`); `static int wf(void) __attribute__((weakref("g")));` → `wf *UND* STB_GLOBAL` + reloc to `wf` not `g` (all 3 formats); `&wf` const-folds non-null. gcc/clang: weak undef to `g`, resolves 0. Fix: add weakref token recording target, mark weak-undef aliased to target (reuse alias_target+a.weak+SHN_UNDEF), or clean "unsupported" error. Cluster w/ T-mac-30072.
-      OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 9cd4fb3c | TS: 2026-08-18T09:55Z
       REF: INVESTIGATIONS.md#r24-weakref | DEPS: —
 - [ ] T-mac-30136 [S] Fix: [MED] `ifunc` attribute dropped → aliased symbol never emitted → unresolved reference; AND the ELF STT_GNU_IFUNC/IRELATIVE backend is UNREACHABLE dead code — `mcc_prepare/fill_static_ifunc` (`mccelf.c:1988/2067`, IPLT+R_*_IRELATIVE `:2054/2082`) gated on ST_TYPE==STT_GNU_IFUNC which is NEVER assigned; asm `.type` rejects `@gnu_indirect_function` (`mccasm.c:784-798`). Fix: wire ifunc attr → STT_GNU_IFUNC (ELF) + clean diag on Mach-O/COFF, OR accept `.type ,@gnu_indirect_function`. Cluster w/ T-mac-30072.
       OWNER: — | STATE: OPEN | SHA: 9cd4fb3c | TS: 2026-08-18T08:30Z
