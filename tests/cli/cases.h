@@ -733,6 +733,10 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/asmadd.s {D}/asmmain.c -o {W}/ae && {W}/ae",
 		 "42\n"},
 
+		{"asm_binary_literal_0b", "cpu=x86_64,asm",
+		 "{MCC} -B{B} -I{I} {D}/binlit.s {D}/binlitmain.c -o {W}/ble && {W}/ble",
+		 "OK\n"},
+
 		{"weak_override_multi_tu", "os!=WIN32",
 		 "{MCC} -B{B} -I{I} -c {D}/wstrong.c -o {W}/wstrong.o && "
 		 "{MCC} -B{B} -I{I} {D}/wmain.c {W}/wstrong.o -o {W}/we && {W}/we",

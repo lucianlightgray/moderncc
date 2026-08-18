@@ -116,7 +116,11 @@ static void asm_expr_unary_nested(MCCState *s1, ExprValue *pe) { MCC_TRACE("ente
 	switch (tok) { MCC_TRACE("br\n");
 	case TOK_PPNUM:
 		p = tokc.str.data;
-		n = strtoull(p, (char **)&p, 0);
+		if (p[0] == '0' && (p[1] == 'b' || p[1] == 'B') && (p[2] == '0' || p[2] == '1')) { MCC_TRACE("br\n");
+			n = strtoull(p + 2, (char **)&p, 2);
+		} else { MCC_TRACE("br\n");
+			n = strtoull(p, (char **)&p, 0);
+		}
 		if (*p == 'b' || *p == 'f') { MCC_TRACE("br\n");
 			label = asm_get_local_label_name(s1, n);
 			sym = asm_label_find(label);
