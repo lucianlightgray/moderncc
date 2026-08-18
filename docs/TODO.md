@@ -52,6 +52,10 @@
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
+- [ ] T-mac-30215 [S] Fix: [MED] `-Wswitch` misses "case value not in enumerated type" — add the mirror check (case value outside the enum members) alongside the existing enum-not-handled loop
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:08Z
+      REF: DETAILS.md#t-mac-30215-wswitch-case-not-in-enum | DEPS: —
+
 
 
 
@@ -185,9 +189,6 @@
 - [ ] T-mac-30214 [S] Fix: [MED, design-level] no parser error recovery — every parser/semantic error uses mcc_error→`_mcc_error` (`libmcc.c:757-763`, NORETURN longjmp+exit(1)) → exactly ONE error per run then stops; clang/gcc recover + report all (3-error probe: mcc 1, oracles 4). `-fmax-errors=N` (`:735`) only affects the driver NOABORT path → inert for source errors. Classic TCC arch. FLIP SIDE positive: no cascading flood, robust vs malformed input (no crash/hang). Fix (large): parser recovery via sync points; at minimum make -fmax-errors meaningful.
       OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
       REF: INVESTIGATIONS.md#r33-no-recovery | DEPS: —
-- [ ] T-mac-30215 [S] Fix: [MED, missing diagnostic] `-Wswitch` misses "case value not in enumerated type" — the loop (`mccgen.c:16292-16307`) only checks forward (each enumerator covered by a case), never iterates case labels to flag an out-of-range case. `switch(enum E){case 99:}` → mcc silent (even -Wall -Wextra); clang/gcc warn. mcc warns missing-enumerator (half of -Wswitch) so it's an inconsistency. Fix: add the reverse (out-of-range case) check.
-      OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
-      REF: INVESTIGATIONS.md#r33-wswitch-range | DEPS: —
 - [ ] T-mac-30216 [S] Fix: [MED, double-inclusion] `#pragma once` doesn't dedup a header reached via symlink/hardlink — dedups only by path STRING; a header via symlink OR hardlink is included twice (occurrence mcc=2 vs clang/gcc=1 both cases); the realpath fallback (`mccpp.c:2585` normalized_PATHCMP) doesn't canonicalize by device+inode. Same-path + lexical-`..` DO dedup; #ifndef guard still protects. CONTRADICTS a Round-27 robust-claim (symlink dedup) — Round-33 has concrete counts, treat as authoritative. Fix: dedup #pragma once/#import by (dev,ino) via stat.
       OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
       REF: INVESTIGATIONS.md#r33-pragma-once-inode | DEPS: —
