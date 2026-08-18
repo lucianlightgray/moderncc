@@ -7400,6 +7400,17 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(codegen-hint-attrs PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/xpreprocessor_forward.c")
+        add_test(NAME driver/xpreprocessor-forward COMMAND ${_mcc_exe}
+                    -Xpreprocessor -DFOO=41 -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/xpreprocessor_forward.c")
+        set_tests_properties(driver/xpreprocessor-forward PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME driver/save-temps-accepted COMMAND ${_mcc_exe} -save-temps -Xassembler --noexecstack
+                    -c "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/xpreprocessor_forward.c"
+                    -DFOO=1 -o "${CMAKE_BINARY_DIR}/xpp-fwd.o")
+        set_tests_properties(driver/save-temps-accepted PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_vla.c")
         add_test(NAME alignof-vla-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

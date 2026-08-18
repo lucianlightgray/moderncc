@@ -2178,6 +2178,9 @@ enum {
 	MCC_OPTION_r,
 	MCC_OPTION_Wl,
 	MCC_OPTION_Wp,
+	MCC_OPTION_Xpreprocessor,
+	MCC_OPTION_Xassembler,
+	MCC_OPTION_save_temps,
 	MCC_OPTION_W,
 	MCC_OPTION_O,
 	MCC_OPTION_mfloat_abi,
@@ -2304,6 +2307,9 @@ static const MCCOption mcc_options[] = {
 		{"r", MCC_OPTION_r, 0},
 		{"Wl,", MCC_OPTION_Wl, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"Wp,", MCC_OPTION_Wp, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"Xpreprocessor", MCC_OPTION_Xpreprocessor, MCC_OPTION_HAS_ARG},
+		{"Xassembler", MCC_OPTION_Xassembler, MCC_OPTION_HAS_ARG},
+		{"save-temps", MCC_OPTION_save_temps, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"W", MCC_OPTION_W, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"O", MCC_OPTION_O, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 #ifdef MCC_TARGET_ARM
@@ -3296,6 +3302,14 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 		case MCC_OPTION_Wp:
 			if (argv[0])
 				{ MCC_TRACE("br\n"); insert_args(s, &argv, &argc, --optind, optarg, ','); }
+			break;
+		case MCC_OPTION_Xpreprocessor:
+			if (argv[0])
+				{ MCC_TRACE("br\n"); insert_args(s, &argv, &argc, --optind, optarg, ','); }
+			break;
+		case MCC_OPTION_Xassembler:
+			break;
+		case MCC_OPTION_save_temps:
 			break;
 		case MCC_OPTION_E:
 			x = MCC_OUTPUT_PREPROCESS;
