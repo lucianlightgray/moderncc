@@ -2238,6 +2238,7 @@ enum {
 	MCC_OPTION_MQ,
 	MCC_OPTION_S,
 	MCC_OPTION_x,
+	MCC_OPTION_C,
 	MCC_OPTION_ar,
 	MCC_OPTION_impdef,
 	MCC_OPTION_pie,
@@ -2380,7 +2381,8 @@ static const MCCOption mcc_options[] = {
 		{"impdef", MCC_OPTION_impdef, 0},
 #endif
 		{"arch", 0, MCC_OPTION_HAS_ARG},
-		{"C", 0, 0},
+		{"CC", MCC_OPTION_C, 0},
+		{"C", MCC_OPTION_C, 0},
 		{"-param", 0, MCC_OPTION_HAS_ARG},
 		{"pedantic", MCC_OPTION_pedantic, 0},
 		{"pedantic-errors", MCC_OPTION_pedantic_errors, 0},
@@ -3548,6 +3550,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			*pargc = argc - optind;
 			*pargv = argv + optind;
 			return x;
+		case MCC_OPTION_C:
+			s->keep_comments = 1;
+			break;
 		case MCC_OPTION_impdef:
 			x = OPT_IMPDEF;
 			goto extra_action;

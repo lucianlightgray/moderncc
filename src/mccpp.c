@@ -3064,6 +3064,10 @@ static uint16_t cst_pp_dir_kind(int t) { MCC_TRACE("enter\n");
 	}
 }
 
+static int pp_directive_depth;
+static int pp_comment_ready;
+static CString pp_comment_text;
+
 ST_FUNC void preprocess(int is_bof) { MCC_TRACE("enter\n");
 	MCCState *s1 = mcc_state;
 	int c, n, saved_parse_flags;
@@ -3074,6 +3078,7 @@ ST_FUNC void preprocess(int is_bof) { MCC_TRACE("enter\n");
 
 	saved_parse_flags = parse_flags;
 	parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM | PARSE_FLAG_TOK_STR | PARSE_FLAG_LINEFEED | (parse_flags & PARSE_FLAG_ASM_FILE);
+	pp_directive_depth++;
 
 	next_nomacro();
 redo:
@@ -3336,6 +3341,7 @@ the_end:
 	if (cst_pp_kind && cst_leafcount() > cst_pp_first)
 		{ MCC_TRACE("br\n"); cst_hook_wrap(cst_pp_kind, cst_pp_first, cst_leafcount()); }
 	parse_flags = saved_parse_flags;
+	pp_directive_depth--;
 }
 
 static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long, int prefix) { MCC_TRACE("enter\n");
@@ -4858,7 +4864,13 @@ redo_no_start:
 	case '/':
 		PEEKC(c, p);
 		if (c == '*') { MCC_TRACE("br\n");
+			uint8_t *cs = p - 1;
 			p = parse_comment(p);
+			if (mcc_state->keep_comments && mcc_state->output_type == MCC_OUTPUT_PREPROCESS && !pp_directive_depth) { MCC_TRACE("br\n");
+				cstr_reset(&pp_comment_text);
+				cstr_cat(&pp_comment_text, (const char *)cs, p - cs);
+				pp_comment_ready = 1;
+			}
 			tok = ' ';
 			goto maybe_space;
 		} else if (c == '/') { MCC_TRACE("br\n");
@@ -4874,7 +4886,13 @@ redo_no_start:
 				else
 					{ MCC_TRACE("br\n"); mcc_warning("C++ style comments are a C99 feature"); }
 			}
+			uint8_t *cs = p - 1;
 			p = parse_line_comment(p);
+			if (mcc_state->keep_comments && mcc_state->output_type == MCC_OUTPUT_PREPROCESS && !pp_directive_depth) { MCC_TRACE("br\n");
+				cstr_reset(&pp_comment_text);
+				cstr_cat(&pp_comment_text, (const char *)cs, p - cs);
+				pp_comment_ready = 1;
+			}
 			tok = ' ';
 			goto maybe_space;
 		} else if (c == '=') { MCC_TRACE("br\n");
@@ -6076,6 +6094,8 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 	s1->ifdef_stack_ptr = s1->ifdef_stack;
 	file->ifdef_stack_ptr = s1->ifdef_stack_ptr;
 	mcc_parse_depth = 0;
+	pp_directive_depth = 0;
+	pp_comment_ready = 0;
 	pp_expr = 0;
 	pp_counter = 0;
 	pp_diag_stack_n = 0;
@@ -6162,6 +6182,7 @@ ST_FUNC void mccpp_new(MCCState *s) { MCC_TRACE("enter\n");
 	memset(s->cached_includes_hash, 0, sizeof s->cached_includes_hash);
 
 	cstr_new(&tokcstr);
+	cstr_new(&pp_comment_text);
 	cstr_new(&cstr_buf);
 	cstr_realloc(&cstr_buf, STRING_MAX_SIZE);
 	tok_str_new(&unget_buf);
@@ -6230,6 +6251,7 @@ ST_FUNC void mccpp_delete(MCCState *s) { MCC_TRACE("enter\n");
 	table_ident = NULL;
 
 	cstr_free(&tokcstr);
+	cstr_free(&pp_comment_text);
 	cstr_free(&cstr_buf);
 	tok_str_free_str(tokstr_buf.str);
 	tok_str_free_str(unget_buf.str);
@@ -6639,6 +6661,15 @@ ST_FUNC int mcc_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 		}
 
 		if (is_space(tok)) { MCC_TRACE("br\n");
+			if (pp_comment_ready) { MCC_TRACE("br\n");
+				pp_comment_ready = 0;
+				if (token_seen == TOK_LINEFEED)
+					{ MCC_TRACE("br\n"); pp_line(s1, file, 0); }
+				white[spcs] = 0, fputs(white, s1->ppfp), spcs = 0;
+				fwrite(pp_comment_text.data, 1, pp_comment_text.size, s1->ppfp);
+				token_seen = ' ';
+				continue;
+			}
 			if (spcs < sizeof white - 1)
 				{ MCC_TRACE("br\n"); white[spcs++] = tok; }
 			continue;

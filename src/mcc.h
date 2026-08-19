@@ -798,6 +798,7 @@ struct MCCState {
 
 	unsigned char dflag;
 	unsigned char Pflag;
+	unsigned char keep_comments;
 
 #ifdef MCC_TARGET_X86_64
 	unsigned char nosse;

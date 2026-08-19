@@ -537,6 +537,17 @@ static const cli_case_t cli_cases[] = {
 		 "$(grep -F 'command-line' {W}/pp.out | grep -Ec ' 3$')",
 		 "sys=1 usr=0 cmdline=0\n"},
 
+		{"preprocess_C_keeps_comments", "",
+		 "printf '#define M 1 /* DIRCMT */\\nint aa; /* BLOCKCMT */ int bb; // LINECMT\\nint cc = M;\\n' > {W}/kc.c && "
+		 "{MCC} -B{B} -E -C {W}/kc.c > {W}/kcC.out 2>{W}/kc.e1 && "
+		 "{MCC} -B{B} -E {W}/kc.c > {W}/kcP.out 2>{W}/kc.e2 && "
+		 "printf 'block=%s line=%s dir=%s plain=%s\\n' "
+		 "$(grep -c 'BLOCKCMT' {W}/kcC.out) "
+		 "$(grep -c 'LINECMT' {W}/kcC.out) "
+		 "$(grep -c 'DIRCMT' {W}/kcC.out) "
+		 "$(grep -c 'BLOCKCMT' {W}/kcP.out)",
+		 "block=1 line=1 dir=0 plain=0\n"},
+
 		{"preprocess_imacros_macros_only", "",
 		 "printf '#define IM_VAL 42\\nint im_dup = 100;\\n' > {W}/im.h && "
 		 "printf 'extern int im_dup;\\nint main(void){ return IM_VAL + im_dup; }\\n' > {W}/imx.c && "
