@@ -7803,6 +7803,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(sizeof-wint-t-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_vla_noeval.c")
+        add_test(NAME alignof-vla-noeval-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_vla_noeval.c
+            --out ${CMAKE_BINARY_DIR}/alignof_vla_noeval${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(alignof-vla-noeval-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/ld_arith_type.c")
         add_test(NAME ld-arith-type-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}

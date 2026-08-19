@@ -13492,7 +13492,7 @@ tok_next:
 		if (t == TOK_SIZEOF || t == TOK_COUNTOF)
 			{ MCC_TRACE("br\n"); expr_type_vm(&type, unary, 1); }
 		else
-			{ MCC_TRACE("br\n"); expr_type(&type, unary); }
+			{ MCC_TRACE("br\n"); vm_type_probe++; expr_type(&type, unary); vm_type_probe--; }
 		rir_hook_synth_end();
 		if ((type.t & VT_BITFIELD) && !IS_BITINT(type.t))
 			{ MCC_TRACE("br\n"); mcc_error("'%s' cannot be applied to a bit-field",
