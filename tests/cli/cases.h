@@ -619,6 +619,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/ep.c -o {W}/ep.o 2>&1 | grep -oE 'old-style function definition'; echo EMPTY_DONE",
 		 "old-style function definition\nNOWARN_DONE\nEMPTY_DONE\n"},
 
+	{"scalar_designated_init_diag", "",
+		 "printf 'int x = {.foo=1};\\n' > {W}/sd1.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/sd1.c -o {W}/sd1.o 2>&1 | grep -oE 'field name not in record or union initializer'; "
+		 "printf 'int y = {[0]=1};\\n' > {W}/sd2.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/sd2.c -o {W}/sd2.o 2>&1 | grep -oE 'array index in non-array initializer'; "
+		 "printf 'struct S{int a;} s={.a=5};\\nint z={1};\\nint main(void){return s.a+z;}\\n' > {W}/sd3.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/sd3.c -o {W}/sd3.o && echo VALID_OK",
+		 "field name not in record or union initializer\narray index in non-array initializer\nVALID_OK\n"},
+
 	{"c11_keyword_feature_pedantic", "",
 		 "printf '_Alignas(16) int x;\\nint main(void){return 0;}\\n' > {W}/k1.c && "
 		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/k1.c -o {W}/k1.o 2>&1 | "

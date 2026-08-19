@@ -17894,6 +17894,13 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 				{ MCC_TRACE("br\n"); mcc_warning(
 						"too many braces around scalar initializer"); }
 		}
+		/* T-mac-30148(5): a designator inside a scalar's braces (int x = {.foo=1}
+		 * / {[0]=1}) -- give gcc's specific diagnostic, not the generic
+		 * "expression expected" the value parser emits. */
+		if (tok == '.')
+			{ MCC_TRACE("br\n"); mcc_error("field name not in record or union initializer"); }
+		if (tok == '[')
+			{ MCC_TRACE("br\n"); mcc_error("array index in non-array initializer"); }
 		decl_initializer(p, type, c, flags & ~DIF_HAVE_ELEM);
 		while (tok == ',') { MCC_TRACE("br\n");
 			next();
