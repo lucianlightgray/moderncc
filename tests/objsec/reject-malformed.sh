@@ -29,33 +29,43 @@ ar rcs good.a a.o || exit 77
 cat > m.c <<'EOF'
 int main(void) { return 0; }
 EOF
-python3 - <<'PY' || exit 77
+arch_kind=$(python3 - <<'PY'
 import struct
 d = bytearray(open("good.a", "rb").read())
 assert d[:8] == b"!<arch>\n"
+name = bytes(d[8:8 + 16]).rstrip()
 # ar rcs writes the GNU "/" symbol-table member first: 60-byte header then a
 # big-endian uint32 symbol count. Inflate it so the derived name-region
 # pointer (data + 4 + nsyms*4) lands ~1GB past the tiny member allocation
 # (deterministically unmapped) without overflowing the int stride math, so a
 # pre-fix build faults reproducibly rather than reading adjacent heap.
-struct.pack_into(">I", d, 8 + 60, 0x10000000)
-open("bad.a", "wb").write(d)
+if name[:1] == b"/" and name[:2] != b"//":
+	struct.pack_into(">I", d, 8 + 60, 0x10000000)
+	open("bad.a", "wb").write(d)
+	print("gnu")
+else:
+	print("bsd")
 PY
-out=$("$MCC" m.c bad.a -o out_arch 2>&1)
-rc=$?
-if crashed "$rc"; then
-	echo "FAIL: archive nsyms — mcc crashed (rc=$rc) on malformed archive"
-	echo "$out"
-	exit 1
+) || exit 77
+if [ "$arch_kind" = gnu ]; then
+	out=$("$MCC" m.c bad.a -o out_arch 2>&1)
+	rc=$?
+	if crashed "$rc"; then
+		echo "FAIL: archive nsyms — mcc crashed (rc=$rc) on malformed archive"
+		echo "$out"
+		exit 1
+	fi
+	if [ "$rc" -eq 0 ]; then
+		echo "FAIL: archive nsyms — mcc accepted a malformed archive (rc=0)"
+		exit 1
+	fi
+	case "$out" in
+		*"invalid archive"*) : ;;
+		*) echo "FAIL: archive nsyms — expected 'invalid archive', got: $out"; exit 1 ;;
+	esac
+else
+	echo "SKIP: archive nsyms OOB targets the GNU \"/\" symbol-table member; host ar produced a BSD/mach-o archive (member0 \"#1/..\" __.SYMDEF), which does not exercise mcc_load_alacarte"
 fi
-if [ "$rc" -eq 0 ]; then
-	echo "FAIL: archive nsyms — mcc accepted a malformed archive (rc=0)"
-	exit 1
-fi
-case "$out" in
-	*"invalid archive"*) : ;;
-	*) echo "FAIL: archive nsyms — expected 'invalid archive', got: $out"; exit 1 ;;
-esac
 # the well-formed archive must still be accepted (no false reject)
 "$MCC" m.c good.a -o out_ok || { echo "FAIL: valid archive rejected"; exit 1; }
 
