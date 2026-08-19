@@ -2646,16 +2646,22 @@ void gen_ffs(int size) { MCC_TRACE("enter\n");
 }
 
 void gen_bitscan(int ctz, int size) { MCC_TRACE("enter\n");
-	int r;
+	int r, t, w = size * 8;
 	gv(MCC_RC_INT);
 	r = vtop->r & VT_VALMASK;
+	t = get_reg(MCC_RC_INT);
+	orex(0, t, 0, 0xb8 + REG_VALUE(t));
+	gen_le32(ctz ? w : 2 * w - 1);
 	orex(size == 8, r, r, 0x0f);
 	o(ctz ? 0xbc : 0xbd);
 	o(0xc0 + REG_VALUE(r) * 8 + REG_VALUE(r));
+	orex(size == 8, t, r, 0x0f);
+	o(0x44);
+	o(0xc0 + REG_VALUE(r) * 8 + REG_VALUE(t));
 	if (!ctz) { MCC_TRACE("br\n");
 		orex(size == 8, r, 0, 0x83);
 		o(0xf0 + REG_VALUE(r));
-		o(size * 8 - 1);
+		o(w - 1);
 	}
 	vtop->type.t = VT_INT;
 }
