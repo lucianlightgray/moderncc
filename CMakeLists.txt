@@ -5132,6 +5132,15 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "initializer element is not constant")
 
+        # T-lin-10395: an unsuffixed decimal constant in [2^63, 2^64) has
+        # long-long rank (unsigned long long), not unsigned long — the latter is
+        # not even a candidate type for a decimal constant. Target-uniform.
+        add_test(NAME "diag/decimal-ull-rank"
+            COMMAND ${_mcc_exe} -w -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/decimal_ull_rank.c")
+        set_tests_properties("diag/decimal-ull-rank" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_diag_ok.c")
             add_test(NAME "diag/pragma-diagnostic-suppress"
                 COMMAND ${_mcc_exe} -Wsign-compare -Werror -run

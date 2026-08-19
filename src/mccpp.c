@@ -4151,7 +4151,7 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 					{ MCC_TRACE("br\n"); lcount = (LONG_SIZE == 4) + 1; }
 			}
 			if (n >= 0x8000000000000000ULL)
-				{ MCC_TRACE("br\n"); ov = 1, ucount = 1; }
+				{ MCC_TRACE("br\n"); ov = 1, ucount = 1, lcount = 2; }
 		} else { MCC_TRACE("br\n");
 			if (lcount <= (LONG_SIZE == 4)) { MCC_TRACE("br\n");
 				if (n >= 0x100000000ULL)
