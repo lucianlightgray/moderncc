@@ -537,6 +537,15 @@ static const cli_case_t cli_cases[] = {
 		 "$(grep -F 'command-line' {W}/pp.out | grep -Ec ' 3$')",
 		 "sys=1 usr=0 cmdline=0\n"},
 
+		{"preprocess_imacros_macros_only", "",
+		 "printf '#define IM_VAL 42\\nint im_dup = 100;\\n' > {W}/im.h && "
+		 "printf 'extern int im_dup;\\nint main(void){ return IM_VAL + im_dup; }\\n' > {W}/imx.c && "
+		 "printf 'int im_dup = 5;\\n' > {W}/imy.c && "
+		 "{MCC} -B{B} -imacros {W}/im.h {W}/imx.c {W}/imy.c -o {W}/im.exe 2>{W}/im.err; link=$?; "
+		 "{W}/im.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=47\n"},
+
 		{"output_type_same_action_no_warn", "",
 		 "printf 'int x;\\n' > {W}/ot.c && "
 		 "{MCC} -B{B} -I{I} -c -c -o {W}/ot.o {W}/ot.c 2>{W}/ot.same.err; "

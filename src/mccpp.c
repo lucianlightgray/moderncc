@@ -6061,6 +6061,10 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 			{ MCC_TRACE("br\n"); cstr_cat(&cstr, s1->cmdline_defs.data, s1->cmdline_defs.size); }
 		if (!is_asm)
 			{ MCC_TRACE("br\n"); cstr_cat(&cstr, "#undef _FORTIFY_SOURCE\n#define _FORTIFY_SOURCE 0\n", -1); }
+		if (s1->cmdline_imacros.size) { MCC_TRACE("br\n");
+			cstr_cat(&cstr, s1->cmdline_imacros.data, s1->cmdline_imacros.size);
+			cstr_cat(&cstr, "#undef __mcc_imacros_end__\n__mcc_imacros_end__\n", -1);
+		}
 		if (s1->cmdline_incl.size)
 			{ MCC_TRACE("br\n"); cstr_cat(&cstr, s1->cmdline_incl.data, s1->cmdline_incl.size); }
 		*s1->include_stack_ptr++ = file;
@@ -6070,6 +6074,18 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 		cstr_free(&cstr);
 	}
 	parse_flags = is_asm ? PARSE_FLAG_ASM_FILE : 0;
+}
+
+ST_FUNC void mccpp_run_imacros(MCCState *s1) { MCC_TRACE("enter\n");
+	int btok, saved_flags;
+	if (!s1->cmdline_imacros.size)
+		{ MCC_TRACE("br\n"); return; }
+	btok = tok_alloc("__mcc_imacros_end__", 19)->tok;
+	saved_flags = parse_flags;
+	parse_flags = PARSE_FLAG_PREPROCESS | PARSE_FLAG_TOK_NUM | PARSE_FLAG_TOK_STR;
+	do { MCC_TRACE("br\n"); next(); }
+	while (tok != btok && tok != TOK_EOF);
+	parse_flags = saved_flags;
 }
 
 ST_FUNC void preprocess_end(MCCState *s1) { MCC_TRACE("enter\n");

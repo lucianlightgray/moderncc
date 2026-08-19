@@ -856,6 +856,7 @@ struct MCCState {
 
 	CString cmdline_defs;
 	CString cmdline_incl;
+	CString cmdline_imacros;
 
 	void *error_opaque;
 	void (*error_func)(void *opaque, const char *msg);
@@ -1594,6 +1595,7 @@ ST_FUNC void preprocess(int is_bof);
 ST_FUNC void next(void);
 ST_INLN void unget_tok(int last_tok);
 ST_FUNC void preprocess_start(MCCState *s1, int filetype);
+ST_FUNC void mccpp_run_imacros(MCCState *s1);
 ST_FUNC void preprocess_end(MCCState *s1);
 ST_FUNC void mccpp_new(MCCState *s);
 ST_FUNC void mccpp_delete(MCCState *s);

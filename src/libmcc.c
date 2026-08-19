@@ -884,6 +884,8 @@ static int mcc_compile(MCCState *s1, int filetype, const char *str, int fd) { MC
 
 		preprocess_start(s1, filetype);
 		mccgen_init(s1);
+		if (!(filetype & AFF_TYPE_ASM))
+			{ MCC_TRACE("br\n"); mccpp_run_imacros(s1); }
 
 		if (s1->output_type == MCC_OUTPUT_PREPROCESS) { MCC_TRACE("br\n");
 			mcc_preprocess(s1);
@@ -1300,6 +1302,7 @@ LIBMCCAPI void mcc_delete(MCCState *s1) { MCC_TRACE("enter\n");
 	dynarray_reset(&s1->link_argv, &s1->link_argc);
 	cstr_free(&s1->cmdline_defs);
 	cstr_free(&s1->cmdline_incl);
+	cstr_free(&s1->cmdline_imacros);
 	mcc_free(s1->asm_cfi_st.buf);
 	dynarray_reset(&s1->alias_fixups, &s1->nb_alias_fixups);
 	rir_teardown();
@@ -3103,7 +3106,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			cstr_printf(&s->cmdline_incl, "#include \"%s\"\n", optarg);
 			break;
 		case MCC_OPTION_imacros:
-			cstr_printf(&s->cmdline_incl, "#include \"%s\"\n", optarg);
+			cstr_printf(&s->cmdline_imacros, "#include \"%s\"\n", optarg);
 			break;
 		case MCC_OPTION_nostdinc:
 			s->nostdinc = 1;
