@@ -515,6 +515,7 @@ typedef struct CachedInclude {
 	int ifndef_macro;
 	int once;
 	int hash_next;
+	unsigned long long dev, ino;
 	char filename[1];
 } CachedInclude;
 

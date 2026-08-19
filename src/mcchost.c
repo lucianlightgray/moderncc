@@ -1190,6 +1190,24 @@ ST_FUNC MAYBE_UNUSED int host_stat(const char *path, int *is_dir, long long *siz
 	return 0;
 }
 
+ST_FUNC MAYBE_UNUSED int host_file_id(const char *path, unsigned long long *dev, unsigned long long *ino) { MCC_TRACE("enter\n");
+#ifdef _WIN32
+	(void)path;
+	(void)dev;
+	(void)ino;
+	return -1;
+#else
+	struct stat st;
+	if (stat(path, &st))
+		{ MCC_TRACE("br\n"); return -1; }
+	if (dev)
+		{ MCC_TRACE("br\n"); *dev = (unsigned long long)st.st_dev; }
+	if (ino)
+		{ MCC_TRACE("br\n"); *ino = (unsigned long long)st.st_ino; }
+	return 0;
+#endif
+}
+
 ST_FUNC MAYBE_UNUSED int host_dir_walk(const char *dir, int recursive, host_walk_fn fn, void *ud) { MCC_TRACE("enter\n");
 #ifdef _WIN32
 	char pat[4096], child[4096];

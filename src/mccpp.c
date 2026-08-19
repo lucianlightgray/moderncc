@@ -1463,6 +1463,7 @@ ST_FUNC void skip_to_eol(int warn) { MCC_TRACE("enter\n");
 
 static CachedInclude *
 search_cached_include(MCCState *s1, const char *filename, int add);
+static int once_seen_by_file_id(MCCState *s1, const char *path);
 
 static BufferedFile *cst_main_bf;
 
@@ -1572,6 +1573,11 @@ static int parse_include(MCCState *s1, int do_next, int test, int is_import) { M
 				{ MCC_TRACE("br\n"); cst_hook_include(buf, file == cst_main_bf); }
 			return 1;
 		}
+		if (once_seen_by_file_id(s1, buf)) { MCC_TRACE("br\n");
+			if (!test)
+				{ MCC_TRACE("br\n"); cst_hook_include(buf, file == cst_main_bf); }
+			return 1;
+		}
 		if (mcc_open(s1, buf) >= 0)
 			{ MCC_TRACE("br\n"); break; }
 	}
@@ -1584,6 +1590,8 @@ static int parse_include(MCCState *s1, int do_next, int test, int is_import) { M
 			{ MCC_TRACE("br\n"); mcc_error("#include recursion too deep"); }
 		{ MCC_TRACE("br\n");
 			CachedInclude *ce = search_cached_include(s1, file->true_filename, 1);
+			if (ce->dev == 0 && ce->ino == 0)
+				{ MCC_TRACE("br\n"); host_file_id(file->true_filename, &ce->dev, &ce->ino); }
 			if (is_import)
 				{ MCC_TRACE("br\n"); ce->once = 1; }
 		}
@@ -2614,10 +2622,26 @@ static CachedInclude *search_cached_include(MCCState *s1, const char *filename, 
 	e = mcc_malloc(sizeof(CachedInclude) + (len = strlen(filename)));
 	memcpy(e->filename, filename, len + 1);
 	e->ifndef_macro = e->once = 0;
+	e->dev = e->ino = 0;
 	dynarray_add(&s1->cached_includes, &s1->nb_cached_includes, e);
 	e->hash_next = s1->cached_includes_hash[h];
 	s1->cached_includes_hash[h] = s1->nb_cached_includes;
 	return e;
+}
+
+static int once_seen_by_file_id(MCCState *s1, const char *path) { MCC_TRACE("enter\n");
+	unsigned long long dev = 0, ino = 0;
+	int i;
+	if (host_file_id(path, &dev, &ino))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ino == 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < s1->nb_cached_includes; i++) { MCC_TRACE("br\n");
+		CachedInclude *e = s1->cached_includes[i];
+		if (e->once && e->ino == ino && e->dev == dev)
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
 }
 
 struct pp_diag_snap {

@@ -257,6 +257,7 @@ ST_FUNC int host_cache_dir(char *buf, int size);
 ST_FUNC int host_rmrf(const char *path);
 ST_FUNC int host_copy_file(const char *src, const char *dst, int preserve_exec);
 ST_FUNC int host_stat(const char *path, int *is_dir, long long *size, long long *mtime);
+ST_FUNC int host_file_id(const char *path, unsigned long long *dev, unsigned long long *ino);
 typedef int (*host_walk_fn)(const char *path, int is_dir, void *ud);
 
 ST_FUNC int host_dir_walk(const char *dir, int recursive, host_walk_fn fn, void *ud);
