@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T22:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:44Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50032   | 2026-08-19T00:50Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50032   | 2026-08-19T01:01Z |
 
 ## Contracts — blocking, highest priority
 
@@ -204,7 +204,7 @@
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
       REF: INVESTIGATIONS.md#r35-dylib-exports | DEPS: T-mac-30157
 - [ ] T-mac-30230 [S] Fix: [MED] `__builtin_stdc_*`/`*g` not const-foldable + no `<stdbit.h>` header — they expand to static-inline helper calls (`mccdefs.h:1321-1381`) → `_Static_assert(__builtin_stdc_bit_width(255u)==8)` / `int a[__builtin_stdc_count_ones(0xFu)]` → `error: constant expression expected` (gcc folds; classic __builtin_clz/popcount DO fold). Separately `#include <stdbit.h>` fails — but PLATFORM-WIDE (clang+gcc-16 also lack C stdbit.h on this SDK); mcc already has the correct __builtin_stdc_* machinery, so a thin `<stdbit.h>` under runtime/include/ (map stdc_*→__builtin_stdc_* + endian macros) would EXCEED the local oracles. Fix: make stdc_*/*g const-foldable + ship a thin <stdbit.h>.
-      OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 9edfdede | TS: 2026-08-19T01:01Z | NOTE: SLICE DONE (thin <stdbit.h>, 9edfdede) — shipped runtime/include/stdbit.h mapping the 14 C23 type-generic stdc_* macros to __builtin_stdc_* + __STDC_VERSION_STDBIT_H__ + __STDC_ENDIAN_{LITTLE,BIG,NATIVE}__ (found via mcc's -B include path; TDD cli/stdbit_header, anti-vacuity verified; EXCEEDS the local oracles which lack <stdbit.h>). RESIDUAL: (a) make __builtin_stdc_*/*g const-foldable in the ICE evaluator (`_Static_assert(__builtin_stdc_bit_width(255u)==8)` still errors "constant expression expected"); (b) the per-type named functions (stdc_leading_zeros_ui, ...).
       REF: INVESTIGATIONS.md#r35-stdbit-fold | DEPS: —
 - [ ] T-mac-30231 [S] Fix: [MED, diagnostic/backtrace] disassembler `adr` PC-rel wrong + ~16 undecoded instruction families — `adr` (no-reloc) prints the raw 21-bit immediate not `pc+imm` (`arm64-dis.c:273-276`; `adr x0,0xc` vs objdump `0x2c`); ~16 families → bare `.long` (D_UNK): ccmp/ccmn, smull/umull/smulh/umulh, clz/rbit/rev*, bfm/bfi/bfxil, hint-variants, svc/brk/hlt, clrex, ldxr/ldaxr/stxr/stlr family, ldr-literal, fmov-imm, fcsel, fcmpe, frint*, fcvt*-other-rounding, NEON vector arith, ld1/st1. NO wrong reg/imm mis-decodes in any DECODED family (only adr); no mis-decode breaks the -S self-loop. Impact: diagnostics/backtraces over library/clang code (mcc's own -O0 codegen uses none). Fix: add pc+imm to adr; add decoders for the undecoded families.
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
