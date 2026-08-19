@@ -50,7 +50,7 @@
 	#define __WINT_TYPE__ int
 #endif
 
-#if !defined _WIN32
+#if !defined _WIN32 && !defined __APPLE__
 	#define __STDC_ISO_10646__ 201706L
 #endif
 

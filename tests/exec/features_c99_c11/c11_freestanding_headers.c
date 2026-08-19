@@ -60,7 +60,11 @@ int main(void) {
 	if (UINT64_C(1) != 1ULL || INTMAX_C(2) != 2)
 		ok = 0;
 
-#if !defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
+#if defined(__STDC_ISO_10646__)
+	ok = 0;
+#endif
+#else
 #if !defined(__STDC_ISO_10646__) || __STDC_ISO_10646__ < 201103L
 	ok = 0;
 #endif
