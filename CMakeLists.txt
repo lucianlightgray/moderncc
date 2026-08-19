@@ -5393,6 +5393,15 @@ if(MCC_BUILD_TESTS)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_trailing_attr_ok.c")
         set_tests_properties("diag/deprecated-trailing-attr-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
+        # T-mac-30185 residual: forming a typedef from a deprecated struct/union/enum
+        # tag warns at the formation point (gcc-faithful); the deprecated-tag-ok cell
+        # proves the non-deprecated path stays clean.
+        add_test(NAME "diag/deprecated-typedef" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_typedef.c"
+                    -o "${CMAKE_BINARY_DIR}/deprecated-typedef.o")
+        set_tests_properties("diag/deprecated-typedef" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "'S' is deprecated")
 
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.

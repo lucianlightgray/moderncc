@@ -19304,6 +19304,10 @@ static int decl(int l) {
 						}
 					}
 					sym->a = ad.a;
+					if (type.ref && ((type.t & VT_BTYPE) == VT_STRUCT || IS_ENUM(type.t)) &&
+							type.ref->a.deprecated && (type.ref->v & ~SYM_STRUCT) < SYM_FIRST_ANOM)
+						{ MCC_TRACE("br\n"); mcc_warning_c(warn_deprecated_declarations)(
+									"'%s' is deprecated", get_tok_str(type.ref->v & ~SYM_STRUCT, NULL)); }
 					if (ad.a.transp_union && IS_UNION(type.t))
 						{ MCC_TRACE("br\n"); type.ref->a.transp_union = 1; }
 					if ((type.t & VT_BTYPE) == VT_FUNC)
