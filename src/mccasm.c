@@ -443,6 +443,31 @@ static void pop_section(MCCState *s1) { MCC_TRACE("enter\n");
 	use_section1(s1, prev);
 }
 
+static void asm_skip_to_eol(void) { MCC_TRACE("enter\n");
+	while (tok != TOK_LINEFEED && tok != ';' && tok != TOK_EOF && tok != CH_EOF)
+		{ MCC_TRACE("br\n"); next(); }
+}
+
+static void asm_skip_conditional(MCCState *s1, int stop_at_else) { MCC_TRACE("enter\n");
+	int nest = 0;
+	for (;;) { MCC_TRACE("br\n");
+		next();
+		if (tok == TOK_EOF || tok == CH_EOF)
+			{ MCC_TRACE("br\n"); mcc_error(".endif expected but end of file reached"); }
+		if (tok == TOK_ASMDIR_if) { MCC_TRACE("br\n");
+			nest++;
+		} else if (tok == TOK_ASMDIR_endif) { MCC_TRACE("br\n");
+			if (nest == 0)
+				{ MCC_TRACE("br\n"); break; }
+			nest--;
+		} else if (tok == TOK_ASMDIR_else && nest == 0 && stop_at_else) { MCC_TRACE("br\n");
+			break;
+		}
+	}
+	/* leave tok at the terminating directive's end-of-line (main loop needs it) */
+	asm_skip_to_eol();
+}
+
 static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n");
 	int n, offset, v, size, tok1, c, is_align, maxskip;
 	Section *sec;
@@ -711,6 +736,17 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		use_section1(s1, prev_sec);
 		break;
 	}
+	case TOK_ASMDIR_if:
+		next();
+		if (asm_int_expr(s1) == 0)
+			{ MCC_TRACE("br\n"); asm_skip_conditional(s1, 1); }
+		break;
+	case TOK_ASMDIR_else:
+		asm_skip_conditional(s1, 0);
+		break;
+	case TOK_ASMDIR_endif:
+		asm_skip_to_eol();
+		break;
 	case TOK_ASMDIR_globl:
 	case TOK_ASMDIR_global:
 	case TOK_ASMDIR_weak:
