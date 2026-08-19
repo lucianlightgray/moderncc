@@ -3569,6 +3569,19 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 		cstr_reset(&tokcstr);
 		for (i = 0; i < ncp; i++) { MCC_TRACE("br\n");
 			unsigned int cp = (unsigned int)cps[i] & 0xFFFFFFFFu;
+#ifdef MCC_TARGET_PE
+			/* On PE the wide buffer holds 16-bit UTF-16 code units, so a
+			 * supplementary-plane code point was stored as a surrogate pair;
+			 * recombine it into a single char32_t code point (mirrors the
+			 * U'' character-constant path above). */
+			if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < ncp) { MCC_TRACE("br\n");
+				unsigned int lo = (unsigned int)cps[i + 1] & 0xFFFFu;
+				if (lo >= 0xDC00 && lo <= 0xDFFF) { MCC_TRACE("br\n");
+					cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+					i++;
+				}
+			}
+#endif
 			cstr_ccat(&tokcstr, cp & 0xff);
 			cstr_ccat(&tokcstr, (cp >> 8) & 0xff);
 			cstr_ccat(&tokcstr, (cp >> 16) & 0xff);
