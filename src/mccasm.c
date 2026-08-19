@@ -454,7 +454,8 @@ static void asm_skip_conditional(MCCState *s1, int stop_at_else) { MCC_TRACE("en
 		next();
 		if (tok == TOK_EOF || tok == CH_EOF)
 			{ MCC_TRACE("br\n"); mcc_error(".endif expected but end of file reached"); }
-		if (tok == TOK_ASMDIR_if) { MCC_TRACE("br\n");
+		if (tok == TOK_ASMDIR_if || tok == TOK_ASMDIR_ifdef ||
+				tok == TOK_ASMDIR_ifndef) { MCC_TRACE("br\n");
 			nest++;
 		} else if (tok == TOK_ASMDIR_endif) { MCC_TRACE("br\n");
 			if (nest == 0)
@@ -741,6 +742,22 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		if (asm_int_expr(s1) == 0)
 			{ MCC_TRACE("br\n"); asm_skip_conditional(s1, 1); }
 		break;
+	case TOK_ASMDIR_ifdef:
+	case TOK_ASMDIR_ifndef: {
+		Sym *dsym;
+		ElfSym *desym;
+		int want = (tok == TOK_ASMDIR_ifdef), defined;
+		next();
+		if (tok < TOK_IDENT)
+			{ MCC_TRACE("br\n"); expect("identifier"); }
+		dsym = asm_label_find(tok);
+		desym = (dsym && dsym->c) ? elfsym(dsym) : NULL;
+		defined = (desym && desym->st_shndx != SHN_UNDEF);
+		next();
+		if (defined != want)
+			{ MCC_TRACE("br\n"); asm_skip_conditional(s1, 1); }
+		break;
+	}
 	case TOK_ASMDIR_else:
 		asm_skip_conditional(s1, 0);
 		break;

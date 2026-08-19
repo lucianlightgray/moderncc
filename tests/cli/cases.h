@@ -470,6 +470,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=57\n"},
 
+		{"asm_ifdef_ifndef_directives", "",
+		 "printf '.data\\n.globl base\\nbase:\\n.set DEF_SYM, 1\\n.ifdef DEF_SYM\\n.byte 11\\n.else\\n.byte 22\\n.endif\\n.ifdef UNDEF_SYM\\n.byte 33\\n.else\\n.byte 44\\n.endif\\n.ifndef UNDEF_SYM2\\n.byte 55\\n.else\\n.byte 66\\n.endif\\n' > {W}/id.s && "
+		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]; }\\n' > {W}/id.c && "
+		 "{MCC} -B{B} {W}/id.s {W}/id.c -o {W}/id.exe 2>{W}/id.err; link=$?; "
+		 "{W}/id.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=110\n"},
+
 		{"asm_p2align_max_skip", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.byte 1,2,3,4,5\\n.p2align 4,,15\\n.globl m1\\nm1:\\n.byte 9\\n.p2align 4,,3\\n.globl m2\\nm2:\\n.long 0\\n' > {W}/pa.s && "
 		 "printf 'extern char base[], m1[], m2[];\\nint main(void){ return (int)(m1-base) + (int)(m2-base); }\\n' > {W}/pa.c && "
