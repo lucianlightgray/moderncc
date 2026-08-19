@@ -13756,7 +13756,8 @@ tok_next:
 		tokc.str.size = tokcstr.size;
 		tokc.str.data = tokcstr.data;
 		goto case_TOK_STR;
-	case TOK_builtin_expect_with_probability:
+	case TOK_builtin_expect_with_probability: {
+		CType lt;
 		next();
 		skip('(');
 		expr_eq();
@@ -13769,7 +13770,11 @@ tok_next:
 		vpop();
 		nocode_wanted--;
 		skip(')');
+		lt.t = (LONG_SIZE == 8) ? (VT_LLONG | VT_LONG) : (VT_INT | VT_LONG);
+		lt.ref = NULL;
+		gen_cast(&lt);
 		break;
+	}
 	case TOK_builtin_shuffle:
 	case TOK_builtin_shufflevector: {
 		int kind = tok;

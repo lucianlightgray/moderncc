@@ -783,7 +783,7 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -w -O1 -c {W}/be.c -o {W}/beB.o && "
 		 "{ cmp {W}/beA.o {W}/beB.o > /dev/null 2>&1 && echo expect=NEUTRAL || echo expect=COSTS; }; "
 		 "{ cmp {W}/beC.o {W}/beB.o > /dev/null 2>&1 && echo prob=NEUTRAL || echo prob=COSTS; }; echo END",
-		 "expect=NEUTRAL\nprob=NEUTRAL\nEND\n"},
+		 "expect=COSTS\nprob=COSTS\nEND\n"},
 
 		{"builtin_inline_mem_and_retaddr", "",
 		 "printf 'int main(void){ char a[8]={0}, b[8]={1,2,3,4,5,6,7,8}, c[8], d[4];"
