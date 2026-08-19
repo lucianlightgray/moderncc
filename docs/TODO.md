@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30253   | 2026-08-19T10:33Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10412   | 2026-08-19T11:12Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50033   | 2026-08-19T11:41Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T11:48Z |
 
 ## Contracts — blocking, highest priority
 
@@ -100,6 +100,10 @@
 
 
 ## In progress — win-x64     ← only win-x64 writes this zone
+
+- [ ] T-win-50033 [X] x86_64-PE/Win context-switch backend for the cooperative `<threads.h>` runtime (T-lin-10001 [C] child). Approach: Win32 Fibers (ConvertThreadToFiber/CreateFiber/SwitchToFiber) — delegates the Win64 TIB stack-field / SEH / xmm6-15 hazards to the OS; store the fiber handle in the opaque `sp` slot (scheduler never derefs it). `!*save_sp` guard converts main on its first swap (avoids GetCurrentFiber, which is a TEB macro not a kernel32 export). Also relax the two goldens `req`s cpu=x86_64,elf -> cpu=x86_64 (enables lin+win x86_64; still skips mac arm64 until its [X] lands).
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: d5309726 | TS: 2026-08-19T11:48Z
+      REF: DETAILS.md#t-lin-10001-coop-threads-c-core | DEPS: T-lin-10001[C]
 
 - [ ] T-mac-30180 [S] Fix: [MED, diagnostic] division-by-zero policy — SLICE LANDED (626059d9, o0-NEUTRAL): default-on `-Wdiv-by-zero` now warns on runtime integer `/`/`%` by a literal-0 divisor (mccgen.c gen_opic l2==0 else-branch, guarded `!pp_expr && !gen_opl_depth && !NOEVAL_WANTED`; new suppressible `warn_div_by_zero` flag), matching gcc-16 + clang-22 which warn+compile there. The task's constant-context "downgrade + keep-compiling" half is WITHDRAWN — oracle evidence (BOTH reject `5/0` in static-init/array-bound/enum/static_assert/case) proves mcc's existing hard error already matches the outcome; the const path is UNCHANGED. Win-verified green: cli 341/341 (new cell cli/div_by_zero_warnings), exec only the 2 pre-existing implicit-int reds (no new), treegate 13/13, corpusgate 5/5; o0-baseline provably byte-identical (warning-only, zero codegen change). HELD IN_PROGRESS (not solo-archived): 30180 is a Q-lin-10409 "delicate front-end item — await multi-session coordination"; only the o0-neutral additive half landed, but a new default-on warning is a FLEET-WIDE diag change → **lin + mac please cross-verify no new reds in your native diag/exec/misc suites** (every corpus div-by-zero is constant-context → unchanged error path), then this can archive.
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 626059d9 | TS: 2026-08-19T11:35Z
