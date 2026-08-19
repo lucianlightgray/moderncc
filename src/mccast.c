@@ -20483,7 +20483,8 @@ static void ast_search_select(Sym *sym, int faithful, int saved_loc,
 			{ MCC_TRACE("br\n"); mcc_stats_search_begin(funcname, h, base, searchable, nitems,
 														 ast_search_walk_env, ast_search_ordered_env ? 1 : 0); }
 #if MCC_HOST_POSIX
-		if (ast_search_threads_env || ast_search_pthreads_env) { MCC_TRACE("br\n");
+		if ((ast_search_threads_env || ast_search_pthreads_env) &&
+				mcc_env_on("MCC_OPT_SEARCH_THREADS_UNSAFE")) { MCC_TRACE("br\n");
 			AstGateMask sub = searchable;
 			int pooled;
 			for (;;) { MCC_TRACE("br\n");

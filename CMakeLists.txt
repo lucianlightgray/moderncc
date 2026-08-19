@@ -5109,6 +5109,18 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "initializer element is not constant")
 
+        # T-lin-10417: the documented-unsafe -fopt-search-threads (pool workers
+        # race on ast_cur / ast_*_env) must not deadlock — it now runs the search
+        # serially unless MCC_OPT_SEARCH_THREADS_UNSAFE is set. Compiling the
+        # threaded atomic_counter under the flag must complete fast.
+        add_test(NAME "opt/search-threads-no-deadlock"
+            COMMAND ${_mcc_exe} -O13 -fopt-search -fopt-search-threads -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/exec/features_c99_c11/atomic_counter.c"
+                    -o "${CMAKE_BINARY_DIR}/search-threads-nodl.o")
+        set_tests_properties("opt/search-threads-no-deadlock" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT TIMEOUT 60
+            ENVIRONMENT "MCC_DEV=1;MCC_SEARCH_WORKER=1")
+
         # T-mac-30145: a `static`/`constexpr` compound literal must have a
         # constant initializer (like any static-storage object); mcc accepted a
         # non-constant one. The happy path (constant init) still compiles + runs.
