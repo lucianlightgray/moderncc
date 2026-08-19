@@ -1178,6 +1178,11 @@ static const cli_case_t cli_cases[] = {
 		 "{W}/stdbit && echo DONE",
 		 "STDBIT_OK\nDONE\n"},
 
+		{"xlinker_accepted", "",
+		 "printf 'int main(void){return 0;}\\n' > {W}/xl.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/xl.c -o {W}/xl.o -Xlinker -Bsymbolic && echo XLINKER_OK",
+		 "XLINKER_OK\n"},
+
 		{"c9911_diag_gaps", "",
 		 "printf 'static int x; int x;\\nint main(void){return x;}\\n' > {W}/cg1.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/cg1.c -o {W}/cg1.o 2>&1 | "

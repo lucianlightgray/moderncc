@@ -2186,6 +2186,7 @@ enum {
 	MCC_OPTION_Wp,
 	MCC_OPTION_Xpreprocessor,
 	MCC_OPTION_Xassembler,
+	MCC_OPTION_Xlinker,
 	MCC_OPTION_save_temps,
 	MCC_OPTION_W,
 	MCC_OPTION_O,
@@ -2316,6 +2317,7 @@ static const MCCOption mcc_options[] = {
 		{"Wp,", MCC_OPTION_Wp, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"Xpreprocessor", MCC_OPTION_Xpreprocessor, MCC_OPTION_HAS_ARG},
 		{"Xassembler", MCC_OPTION_Xassembler, MCC_OPTION_HAS_ARG},
+		{"Xlinker", MCC_OPTION_Xlinker, MCC_OPTION_HAS_ARG},
 		{"save-temps", MCC_OPTION_save_temps, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"W", MCC_OPTION_W, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"O", MCC_OPTION_O, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
@@ -3326,6 +3328,13 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				{ MCC_TRACE("br\n"); insert_args(s, &argv, &argc, --optind, optarg, ','); }
 			break;
 		case MCC_OPTION_Xassembler:
+			break;
+		case MCC_OPTION_Xlinker:
+			/* gcc's `-Xlinker arg` passes a single argument to the linker;
+			 * reuse the -Wl, machinery so linker options (-rpath, -soname, ...)
+			 * get recognized. libtool/autotools rely on this not hard-erroring. */
+			if (mcc_set_linker(s, optarg) < 0)
+				{ MCC_TRACE("br\n"); return -1; }
 			break;
 		case MCC_OPTION_save_temps:
 			break;
