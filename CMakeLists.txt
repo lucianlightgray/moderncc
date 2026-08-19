@@ -6378,17 +6378,15 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-emit-size -fopt-search-emit-iso;MCC_SEARCH_WORKER=1")
         endforeach()
 
-        foreach(_gl IN LISTS _exec_glines)
-            string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
-            set(_gn "${CMAKE_MATCH_1}")
-            add_test(NAME "exec-search-threads/${_gn}"
-                COMMAND exec_runner "${_mcc_exe}" "${_bdir}" "${_idir}"
-                        "${CMAKE_CURRENT_SOURCE_DIR}/tests"
-                        "${CMAKE_BINARY_DIR}/exec-search-threads-${_gn}" --only "${_gn}")
-            set_tests_properties("exec-search-threads/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 TIMEOUT 240
-                ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-threads;MCC_DEV=1;MCC_SEARCH_WORKER=1")
-        endforeach()
+        # T-lin-10417: the exec-search-threads/* family (every exec group under
+        # -O13 -fopt-search -fopt-search-threads) is RETIRED. That flag now runs
+        # the search serially (the racy pool is gated behind
+        # MCC_OPT_SEARCH_THREADS_UNSAFE), so the family is byte-for-byte identical
+        # to exec-search/* and only re-ran the same slow -O13 search (it was the
+        # source of the atomic_counter deadlock that blocked a goal eval 83 min).
+        # The focused opt/search-threads-no-deadlock cell above covers "the flag
+        # is accepted and does not deadlock". Re-add this family only alongside a
+        # real fix to the worker ast_cur/ast_*_env sharing.
 
         foreach(_gl IN LISTS _exec_glines)
             string(REGEX MATCH "\"([A-Za-z0-9_]+)\"" _ignore "${_gl}")
