@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T20:32Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T21:50Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T21:55Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T22:10Z |
 
 ## Contracts — blocking, highest priority
@@ -55,9 +55,7 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30145 [S] Fix: [MED, accepts-invalid] C23 static/`constexpr` compound-literal must have a constant initializer — `(static int[]){a}` / `(constexpr int[]){a}` accepted by mcc, gcc rejects "initializer element is not constant". Route static/constexpr CLs through the constant-init path.
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: 4ab799ba | TS: 2026-08-19T21:53Z
-      REF: DETAILS.md#t-mac-30145-static-constexpr-cl | DEPS: —
+- SESSION (lin-x64, 2026-08-19T21:55Z, /goal=execute INSTRUCTIONS until TODO empty): **T-mac-30145 [S] DONE+ARCHIVED** (code 2d95e4b3 / docs 2042e76a) — a `static`/`constexpr` compound literal now requires a constant initializer (gcc parity). One `else if` in the compound-literal arm of `unary()`: `type.t & (VT_STATIC|VT_CONSTEXPR)` → `r=VT_CONST` (constant-init path + static storage duration), so `(static int[]){a}`/`(constexpr int[]){a}` error "initializer element is not constant"; plain CLs untouched. o0-neutral (no corpus uses static/constexpr CLs; o0-baseline plain+gated+KP green). Oracle-verified vs gcc-16; TDD diag/static-constexpr-cl-valid + diag/{static,constexpr}-cl-nonconst-rejected, anti-vacuous. DETAILS#t-mac-30145-static-constexpr-cl.
 
 
 - SESSION (lin-x64, 2026-08-19T21:50Z, /goal=execute INSTRUCTIONS until TODO empty): **T-mac-30138 [S] DONE+ARCHIVED** (code 378b00ee / docs d2046ea1) — block-scope `static` initialized by a constant statement-expression (`static int s=({7;})`) now accepted (gcc/clang parity). The stmt-expr arm of `unary()` parsed-then-gates instead of erroring pre-parse: accept iff the result is a constant (`(vtop->r & (VT_VALMASK|VT_LVAL))==VT_CONST` — int or symbol-address), else `initializer element is not constant`; runtime path unchanged. o0-neutral (o0-baseline plain+gated+KP green; the accept path runs only for programs every prior mcc rejected). Oracle-verified vs gcc-16+clang, 7 cases (incl. address-const + cast-fold); TDD diag/static-stmtexpr-{const-valid,nonconst-rejected}, anti-vacuous. DETAILS#t-mac-30138-static-stmtexpr-const.
