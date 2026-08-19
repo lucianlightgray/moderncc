@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T13:56Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T13:47Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T14:10Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T13:45Z |
 
 ## Contracts — blocking, highest priority
@@ -50,6 +50,8 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+
+- T-mac-30081 FIX LANDED (lin-x64, 2026-08-19T14:10Z, code cbd3d265): skip trailing zero-length array members in FP-aggregate ABI classification — x86_64 (classify_x86_64_inner, `#else` of MCC_TARGET_PE so PE/x86_64-win32 unaffected) + riscv64 (reg_pass_rec) + arm32 (arm_hfa_members), mirroring arm64's existing guard. New gate abi/zero-array-fp (+known-positive): mcc<->gcc both directions, FAILs pre-fix (rc=2), PASSes post-fix; x86_64 PROVEN o0-neutral (board byte-identical pristine-vs-fix via cmake-def) + gcc differential + struct/abi exec subset green. riscv64/arm syntax-checked. REMAINING for 30081: the arm-win32 o0 key drifts from the arm-gen.c change (measurable via cmake-cross 7/7) — folds into the deliberate fleet rebank below. FINDINGS: cmake-def measures only x86_64 (1/7); **cmake-cross measures 7/7 active keys** (x86_64 + 4 win32 + 2 osx) so lin CAN do the cross-key rebanks here (mac was right re: cross toolchains). The o0 board is STALE on ALL keys vs the 2026-08-18 bank (accumulated corpus growth from many sessions; bar=OK everywhere = no faithfulness regression) — the Q-lin-10409(1) fleet rebank clears this + my arm-win32 increment + 30131's codeopt.c in one deliberate action. T-mac-30131 (trivial fix) + T-mac-30139 (needs the RIR-faithfulness pass first) still CLAIMED, queued. Checkpoint for user direction on the full-board rebank scope (it clears other sessions' drift too).
 
 - T-lin-10001 [C] DONE+ARCHIVED (lin-x64, 2026-08-19T13:47Z, user "work with mac and win on T-lin-10001 now"): cooperative single-threaded `<threads.h>` backend complete on ALL runnable targets — 3-target fan-out landed + each natively verified: lin x86_64-SysV (d5309726, re-verified after the merges), mac arm64-AAPCS64 (T-mac-30255, af9974d2), win x86_64-PE via Win32 Fibers (T-win-50033, cac568e9). Anti-cheat gate proven non-vacuous (eager backend deadlocks exit 134; coop OK). Default pthread path byte-identical, zero o0 drift. riscv64 deferred (no native runner) → minted T-lin-10412 [X] (Open). Archived; DETAILS#t-lin-10001-done-all-target-coop-backend. NEXT: starting the Q-lin-10409(1)-authorized o0-rebank set routed to lin by mac (user: "start all three") — T-mac-30081 (FP-agg codegen, x86_64-verifiable), then T-mac-30131 (cross, all-11-key atomic rebank), then T-mac-30139 (RIR-faithfulness pass before the atomic rebank can bank clean).
 
