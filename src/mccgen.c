@@ -11114,6 +11114,8 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 	while (i < favail && fmt[i]) { MCC_TRACE("br\n");
 		int cls_want;
 		char conv;
+		int mod_l = 0, mod_ll = 0, mod_j = 0, mod_z = 0, mod_t = 0, modi = 0;
+		char modstr[6];
 		if (fmt[i] != '%') { MCC_TRACE("br\n");
 			i++;
 			continue;
@@ -11154,8 +11156,15 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 				{ MCC_TRACE("br\n"); while (i < favail && fmt[i] >= '0' && fmt[i] <= '9')
 					{ MCC_TRACE("br\n"); i++; } }
 		}
-		while (i < favail && (fmt[i] == 'h' || fmt[i] == 'l' || fmt[i] == 'L' || fmt[i] == 'j' || fmt[i] == 'z' || fmt[i] == 't'))
-			{ MCC_TRACE("br\n"); i++; }
+		while (i < favail && (fmt[i] == 'h' || fmt[i] == 'l' || fmt[i] == 'L' || fmt[i] == 'j' || fmt[i] == 'z' || fmt[i] == 't')) { MCC_TRACE("br\n");
+			if (modi < 4) { MCC_TRACE("br\n"); modstr[modi++] = fmt[i]; }
+			if (fmt[i] == 'l') { MCC_TRACE("br\n"); if (mod_l) { MCC_TRACE("br\n"); mod_ll = 1; } mod_l = 1; }
+			else if (fmt[i] == 'j') { MCC_TRACE("br\n"); mod_j = 1; }
+			else if (fmt[i] == 'z') { MCC_TRACE("br\n"); mod_z = 1; }
+			else if (fmt[i] == 't') { MCC_TRACE("br\n"); mod_t = 1; }
+			i++;
+		}
+		modstr[modi] = 0;
 		if (i >= favail || !fmt[i])
 			{ MCC_TRACE("br\n"); break; }
 		conv = fmt[i++];
@@ -11211,6 +11220,30 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 					mcc_warning_c(warn_format)(
 							"format '%%%c' expects a pointer to %s argument",
 							conv, cn2[sc_base]);
+				}
+			} else if (!is_scanf && got == 0 && cls_want == 0 &&
+								 (conv == 'd' || conv == 'i' || conv == 'u' ||
+									conv == 'o' || conv == 'x' || conv == 'X')) { MCC_TRACE("br\n");
+				CType et;
+				int ea, want_bytes, arg_bytes;
+				et.ref = NULL;
+				if (mod_ll || mod_j) { MCC_TRACE("br\n"); want_bytes = 8; }
+				else if (mod_l) { MCC_TRACE("br\n"); want_bytes = LONG_SIZE; }
+				else if (mod_z) { MCC_TRACE("br\n"); et.t = VT_SIZE_T; want_bytes = type_size(&et, &ea); }
+				else if (mod_t) { MCC_TRACE("br\n"); et.t = VT_PTRDIFF_T; want_bytes = type_size(&et, &ea); }
+				else { MCC_TRACE("br\n"); want_bytes = 4; }
+				arg_bytes = type_size(&args[used].type, &ea);
+				if (arg_bytes < 4) { MCC_TRACE("br\n"); arg_bytes = 4; }
+				if (want_bytes != arg_bytes) { MCC_TRACE("br\n");
+					const char *wn = mod_ll ? "long long"
+												 : mod_j ? "intmax_t"
+												 : mod_l ? "long"
+												 : mod_z ? "size_t"
+												 : mod_t ? "ptrdiff_t"
+												 : "int";
+					mcc_warning_c(warn_format)(
+							"format '%%%s%c' expects argument of type '%s'",
+							modstr, conv, wn);
 				}
 			}
 		}

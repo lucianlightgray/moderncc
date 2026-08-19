@@ -2318,6 +2318,15 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'expects an integer argument|expects a pointer argument|expects a floating argument|more conversions than arguments|CLEAN_OK|SILENT_DEFAULT' | sort | uniq -c | sed 's/^ *//'",
 		 "1 CLEAN_OK\n1 SILENT_DEFAULT\n1 expects a floating argument\n1 expects a pointer argument\n1 expects an integer argument\n1 more conversions than arguments\n"},
 
+		{"wformat_length_modifier_width", "",
+		 "printf '#include <stdio.h>\\nint main(void){ int i=1; long long ll=1; printf(\"%%lld\\\\n\", i); printf(\"%%d\\\\n\", ll); return 0; }\\n' > {W}/wfw_bad.c && "
+		 "printf '#include <stdio.h>\\nint main(void){ long long ll=1; int i=1; printf(\"%%lld %%d\\\\n\", ll, i); return (int)ll+i; }\\n' > {W}/wfw_ok.c && "
+		 "{ {MCC} -B{B} -I{I} -Wformat -c {W}/wfw_bad.c -o /dev/null 2>&1; "
+		 "{MCC} -B{B} -I{I} -Wformat -Werror -c {W}/wfw_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; "
+		 "{MCC} -B{B} -I{I} -c {W}/wfw_bad.c -o /dev/null 2>&1 && echo SILENT_DEFAULT; } | "
+		 "grep -oE \"expects argument of type 'long long'|expects argument of type 'int'|CLEAN_OK|SILENT_DEFAULT\" | LC_ALL=C sort | uniq -c | sed 's/^ *//'",
+		 "1 CLEAN_OK\n1 SILENT_DEFAULT\n1 expects argument of type 'int'\n1 expects argument of type 'long long'\n"},
+
 		{"wpedantic_alias", "",
 		 "printf 'int x = 0o5;\\nint main(void){return x;}\\n' > {W}/wp.c && "
 		 "{ {MCC} -B{B} -I{I} -Wpedantic -c {W}/wp.c -o /dev/null 2>&1; "
