@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T18:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T18:32Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10414   | 2026-08-19T17:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T18:27Z |
 
@@ -228,9 +228,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-mac-30214 [S] Fix: [MED, design-level] no parser error recovery — every parser/semantic error uses mcc_error→`_mcc_error` (`libmcc.c:757-763`, NORETURN longjmp+exit(1)) → exactly ONE error per run then stops; clang/gcc recover + report all (3-error probe: mcc 1, oracles 4). `-fmax-errors=N` (`:735`) only affects the driver NOABORT path → inert for source errors. Classic TCC arch. FLIP SIDE positive: no cascading flood, robust vs malformed input (no crash/hang). Fix (large): parser recovery via sync points; at minimum make -fmax-errors meaningful.
       OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
       REF: INVESTIGATIONS.md#r33-no-recovery | DEPS: —
-- [ ] T-mac-30216 [S] Fix: [MED, double-inclusion] `#pragma once` doesn't dedup a header reached via symlink/hardlink — dedups only by path STRING; a header via symlink OR hardlink is included twice (occurrence mcc=2 vs clang/gcc=1 both cases); the realpath fallback (`mccpp.c:2585` normalized_PATHCMP) doesn't canonicalize by device+inode. Same-path + lexical-`..` DO dedup; #ifndef guard still protects. CONTRADICTS a Round-27 robust-claim (symlink dedup) — Round-33 has concrete counts, treat as authoritative. **RE-CONFIRMED 2026-08-19T18:20Z with function-def headers (unambiguous double-def error): BOTH symlink AND hardlink give mcc "redefinition of <fn>" (double-include); the dedup is keyed on `file->true_filename` (mccpp.c:2679), NOT realpath'd/dev-ino, so neither resolves.** Fix: dedup #pragma once/#import by (dev,ino) via stat — a careful change to the CachedInclude/search_cached_include cache (stat each candidate, compare dev+ino against the once-set, fall back on stat failure). NB while confirming this: mcc's acceptance of an IDENTICAL `struct S{};` redefinition is NOT a bug — it's C23 6.7.2.3 compatible-tag-redefinition, matches gcc-16 -std=c23 (clang -std=c23 still rejects, lagging); mcc still errors an INCOMPATIBLE redefinition. Don't file that as accepts-invalid.
-      OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
-      REF: INVESTIGATIONS.md#r33-pragma-once-inode | DEPS: —
 - [ ] T-mac-30217 [S] Fix: [LOW cluster] assembler-expr/message + diagnostic-quality + include_next — ASM: shift `<<`/`>>` at multiplicative level (`mccasm.c:201-240`) → `.long 2+3<<1`=8 (GNU-as) vs clang/as 10; forward `.set` in a narrow (.word/1-2B) data slot fails "constant expected" (`:548-550`); `.align`/.balign/.p2align max-skip 3rd operand unsupported (`:477-480`); unknown directive → misleading "ARM64 instruction not implemented" (`:1124`). DIAG: no column numbers (`libmcc.c:704` `%s:%d:`); caret one token PAST the offender; redefinition omits "previous definition here"; macro-error no "in expansion of" note + continuation reports physical line. INCLUDE: `#include_next` in the primary source file no warning (oracles warn -Winclude-next-outside-header).
       OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
       REF: INVESTIGATIONS.md#r33-low-cluster | DEPS: —
