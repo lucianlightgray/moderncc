@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T20:32Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T22:00Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10417   | 2026-08-19T22:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T22:10Z |
 
 ## Contracts — blocking, highest priority
@@ -144,6 +144,10 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: INVESTIGATIONS.md#r34-low-cluster | DEPS: —
 
 ## Open — claimable
+
+- [ ] T-lin-10416 [S] Re-bank the stale x86_64-win32 / x86_64-osx (and i386/arm/arm64-win32) o0-baseline boards — a `cmake-cross measurable` CHECK shows `atomic_inlang_rmw.c`/`atomic_ptr.c`/`feature_macros.c` drifting on ALL `*-win32` keys + `codeopt.c` on x86_64-osx (compiler drift landed after the 2e762ccf fleet re-bank; native x86_64 board is current). Needs an EXEC run of the drifted objects per key (win32 under wine, x86_64-osx on a mac) before re-banking — a lin session cannot exec-verify these. win owns the `*-win32` keys; mac owns x86_64-osx.
+      OWNER: — | STATE: OPEN | SHA: a67481f1 | TS: 2026-08-19T22:05Z
+      REF: DETAILS.md#t-lin-10416-cross-o0-stale-bank | DEPS: —
 
 - [ ] T-mac-30144 [S] Fix: [MED, accepts-invalid] K&R def + promotion-mismatching prototype only pedantic-warns — **CORRECTED SCOPE (win-x64, after a reverted attempt efec2b93→710f519e): the behavior is ORDER-DEPENDENT, calibration was incomplete.** gcc+clang REJECT **def-first** (`int f(a) char a;{} int f(char a);`) but **ACCEPT proto-first** (`void f(float a); void f(a) float a;{}` — exactly `tests/exec/functions_abi/old_func.c` lines 9+43, a BANKED PASSING test). The naive fix (compare prototype to the default-arg-promoted old param + return 0) in `is_compatible_func` (mccgen.c ~4436 `type_needs_default_promotion` branch) is a FALSE POSITIVE — it also rejects proto-first, breaking old_func across 23 exec variants. `is_compatible_func` gets op==pp base-typed pairs in BOTH orders (op=float/pp=float for the proto-first case that must PASS; op=char/pp=char for the def-first case that must FAIL) so it CANNOT distinguish order from types. A correct fix must carry order info — e.g. a flag on the FUNC_OLD sym marking "defined AFTER a visible prototype" (then compare its params un-promoted vs the prototype), while a FUNC_OLD defined with NO prior prototype keeps the promoted-type comparison for a later prototype. Verify BOTH orders × {char,short,float} × {match,mismatch} vs gcc-16+clang, AND that old_func.c still compiles+runs, before landing. REF DETAILS.md#t-mac-30144-knr-promo-mismatch.
       OWNER: — | STATE: OPEN | SHA: 710f519e | TS: 2026-08-19T21:12Z
