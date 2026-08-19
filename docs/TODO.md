@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T20:32Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10417   | 2026-08-19T22:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10417   | 2026-08-19T22:10Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T22:42Z |
 
 ## Contracts — blocking, highest priority
@@ -54,6 +54,10 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+- [ ] T-mac-30158 [S] Fix: [MED] constructor/destructor priority silently discarded — prioritized ctors run in SOURCE order not ascending-priority. ELF: store priority (AttributeDef.ctor_prio), thread through gen_function, reorder the single .init_array/.fini_array relocs by priority at link finalize. Mach-O __mod_init_func ordering = residual for mac.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 75fa28a3 | TS: 2026-08-19T22:10Z
+      REF: DETAILS.md#t-mac-30158-ctor-priority | DEPS: —
+
 
 - SESSION (lin-x64, 2026-08-19T22:00Z, /goal=execute INSTRUCTIONS until TODO empty): **T-lin-10395 [S] DONE+ARCHIVED** (code b9a1c351 / docs 00237144) — an unsuffixed decimal in [2^63,2^64) now has long-long rank (`unsigned long long`, clang/C90 parity, target-uniform) instead of the non-candidate `unsigned long`; one `lcount=2` in the decimal >=2^63 branch of mccpp. o0-neutral (no corpus unsuffixed decimal >=2^63; o0-baseline plain+gated+KP + 162 literal-typing exec cells green). TDD diag/decimal-ull-rank, anti-vacuous. DETAILS#t-lin-10395-decimal-ull. **SESSION TALLY: 4 [S] DONE+ARCHIVED** — T-win-50032 (clz/ctz(0) zero-fixup, RED-cell greened + x86_64 o0-rebank), T-mac-30138 (static stmt-expr const init), T-mac-30145 (static/constexpr compound-literal const init), T-lin-10395 (decimal ull rank). Each TDD + oracle-verified + o0-neutral (50032 bounded-drift+rebanked). Remaining lin-verifiable [S] queue is now deep-only: T-mac-30158 (ctor priority — FuncAttr is a full 32-bit bitfield, needs a side-table + linker .init_array.N ordering), T-mac-30167 (_Alignof packed member — needs an SValue align slot), T-mac-30165 (overflow_p fold infra), T-mac-30197 (label-diff reloc const-init); plus target-specific (__float128 30176/30177, arm64-asm, riscv64, Mach-O), GPU (hardware/gaming), and cosmetic/oracle-divergent clusters. **PRE-EXISTING reds (NOT mine, standing):** cross-key o0 staleness atomic_*/feature_macros on all *-win32 + codeopt on x86_64-osx (needs a cross re-bank turn); rir-coverage-census wide-corpus drift. No active lin claims; tree clean, HEAD pushed.
 
@@ -285,9 +289,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-mac-30179 [S] Fix: [LOW cluster] efficiency/cosmetic — (1) `__sync_synchronize()` emulated via seq_cst __atomic_fetch_add on a stack volatile int (`mccdefs.h:387-389`) → `bl __atomic_fetch_add_4` not an inline `dmb ish` (correct, just a call+stack access); (2) extended-type inf/nan/huge_val builtins — **_Float16 part DONE (win-x64, 74f9d331): `__builtin_inff16`/`__builtin_huge_valf16`/`__builtin_nanf16` added** (3 DEF_TOKENs + the inf/nan handler routes to a VT_FLOAT16 const cv.i=0x7c00/0x7e00; matches gcc, exec 8483/8483, TDD cli/builtin_f16_inf_nan; DETAILS#t-mac-30179-f16-builtins). RESIDUAL: the `__float128` variants (`__builtin_nanf128`/`__builtin_infq`/`__builtin_huge_valq`) are NOT win-doable — `__float128` errors "not supported on this target" on x86_64 (arm64/riscv64-only) → for a lin/mac session; (3) `__FLT128_MAX__` predef also NOT win-relevant (no __float128 on win); (4) C23 `bool b; b++;` no -Wbool-operation (clang also silent → matches an oracle).
       OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
       REF: INVESTIGATIONS.md#r28-low-cluster | DEPS: —
-- [ ] T-mac-30158 [S] Fix: [MED, wrong init order] constructor/destructor priority silently discarded — `ctor_priority:` (`mccgen.c:6388-6393`) evaluates the priority via expr_const() then throws it away; `FuncAttr` (`mcc.h:311-324`) has func_ctor/func_dtor bits but NO priority field; emission uses fixed `.init_array`/`.fini_array` (`:18158-18161`, `mccelf.c:1502-1509` add_array) with no `.init_array.NNNNN` sections. Prioritized ctors run in SOURCE order not ascending-priority, unprioritized-after-prioritized violated, silently. Confirmed on ELF too. Basic before/after-main + dtor-vs-atexit LIFO + exit()-skip are CORRECT. Fix: store priority in FuncAttr, emit `.init_array.NNNNN`/`.fini_array.NNNNN` (ELF) + order Mach-O __mod_init_func.
-      OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
-      REF: INVESTIGATIONS.md#r27-ctor-priority | DEPS: —
 - [ ] T-mac-30162 [S] Fix: [MED, link correctness] `#pragma weak` — **CORE DONE (5519d195, 2026-08-19T19:14Z): `#pragma weak <sym>` now marks the symbol STB_WEAK** (pragma_parse records the name in mcc_state->pragma_weak_syms; update_storage maps it to STB_WEAK; verified nm W + strong-override-wins link; zero o0 drift, treegate 100%, cell diag.pragma-weak). RESIDUAL: the `= alias` form + pragma-after-definition. Original: `#pragma weak wsym` leaves wsym STRONG (nm: mcc `D _wsym` vs clang/gcc `weak external`); `#pragma weak alias = target` dropped entirely (no alias symbol). No handler in pragma_parse (`mccpp.c:2807`). Dup-symbol link errors / missing weak-override. Clusters w/ T-mac-30135 weak/weakref attr. Fix: weak pragma handler marking the sym weak (reuse a.weak) + weak-alias to target.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-weak | DEPS: —
