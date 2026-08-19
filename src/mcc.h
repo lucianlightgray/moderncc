@@ -1023,6 +1023,8 @@ struct MCCState {
 	struct filespec **files;
 	int nb_files;
 	int nb_libraries;
+	int nb_alacarte_pulls;
+	char link_in_group;
 	char *outfile;
 	char *deps_outfile;
 	char *dep_target;
@@ -1139,6 +1141,7 @@ static inline int c99_stmt_scopes(MCCState *s1) {
 
 struct filespec {
 	char type;
+	char group;
 	char name[1];
 };
 

@@ -3920,6 +3920,7 @@ static int mcc_load_alacarte(MCCState *s1, int fd, int size, int entrysize) { MC
 				{ MCC_TRACE("br\n"); goto the_end; }
 #endif
 			++bound;
+			++s1->nb_alacarte_pulls;
 		}
 	} while (bound);
 	ret = 0;

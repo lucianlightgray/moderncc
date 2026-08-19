@@ -546,6 +546,19 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=47\n"},
 
+		{"link_start_group_cross_archive", "os!=Darwin:mcc -ar is ELF/PE-only (T-mac-30232)",
+		 "printf 'extern int b_sym(void); int a_sym(void){ return b_sym()+1; }\\n' > {W}/la.c && "
+		 "printf 'int a2_sym(void){ return 40; }\\n' > {W}/la2.c && "
+		 "printf 'extern int a2_sym(void); int b_sym(void){ return a2_sym()+1; }\\n' > {W}/lb.c && "
+		 "printf 'extern int a_sym(void); int main(void){ return a_sym(); }\\n' > {W}/lmain.c && "
+		 "{MCC} -B{B} -c {W}/la.c -o {W}/la.o && {MCC} -B{B} -c {W}/la2.c -o {W}/la2.o && "
+		 "{MCC} -B{B} -c {W}/lb.c -o {W}/lb.o && {MCC} -B{B} -c {W}/lmain.c -o {W}/lmain.o && "
+		 "{MCC} -B{B} -ar rcs {W}/liba.a {W}/la.o {W}/la2.o && {MCC} -B{B} -ar rcs {W}/libb.a {W}/lb.o && "
+		 "{MCC} -B{B} {W}/lmain.o -Wl,--start-group {W}/liba.a {W}/libb.a -Wl,--end-group -o {W}/lg.exe 2>{W}/lg.err; link=$?; "
+		 "{W}/lg.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=42\n"},
+
 		{"output_type_same_action_no_warn", "",
 		 "printf 'int x;\\n' > {W}/ot.c && "
 		 "{MCC} -B{B} -I{I} -c -c -o {W}/ot.o {W}/ot.c 2>{W}/ot.same.err; "

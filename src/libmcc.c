@@ -2068,6 +2068,10 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 			s->filetype |= AFF_WHOLE_ARCHIVE;
 		} else if (link_option(&o, "no-whole-archive")) { MCC_TRACE("br\n");
 			s->filetype &= ~AFF_WHOLE_ARCHIVE;
+		} else if (link_option(&o, "start-group|(")) { MCC_TRACE("br\n");
+			s->link_in_group = 1;
+		} else if (link_option(&o, "end-group|)")) { MCC_TRACE("br\n");
+			s->link_in_group = 0;
 		} else if (link_option(&o, "version-script=|version_script=")) { MCC_TRACE("br\n");
 			mcc_set_str(&s->version_script, o.arg);
 			ignoring = 1;
@@ -2703,6 +2707,7 @@ static void insert_args(MCCState *s1, char ***pargv, int *pargc, int optind, con
 static void args_parser_add_file(MCCState *s, const char *filename, int filetype) { MCC_TRACE("enter\n");
 	struct filespec *f = mcc_malloc(sizeof *f + strlen(filename));
 	f->type = filetype;
+	f->group = s->link_in_group;
 	strcpy(f->name, filename);
 	dynarray_add(&s->files, &s->nb_files, f);
 	if (filetype & (AFF_TYPE_LIB | AFF_TYPE_FRAMEWORK))

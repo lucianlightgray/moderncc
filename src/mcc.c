@@ -1608,6 +1608,34 @@ int main(int argc, char **argv) { MCC_TRACE("enter\n");
 	return ret;
 }
 
+static int link_is_archive(const char *name) { MCC_TRACE("enter\n");
+	FILE *f = host_fopen(name, "rb");
+	char magic[8];
+	int r = 0;
+	if (f) { MCC_TRACE("br\n");
+		if (fread(magic, 1, sizeof magic, f) == sizeof magic &&
+				0 == memcmp(magic, "!<arch>\n", sizeof magic))
+			{ MCC_TRACE("br\n"); r = 1; }
+		fclose(f);
+	}
+	return r;
+}
+
+static int link_add_one(MCCState *s, struct filespec *f, const char **first_file) { MCC_TRACE("enter\n");
+	s->filetype = f->type;
+#ifdef MCC_TARGET_MACHO
+	if (f->type & AFF_TYPE_FRAMEWORK)
+		{ MCC_TRACE("br\n"); return mcc_add_framework(s, f->name); }
+#endif
+	if (f->type & AFF_TYPE_LIB)
+		{ MCC_TRACE("br\n"); return mcc_add_library(s, f->name); }
+	if (MCC_VTIER(s->verbose) == MCC_V1)
+		{ MCC_TRACE("br\n"); printf("-> %s\n", f->name); }
+	if (!*first_file)
+		{ MCC_TRACE("br\n"); *first_file = f->name; }
+	return mcc_add_file(s, f->name);
+}
+
 static int mcc_main_body(int argc, char **argv) { MCC_TRACE("enter\n");
 	MCCState *s, *s1;
 	int ret, opt, n = 0, t = 0, done;
@@ -1755,22 +1783,28 @@ redo:
 	first_file = NULL;
 	while (0 == ret) { MCC_TRACE("br\n");
 		struct filespec *f = s->files[n];
-		s->filetype = f->type;
-#ifdef MCC_TARGET_MACHO
-		if (f->type & AFF_TYPE_FRAMEWORK) { MCC_TRACE("br\n");
-			ret = mcc_add_framework(s, f->name);
-		} else
-#endif
-				if (f->type & AFF_TYPE_LIB) { MCC_TRACE("br\n");
-			ret = mcc_add_library(s, f->name);
+		if (f->group) { MCC_TRACE("br\n");
+			int g0 = n, g1 = n, i;
+			while (g1 < s->nb_files && s->files[g1]->group)
+				{ MCC_TRACE("br\n"); ++g1; }
+			for (i = g0; i < g1 && 0 == ret; i++)
+				{ MCC_TRACE("br\n"); ret = link_add_one(s, s->files[i], &first_file); }
+			while (0 == ret) { MCC_TRACE("br\n");
+				int before = s->nb_alacarte_pulls;
+				for (i = g0; i < g1 && 0 == ret; i++) { MCC_TRACE("br\n");
+					struct filespec *g = s->files[i];
+					if ((g->type & AFF_TYPE_LIB) || link_is_archive(g->name))
+						{ MCC_TRACE("br\n"); ret = link_add_one(s, g, &first_file); }
+				}
+				if (0 != ret || s->nb_alacarte_pulls == before)
+					{ MCC_TRACE("br\n"); break; }
+			}
+			n = g1;
 		} else { MCC_TRACE("br\n");
-			if (MCC_VTIER(s->verbose) == MCC_V1)
-				{ MCC_TRACE("br\n"); printf("-> %s\n", f->name); }
-			if (!first_file)
-				{ MCC_TRACE("br\n"); first_file = f->name; }
-			ret = mcc_add_file(s, f->name);
+			ret = link_add_one(s, f, &first_file);
+			++n;
 		}
-		if (++n == s->nb_files)
+		if (n == s->nb_files)
 			{ MCC_TRACE("br\n"); break; }
 		if ((s->output_type == MCC_OUTPUT_OBJ && !s->option_r) || s->output_type == MCC_OUTPUT_ASM)
 			{ MCC_TRACE("br\n"); break; }
