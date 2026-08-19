@@ -10,10 +10,20 @@ int main(void) {
 	if (__builtin_clzg(a) != 32) return 1;
 	if (__builtin_ctzg(a) != 0) return 2;
 	if (__builtin_popcountg(a) != 8) return 3;
+#if defined(__SIZEOF_INT128__)
+	/* The generic bit builtins carry _BitInt through __mcc_gu_t, which is a
+	   128-bit type only where __int128 exists.  These _BitInt(N>64) value
+	   checks therefore require a 128-bit carrier; where it is absent (e.g.
+	   x86_64-PE, which has no __int128) the *g builtins read only the low 64
+	   bits.  The precision (__builtin_bitprecisionof) and the N<=64 cases are
+	   unaffected and stay unguarded. */
 	if (__builtin_clzg(b) != 29) return 4;
 	if (__builtin_popcountg(b) != 1) return 5;
+#endif
 	if (__builtin_clzg(c) != 32) return 6;
+#if defined(__SIZEOF_INT128__)
 	if (__builtin_clzg(d) != 27) return 7;
+#endif
 	if (__builtin_clzg(z, 99) != 99) return 8;
 	if (__builtin_ctzg(z, 99) != 99) return 9;
 
