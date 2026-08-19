@@ -237,8 +237,13 @@
 	#define __WCHAR_MAX__ 0x7fffffff
 	#define __WCHAR_MIN__ (-__WCHAR_MAX__ - 1)
 #endif
+#if defined _WIN32 || defined __linux__
 	#define __WINT_MAX__ 0xffffffffU
 	#define __WINT_MIN__ 0U
+#else
+	#define __WINT_MAX__ 0x7fffffff
+	#define __WINT_MIN__ (-__WINT_MAX__ - 1)
+#endif
 
 	#define __SIG_ATOMIC_TYPE__ int
 	#define __SIG_ATOMIC_MAX__ 0x7fffffff
