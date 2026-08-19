@@ -454,7 +454,7 @@ static void asm_skip_conditional(MCCState *s1, int stop_at_else) { MCC_TRACE("en
 		next();
 		if (tok == TOK_EOF || tok == CH_EOF)
 			{ MCC_TRACE("br\n"); mcc_error(".endif expected but end of file reached"); }
-		if (tok >= TOK_ASMDIR_if && tok <= TOK_ASMDIR_ifle) { MCC_TRACE("br\n");
+		if (tok >= TOK_ASMDIR_if && tok <= TOK_ASMDIR_ifnb) { MCC_TRACE("br\n");
 			nest++;
 		} else if (tok == TOK_ASMDIR_endif) { MCC_TRACE("br\n");
 			if (nest == 0)
@@ -476,7 +476,7 @@ static int asm_skip_to_cond_branch(MCCState *s1) { MCC_TRACE("enter\n");
 		next();
 		if (tok == TOK_EOF || tok == CH_EOF)
 			{ MCC_TRACE("br\n"); mcc_error(".endif expected but end of file reached"); }
-		if (tok >= TOK_ASMDIR_if && tok <= TOK_ASMDIR_ifle) { MCC_TRACE("br\n");
+		if (tok >= TOK_ASMDIR_if && tok <= TOK_ASMDIR_ifnb) { MCC_TRACE("br\n");
 			nest++;
 		} else if (tok == TOK_ASMDIR_endif) { MCC_TRACE("br\n");
 			if (nest == 0)
@@ -824,6 +824,40 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		else
 			{ MCC_TRACE("br\n"); take = (e <= 0); }
 		if (!take)
+			{ MCC_TRACE("br\n"); asm_conditional_false(s1); }
+		break;
+	}
+	case TOK_ASMDIR_ifb:
+	case TOK_ASMDIR_ifnb: {
+		int want_blank = (tok == TOK_ASMDIR_ifb), is_blank;
+		next();
+		is_blank = (tok == TOK_LINEFEED || tok == ';' ||
+								tok == TOK_EOF || tok == CH_EOF);
+		asm_skip_to_eol();
+		if (is_blank != want_blank)
+			{ MCC_TRACE("br\n"); asm_conditional_false(s1); }
+		break;
+	}
+	case TOK_ASMDIR_ifc:
+	case TOK_ASMDIR_ifnc: {
+		int want_eq = (tok == TOK_ASMDIR_ifc), eq;
+		char a1[256], a2[256];
+		a1[0] = a2[0] = 0;
+		next();
+		while (tok != ',' && tok != TOK_LINEFEED && tok != ';' &&
+					 tok != TOK_EOF && tok != CH_EOF) { MCC_TRACE("br\n");
+			pstrcat(a1, sizeof a1, get_tok_str(tok, &tokc));
+			next();
+		}
+		if (tok == ',')
+			{ MCC_TRACE("br\n"); next(); }
+		while (tok != TOK_LINEFEED && tok != ';' &&
+					 tok != TOK_EOF && tok != CH_EOF) { MCC_TRACE("br\n");
+			pstrcat(a2, sizeof a2, get_tok_str(tok, &tokc));
+			next();
+		}
+		eq = (strcmp(a1, a2) == 0);
+		if (eq != want_eq)
 			{ MCC_TRACE("br\n"); asm_conditional_false(s1); }
 		break;
 	}

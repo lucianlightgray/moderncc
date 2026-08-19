@@ -470,6 +470,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=57\n"},
 
+		{"asm_ifc_ifb_directives", "",
+		 "printf '.data\\n.globl base\\nbase:\\n.ifc abc, abc\\n.byte 1\\n.else\\n.byte 2\\n.endif\\n.ifc abc, xyz\\n.byte 4\\n.else\\n.byte 8\\n.endif\\n.ifb\\n.byte 16\\n.else\\n.byte 32\\n.endif\\n.ifnb something\\n.byte 64\\n.else\\n.byte 128\\n.endif\\n' > {W}/fc.s && "
+		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]+base[3]; }\\n' > {W}/fc.c && "
+		 "{MCC} -B{B} {W}/fc.s {W}/fc.c -o {W}/fc.exe 2>{W}/fc.err; link=$?; "
+		 "{W}/fc.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=89\n"},
+
 		{"asm_elseif_directive", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.if 0\\n.byte 1\\n.elseif 1\\n.byte 2\\n.elseif 1\\n.byte 3\\n.else\\n.byte 4\\n.endif\\n.if 0\\n.byte 10\\n.elseif 0\\n.byte 20\\n.else\\n.byte 40\\n.endif\\n.if 1\\n.byte 100\\n.elseif 1\\n.byte 99\\n.endif\\n' > {W}/ei.s && "
 		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]; }\\n' > {W}/ei.c && "
