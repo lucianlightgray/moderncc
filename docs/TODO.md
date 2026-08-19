@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T17:16Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T16:40Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10414   | 2026-08-19T16:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T16:50Z |
 
 ## Contracts — blocking, highest priority
@@ -125,6 +125,9 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 
 ## Open — claimable
 
+- [ ] T-lin-10413 [S] Fix: [MED, FLEET-WIDE diagnostic recovery] `exec/errors_and_warnings` (#544 + its exec-O1/O3/Os/opt-sweep variants) is RED on x86_64-lin AND arm64-mac (triaged 2026-08-19 at mac's request) — a stale-golden mismatch that HIDES a real regression. Two diffs vs the goldens.h golden: (1) **test_default_int_type (src line 405/406 `n;` `f();`)** — mcc now emits ONLY `:405: error: type defaults to 'int'` and STOPS; gcc AND clang both report line 405 AND line 406 (`:406: ...defaults to 'int'`). Root: `c1777f26` (reject K&R implicit-int under C99+, §6.9.1p6) turned the implicit-int at 405 from a warning into an error (`mcc_warning_c(warn_implicit_int)` at mccgen.c:19134/19110/19021), and the now-error aborts declaration recovery before the parser reaches `f();` at 406 — the OLD golden expected BOTH (warning@405 + error@406), proving mcc used to continue. FIX = make the implicit-int error recover and continue diagnosing subsequent declarations (match gcc+clang both-line reporting), NOT bank the one-line output (that would mask the recovery regression). (2) **test_illegal_unicode (src line 498 `"\Uffffffff"`)** — golden `error: 0xffffffff is not a valid universal character` vs actual `error: \Uffffffff is not a valid universal character`; this one IS a clean deliberate wording change (`dfb0cc2b`, T-mac-30146) — just update the golden. After the (1) code fix, update the goldens.h errors_and_warnings golden for both spots + re-verify vs gcc+clang. x86_64-verifiable; oracle = gcc+clang agree (not oracle-divergent).
+      OWNER: — | STATE: OPEN | SHA: c1777f26 | TS: 2026-08-19T16:45Z
+      REF: DETAILS.md#pre-existing-errors-and-warnings-exec-red (mac's triage 53a388d9) | DEPS: —
 - [ ] T-lin-10412 [X] riscv64 context-switch backend for the cooperative `<threads.h>` runtime (follow-up to T-lin-10001 [C], DONE). Add an `#elif defined(__riscv) && __riscv_xlen == 64` block to the backend chain in runtime/include/mcc_coop_threads.h providing `__mcc_ctx_swap`/`__mcc_ctx_make` (save s0–s11, ra, sp, fs0–fs11; first-entry `ret` into `entry`, 16-aligned sp), plus its own arch-gated goldens rows (cpu=riscv64). Deferred from T-lin-10001 because there is NO native riscv64 runner in this fleet (no qemu-user here) — must NOT ship unverified codegen [[verify-codegen-on-every-target]]; claim only from a box that can run riscv64 natively (or a verified qemu-user path).
       OWNER: — | STATE: OPEN | SHA: d5309726 | TS: 2026-08-19T13:47Z
       REF: DETAILS.md#t-lin-10001-done-all-target-coop-backend | DEPS: —
