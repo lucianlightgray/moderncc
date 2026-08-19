@@ -97,7 +97,7 @@ static const mcc_golden_t mcc_goldens[] = {
 		{"large_argument", "run", "exec/functions_abi/large_argument.c", "1 2\n3 4 5\n13 12 11 10 9 8 7 6 5 4 3 2 1\n", "", "", ""},
 		{"return_struct_in_reg", "run", "exec/structs_unions/return_struct_in_reg.c", "05 0a\n12 34\n1245 5678\n12345678 9abcdef0\n123456789abcdef0 fedcba9876543210\n1.0 2.0 3.0 4.0\n\n05 0a\n12 34\n1245 5678\n12345678 9abcdef0\n123456789abcdef0 fedcba9876543210\n1.0 2.0 3.0 4.0\n\n05 0a\n12 34\n1245 5678\n12345678 9abcdef0\n123456789abcdef0 fedcba9876543210\n1.0 2.0 3.0 4.0\n", "", "", ""},
 		{"bound_test", "run", "exec/bounds/bound_test.c", "42000\n8\n", "", "", ""},
-		{"old_func", "run", "exec/functions_abi/old_func.c", "4 30\n4 30\n1\n", "", "", ""},
+		{"old_func", "run", "exec/functions_abi/old_func.c", "4 30\n4 30\n1\n", "-Wno-old-style-definition", "", ""},
 		{"double_to_signed", "run", "exec/types/double_to_signed.c", "-1\n-1\n-2147483648\n-2147483648\n10000000000000000000\n", "", "", ""},
 		{"ldouble_to_signed", "run", "exec/types/ldouble_to_signed.c", "0\n0\n0\n0\n0\n2 -2\n-2147483648\n-2147483648\n-2147483648\n", "", "", "cpu=x86_64:80-bit long double, and the out-of-range rows pin the x87 integer indefinite that a widened convert would turn into 0"},
 		{"func_arg_struct_compare", "run", "exec/structs_unions/func_arg_struct_compare.c", "done\n", "", "", ""},

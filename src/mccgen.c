@@ -19226,6 +19226,14 @@ static int decl(int l) {
 						{ MCC_TRACE("br\n"); mcc_error("return type is an incomplete type"); }
 				}
 
+				/* T-mac-30148(2): a K&R identifier-list definition (FUNC_OLD with
+				 * parameters, e.g. `int f(a,b) int a,b; {}`) is deprecated in every
+				 * version of C and removed in C23; gcc (-Wold-style-definition) and
+				 * clang (-Wdeprecated-non-prototype) both warn by default. Guard on a
+				 * non-empty parameter list so `int f() {}` (the empty-paren case) is
+				 * left to its own C23 handling. */
+				if (sym->type.ref->f.func_type == FUNC_OLD && sym->type.ref->next)
+					{ MCC_TRACE("br\n"); mcc_warning_c(warn_old_style_definition)("old-style function definition"); }
 				for (sa = sym->type.ref; (sa = sa->next) != NULL;) { MCC_TRACE("br\n");
 					if (!(sa->v & ~SYM_FIELD)) { MCC_TRACE("br\n");
 						if (mcc_state->cversion < 202311)

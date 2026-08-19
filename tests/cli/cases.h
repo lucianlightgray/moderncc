@@ -611,6 +611,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/hv.c -o {W}/hv.o && echo VALID_OK",
 		 "used with no following hex digits\nuniversal-character-name expected\nVALID_OK\n"},
 
+	{"old_style_definition_warning", "",
+		 "printf 'int f(a,b) int a,b; { return a+b; }\\nint main(void){ return f(1,2); }\\n' > {W}/kr.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/kr.c -o {W}/kr.o 2>&1 | grep -oE 'old-style function definition'; "
+		 "{MCC} -B{B} -I{I} -Wno-old-style-definition -c {W}/kr.c -o {W}/kr2.o 2>&1 | grep -oE 'old-style function definition'; echo NOWARN_DONE; "
+		 "printf 'int g(){ return 0; }\\nint main(void){ return g(); }\\n' > {W}/ep.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/ep.c -o {W}/ep.o 2>&1 | grep -oE 'old-style function definition'; echo EMPTY_DONE",
+		 "old-style function definition\nNOWARN_DONE\nEMPTY_DONE\n"},
+
 	{"c11_keyword_feature_pedantic", "",
 		 "printf '_Alignas(16) int x;\\nint main(void){return 0;}\\n' > {W}/k1.c && "
 		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/k1.c -o {W}/k1.o 2>&1 | "
@@ -2110,7 +2118,7 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'int f(a,b);\\nint main(void){return 0;}\\n' > {W}/kr_bad.c && "
 		 "printf 'int def(a,b) int a,b; { return a+b; }\\nint proto();\\nint main(void){return def(1,2)+proto();}\\n' > {W}/kr_ok.c && "
 		 "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/kr_bad.c -o /dev/null 2>&1; "
-		 "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/kr_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+		 "{MCC} -B{B} -I{I} -std=c11 -Wno-old-style-definition -Werror -c {W}/kr_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
 		 "grep -oE 'parameter names \\(without types\\)|CLEAN_OK' | sort | uniq -c | sed 's/^ *//'",
 		 "1 CLEAN_OK\n1 parameter names (without types)\n"},
 
@@ -2138,7 +2146,7 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'typedef int F(void); F f { return 0; }\\n' > {W}/tdf_bad.c && "
 		 "printf 'typedef int T; T h(void){ return 0; }\\nint def(a,b) int a,b; { return a+b; }\\ntypedef int F(void); F *fp;\\nint main(void){return h()+def(1,2)+(fp!=0);}\\n' > {W}/tdf_ok.c && "
 		 "{ {MCC} -B{B} -I{I} -std=c11 -c {W}/tdf_bad.c -o /dev/null 2>&1; "
-		 "{MCC} -B{B} -I{I} -std=c11 -Werror -c {W}/tdf_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
+		 "{MCC} -B{B} -I{I} -std=c11 -Wno-old-style-definition -Werror -c {W}/tdf_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; } | "
 		 "grep -oE \"declared with a typedef'd function type|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
 		 "1 CLEAN_OK\n1 declared with a typedef'd function type\n"},
 
