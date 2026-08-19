@@ -1,6 +1,10 @@
 #ifndef _MCC_THREADS_H
 #define _MCC_THREADS_H
 
+#if defined(MCC_THREADS_COOP)
+#include <mcc_coop_threads.h>
+#else
+
 #if defined __has_include_next && __has_include_next(<threads.h>)
 #include_next <threads.h>
 #endif
@@ -212,6 +216,8 @@ static inline int tss_set(tss_t __key, void *__val) {
 static inline void tss_delete(tss_t __key) {
 	(void)pthread_key_delete(__key);
 }
+
+#endif
 
 #endif
 #endif
