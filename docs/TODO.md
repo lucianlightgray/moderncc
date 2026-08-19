@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T20:32Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10417   | 2026-08-19T22:10Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10417   | 2026-08-19T22:15Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T22:42Z |
 
 ## Contracts — blocking, highest priority
@@ -54,8 +54,8 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
-- [ ] T-mac-30158 [S] Fix: [MED] constructor/destructor priority silently discarded — prioritized ctors run in SOURCE order not ascending-priority. ELF: store priority (AttributeDef.ctor_prio), thread through gen_function, reorder the single .init_array/.fini_array relocs by priority at link finalize. Mach-O __mod_init_func ordering = residual for mac.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 75fa28a3 | TS: 2026-08-19T22:10Z
+- [ ] T-mac-30158 [S] Fix: [MED] constructor/destructor priority — **ELF SLICE DONE+GREEN (c9ceca6c)**: prioritized ctors now run ascending-priority (unprioritized last), dtors mirror; matches gcc-16 byte-for-byte (12DMzyx). Priority stored in AttributeDef.ctor_prio, threaded via gen_function into MCCState side-lists, and the single .init_array/.fini_array reordered by reassigning reloc target syms at link finalize (mccelf.c reorder_ctor_array; guarded vs linked-in objects). o0-neutral (link-only; -c objects byte-identical; all-unpri = identity). TDD diag/ctor-dtor-priority (anti-vacuous). Applies to all ELF targets (x86_64/riscv64/arm64-ELF). **RESIDUAL → mac:** Mach-O __mod_init_func ordering — reorder is ELF-only; priority is recorded on Darwin but not consumed. HEARTBEAT INTENTIONALLY STALE — TTL-resumable by mac (or any session that can verify Mach-O). See DETAILS#t-mac-30158-ctor-priority.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: c9ceca6c | TS: 2026-08-19T22:15Z
       REF: DETAILS.md#t-mac-30158-ctor-priority | DEPS: —
 
 
