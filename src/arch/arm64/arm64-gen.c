@@ -1065,6 +1065,11 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 		else
 			{ MCC_TRACE("br\n"); size = type_size(type[i], &align); }
 
+		int macho_named = 0;
+#if defined(MCC_TARGET_MACHO)
+		macho_named = !variadic;
+#endif
+
 #if defined(MCC_TARGET_MACHO)
 		if (variadic && i == variadic) { MCC_TRACE("br\n");
 			nx = 8;
@@ -1113,10 +1118,12 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 			ns = (ns + align - 1) & -align;
 		}
 
-		if (bt == VT_FLOAT)
+		if (bt == VT_FLOAT && !macho_named)
 			{ MCC_TRACE("br\n"); size = 8; }
 
 		if (hfa || is_float_abi(bt)) { MCC_TRACE("br\n");
+			if (macho_named && !hfa)
+				{ MCC_TRACE("br\n"); ns = (ns + align - 1) & -align; }
 			a[i] = ns;
 			ns += size;
 			continue;
@@ -1144,8 +1151,13 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 
 		nx = 8;
 
-		ns = (ns + 7) & ~7;
-		ns = (ns + align - 1) & -align;
+		if (bt == VT_STRUCT || !macho_named) { MCC_TRACE("br\n");
+			ns = (ns + 7) & ~7;
+			ns = (ns + align - 1) & -align;
+		} else { MCC_TRACE("br\n");
+			unsigned long oal = align < 2 ? 2 : align;
+			ns = (ns + oal - 1) & -oal;
+		}
 
 		if (bt == VT_STRUCT) { MCC_TRACE("br\n");
 			a[i] = ns;
@@ -1153,7 +1165,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 			continue;
 		}
 
-		if (size < 8)
+		if (size < 8 && !macho_named)
 			{ MCC_TRACE("br\n"); size = 8; }
 
 		a[i] = ns;
@@ -1315,7 +1327,16 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 									 fltr(vtop[0].r), 31, a[i] - 32);
 			} else { MCC_TRACE("br\n");
 				gv(MCC_RC_INT);
-				arm64_strx(3,
+				int st_sz = 3;
+#if defined(MCC_TARGET_MACHO)
+				if (!variadic) { MCC_TRACE("br\n");
+					int st_al, st_b = type_size(&vtop[0].type, &st_al);
+					if (st_b == 1) { MCC_TRACE("br\n"); st_sz = 0; }
+					else if (st_b == 2) { MCC_TRACE("br\n"); st_sz = 1; }
+					else if (st_b == 4) { MCC_TRACE("br\n"); st_sz = 2; }
+				}
+#endif
+				arm64_strx(st_sz,
 									 intr(vtop[0].r), 31, a[i] - 32);
 			}
 		}

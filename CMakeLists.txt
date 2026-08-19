@@ -8270,6 +8270,29 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             "needs a reference cc and a native unemulated host: both probes must run here")
     endif()
 
+    if(_ref_cc AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR)
+        add_test(NAME abi/arm64-macho-stackargs
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/arm64-macho-stackargs.sh"
+                    "${_mcc_exe}" "${_ref_cc}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/arm64-macho-stackargs")
+        set_tests_properties(abi/arm64-macho-stackargs PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+        add_test(NAME abi/arm64-macho-stackargs-known-positive
+            COMMAND "${CMAKE_COMMAND}" -E env "STACKABI_MUTATE=1"
+                    sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/arm64-macho-stackargs.sh"
+                    "${_mcc_exe}" "${_ref_cc}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/arm64-macho-stackargs-kp")
+        set_tests_properties(abi/arm64-macho-stackargs-known-positive PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+    else()
+        mcc_skip_test(abi/arm64-macho-stackargs
+            "needs a reference cc and a native unemulated arm64 Darwin host")
+        mcc_skip_test(abi/arm64-macho-stackargs-known-positive
+            "needs a reference cc and a native unemulated arm64 Darwin host")
+    endif()
+
     if(MCC_CPU MATCHES "^(i386|x86_64)$"
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/asm_c_connect/part1.c")
         add_test(NAME asm-c-connect-test COMMAND "$<TARGET_FILE:mccharness>" asmconnect
