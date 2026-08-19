@@ -1722,7 +1722,7 @@ ST_FUNC CString *parse_asm_str(void);
 ST_FUNC void indir(void);
 ST_FUNC void unary(void);
 ST_FUNC void gexpr(void);
-#define MCC_MAX_PARSE_DEPTH 512
+#define MCC_MAX_PARSE_DEPTH 384
 ST_DATA int mcc_parse_depth;
 ST_FUNC void mcc_parse_depth_enter(void);
 ST_FUNC void mcc_parse_depth_leave(void);
