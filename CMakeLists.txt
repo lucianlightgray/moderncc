@@ -4826,11 +4826,11 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT WILL_FAIL TRUE)
 
         add_test(NAME "switch/jumptable-exhaustive"
-            COMMAND ${_mcc_exe} -c
-                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/switch/jumptable_exhaustive.c"
-                    -o "${CMAKE_BINARY_DIR}/jte.o")
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/switch/jumptable_exhaustive.c")
         set_tests_properties("switch/jumptable-exhaustive" PROPERTIES
-            FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_SWITCH_JUMPTABLE=1")
+            FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_SWITCH_JUMPTABLE=1"
+            PASS_REGULAR_EXPRESSION "jt-exhaustive checks=11 fails=0")
         add_test(NAME "switch/jumptable-falloff-known-positive"
             COMMAND ${_mcc_exe} -c
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/switch/jumptable_falloff.c"
@@ -5667,6 +5667,13 @@ if(MCC_BUILD_TESTS)
         mcc_skip_test("smoke/divergence" "${_smoke_why}")
         mcc_skip_test("smoke/device" "${_smoke_why}")
         mcc_skip_test("smoke/device-known-positive" "${_smoke_why}")
+        set(_gcontract_why "runs a native mcc (-run / -c under a jump-table env) that cannot execute in a cross build")
+        mcc_skip_test("bitint/scast-signext" "${_gcontract_why}")
+        mcc_skip_test("bitint/scast-signext-known-positive" "${_gcontract_why}")
+        mcc_skip_test("fold/int64-float" "${_gcontract_why}")
+        mcc_skip_test("fold/int64-float-known-positive" "${_gcontract_why}")
+        mcc_skip_test("switch/jumptable-exhaustive" "${_gcontract_why}")
+        mcc_skip_test("switch/jumptable-falloff-known-positive" "${_gcontract_why}")
     endif()
 
     add_executable(exec_runner tests/runner.c)
