@@ -468,6 +468,43 @@ static void asm_skip_conditional(MCCState *s1, int stop_at_else) { MCC_TRACE("en
 	asm_skip_to_eol();
 }
 
+/* skip (nesting-aware) to the next .elseif/.else/.endif at this level; leave tok
+   AT that directive (no eol consume) and return which one it is. */
+static int asm_skip_to_cond_branch(MCCState *s1) { MCC_TRACE("enter\n");
+	int nest = 0;
+	for (;;) { MCC_TRACE("br\n");
+		next();
+		if (tok == TOK_EOF || tok == CH_EOF)
+			{ MCC_TRACE("br\n"); mcc_error(".endif expected but end of file reached"); }
+		if (tok >= TOK_ASMDIR_if && tok <= TOK_ASMDIR_ifle) { MCC_TRACE("br\n");
+			nest++;
+		} else if (tok == TOK_ASMDIR_endif) { MCC_TRACE("br\n");
+			if (nest == 0)
+				{ MCC_TRACE("br\n"); return TOK_ASMDIR_endif; }
+			nest--;
+		} else if (nest == 0 && (tok == TOK_ASMDIR_else ||
+														 tok == TOK_ASMDIR_elseif)) { MCC_TRACE("br\n");
+			return tok;
+		}
+	}
+}
+
+/* the false-condition path shared by .if/.ifdef/.ifeq/...: walk .elseif branches
+   until one is taken (assemble it) or .else/.endif is reached. */
+static void asm_conditional_false(MCCState *s1) { MCC_TRACE("enter\n");
+	for (;;) { MCC_TRACE("br\n");
+		int b = asm_skip_to_cond_branch(s1);
+		if (b == TOK_ASMDIR_elseif) { MCC_TRACE("br\n");
+			next();
+			if (asm_int_expr(s1) != 0)
+				{ MCC_TRACE("br\n"); asm_skip_to_eol(); return; }
+		} else { MCC_TRACE("br\n");
+			asm_skip_to_eol();
+			return;
+		}
+	}
+}
+
 static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n");
 	int n, offset, v, size, tok1, c, is_align, maxskip;
 	Section *sec;
@@ -747,7 +784,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 	case TOK_ASMDIR_if:
 		next();
 		if (asm_int_expr(s1) == 0)
-			{ MCC_TRACE("br\n"); asm_skip_conditional(s1, 1); }
+			{ MCC_TRACE("br\n"); asm_conditional_false(s1); }
 		break;
 	case TOK_ASMDIR_ifdef:
 	case TOK_ASMDIR_ifndef: {
@@ -762,7 +799,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		defined = (desym && desym->st_shndx != SHN_UNDEF);
 		next();
 		if (defined != want)
-			{ MCC_TRACE("br\n"); asm_skip_conditional(s1, 1); }
+			{ MCC_TRACE("br\n"); asm_conditional_false(s1); }
 		break;
 	}
 	case TOK_ASMDIR_ifeq:
@@ -787,9 +824,12 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		else
 			{ MCC_TRACE("br\n"); take = (e <= 0); }
 		if (!take)
-			{ MCC_TRACE("br\n"); asm_skip_conditional(s1, 1); }
+			{ MCC_TRACE("br\n"); asm_conditional_false(s1); }
 		break;
 	}
+	case TOK_ASMDIR_elseif:
+		asm_skip_conditional(s1, 0);
+		break;
 	case TOK_ASMDIR_else:
 		asm_skip_conditional(s1, 0);
 		break;
