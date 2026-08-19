@@ -5363,6 +5363,37 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/deprecated-tag-ok" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30185 residual: a deprecated individual enumerator warns on use
+        # (both __attribute__((deprecated)) and the C23 [[deprecated]] spelling);
+        # a struct/union/enum tag carrying the trailing-attribute form warns on
+        # use too. Declaring the deprecated entity without using it stays clean.
+        add_test(NAME "diag/deprecated-enumerator" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_enumerator.c"
+                    -o "${CMAKE_BINARY_DIR}/deprecated-enumerator.o")
+        set_tests_properties("diag/deprecated-enumerator" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "'A' is deprecated")
+        add_test(NAME "diag/deprecated-enumerator-c23" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_enumerator_c23.c"
+                    -o "${CMAKE_BINARY_DIR}/deprecated-enumerator-c23.o")
+        set_tests_properties("diag/deprecated-enumerator-c23" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "'C' is deprecated")
+        add_test(NAME "diag/deprecated-enumerator-ok" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_enumerator_ok.c")
+        set_tests_properties("diag/deprecated-enumerator-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME "diag/deprecated-trailing-attr" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_trailing_attr.c"
+                    -o "${CMAKE_BINARY_DIR}/deprecated-trailing-attr.o")
+        set_tests_properties("diag/deprecated-trailing-attr" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "'Q' is deprecated")
+        add_test(NAME "diag/deprecated-trailing-attr-ok" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/deprecated_trailing_attr_ok.c")
+        set_tests_properties("diag/deprecated-trailing-attr-ok" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30153: __FILE_NAME__ (basename) and __TIMESTAMP__ (mtime) must be
         # predefined like gcc/clang; pre-fix both were undefined identifiers.
         add_test(NAME "pp/loc-macros"

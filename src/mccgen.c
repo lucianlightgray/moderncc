@@ -7560,6 +7560,7 @@ do_decl:
 											 "to the range of 'int'"); }
 				ss = sym_push(v, &t, VT_CONST, 0);
 				ss->enum_val = ll;
+				ss->a.deprecated |= ad1.a.deprecated;
 				*ps = ss, ps = &ss->next;
 				if (ll < nl)
 					{ MCC_TRACE("br\n"); nl = ll; }
@@ -7775,6 +7776,7 @@ do_decl:
 												 ? "ISO C forbids a union with no named members"
 												 : "ISO C forbids a struct with no named members"); }
 			parse_attribute(&ad);
+			s->a.deprecated |= ad.a.deprecated;
 			for (ss = type->ref->next; ss; ss = ss->next) { MCC_TRACE("br\n");
 				if (!ss->a.full_bitfield)
 					{ MCC_TRACE("br\n"); continue; }
