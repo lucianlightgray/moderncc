@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30253   | 2026-08-19T10:33Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10412   | 2026-08-19T10:40Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50033   | 2026-08-19T01:45Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50033   | 2026-08-19T10:44Z |
 
 ## Contracts — blocking, highest priority
 
@@ -262,7 +262,7 @@
       OWNER: — | STATE: OPEN | SHA: 5b956e03 | TS: 2026-08-18T18:00Z
       REF: INVESTIGATIONS.md#r31-label-diff | DEPS: —
 - [ ] T-mac-30194 [S] Fix: [LOW cluster] diagnostic-category/cosmetic — (1) `_Atomic int*`→`int*` assign mis-categorized as qualifier-discard (`mccgen.c:5901-5932` treats _Atomic as VT_QUALIFY) — mcc "discards qualifiers", clang "incompatible pointer types", gcc ERRORS (_Atomic(int) is a distinct type); still diagnosed, wrong category + softer than gcc; (2) sizeof of an incomplete type → generic "unknown type size" (`mccgen.c:5771-5772`) vs clang/gcc "invalid application of sizeof to an incomplete type" (the _Alignof path DOES give the specific msg); (3) C23 `bool b; b++;` no -Wbool-operation (clang also silent → matches an oracle); (4) __int128 unsupported on this target blocks its UAC rank rules + __SIZEOF_INT128__ undefined (already tracked as #r12-bitint-cast).
-      OWNER: — | STATE: OPEN | SHA: 1a5b344d | TS: 2026-08-18T17:30Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: bd706679 | TS: 2026-08-19T10:44Z | NOTE: SLICE DONE sub-item (2) (bd706679) — sizeof(incomplete) now gives "'sizeof' applied to an incomplete type" (was generic "unknown type size"), mirroring the _Alignof path (targeted check in the sizeof branch, VLA/vla-struct/C23-array-guarded so the ~16 other vpush_type_size callers keep the generic msg); TDD cli/sizeof_incomplete_specific_msg, diagnostic-only/o0-neutral, anti-vacuity verified. RESIDUAL: sub-item (1) `_Atomic int*`→`int*` assign mis-categorized as qualifier-discard (mccgen.c:5901-5932 — needs _Atomic treated as a distinct type, not VT_QUALIFY); (3) `bool b; b++` and (4) __int128 are non-bugs / tracked elsewhere.
       REF: INVESTIGATIONS.md#r30-low-cluster | DEPS: —
 - [ ] T-mac-30180 [S] Fix: [MED, diagnostic] division-by-zero diagnostic policy diverges — `int x=5/0;` in a constant-required context is a HARD ERROR ("division by zero in constant" `mccgen.c:3726-3730`) → rejects a TU both oracles accept (they warn+compile); `int x=5/0;` in ordinary context is SILENT → misses `-Wdivision-by-zero`/`-Wdiv-by-zero` both oracles emit. Not a miscompile (runtime a/(volatile 0)→0, arm64 sdiv defined). Fix: downgrade constant-context to a warning (keep compiling) + add the ordinary-context div-by-zero warning. C11 6.5.5p5/6.6.
       OWNER: — | STATE: OPEN | SHA: dd3f8841 | TS: 2026-08-18T16:45Z
