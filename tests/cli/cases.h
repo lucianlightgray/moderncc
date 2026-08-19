@@ -456,7 +456,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"asm_zero_equ_equiv_directives", "",
 		 "printf '.data\\n.globl asmval\\nasmval:\\n.equ MYV, 42\\n.long MYV\\n.zero 8\\n.globl asmval2\\nasmval2:\\n.equiv MYV2, 58\\n.long MYV2\\n' > {W}/dz.s && "
-		 "printf 'extern int asmval, asmval2;\\nint main(void){ return asmval + asmval2; }\\n' > {W}/dz.c && "
+		 "printf 'extern int asmval __asm__(\"asmval\"), asmval2 __asm__(\"asmval2\");\\nint main(void){ return asmval + asmval2; }\\n' > {W}/dz.c && "
 		 "{MCC} -B{B} {W}/dz.s {W}/dz.c -o {W}/dz.exe 2>{W}/dz.err; link=$?; "
 		 "{W}/dz.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
@@ -464,7 +464,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"asm_if_else_endif_directives", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.if 1\\n.byte 10\\n.else\\n.byte 20\\n.endif\\n.if 0\\n.byte 30\\n.else\\n.byte 40\\n.endif\\n.if 1\\n.if 0\\n.byte 99\\n.else\\n.byte 7\\n.endif\\n.endif\\n' > {W}/if.s && "
-		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]; }\\n' > {W}/if.c && "
+		 "printf 'extern char base[] __asm__(\"base\");\\nint main(void){ return base[0]+base[1]+base[2]; }\\n' > {W}/if.c && "
 		 "{MCC} -B{B} {W}/if.s {W}/if.c -o {W}/if.exe 2>{W}/if.err; link=$?; "
 		 "{W}/if.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
@@ -472,7 +472,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"asm_ifc_ifb_directives", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.ifc abc, abc\\n.byte 1\\n.else\\n.byte 2\\n.endif\\n.ifc abc, xyz\\n.byte 4\\n.else\\n.byte 8\\n.endif\\n.ifb\\n.byte 16\\n.else\\n.byte 32\\n.endif\\n.ifnb something\\n.byte 64\\n.else\\n.byte 128\\n.endif\\n' > {W}/fc.s && "
-		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]+base[3]; }\\n' > {W}/fc.c && "
+		 "printf 'extern char base[] __asm__(\"base\");\\nint main(void){ return base[0]+base[1]+base[2]+base[3]; }\\n' > {W}/fc.c && "
 		 "{MCC} -B{B} {W}/fc.s {W}/fc.c -o {W}/fc.exe 2>{W}/fc.err; link=$?; "
 		 "{W}/fc.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
@@ -480,7 +480,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"asm_elseif_directive", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.if 0\\n.byte 1\\n.elseif 1\\n.byte 2\\n.elseif 1\\n.byte 3\\n.else\\n.byte 4\\n.endif\\n.if 0\\n.byte 10\\n.elseif 0\\n.byte 20\\n.else\\n.byte 40\\n.endif\\n.if 1\\n.byte 100\\n.elseif 1\\n.byte 99\\n.endif\\n' > {W}/ei.s && "
-		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]; }\\n' > {W}/ei.c && "
+		 "printf 'extern char base[] __asm__(\"base\");\\nint main(void){ return base[0]+base[1]+base[2]; }\\n' > {W}/ei.c && "
 		 "{MCC} -B{B} {W}/ei.s {W}/ei.c -o {W}/ei.exe 2>{W}/ei.err; link=$?; "
 		 "{W}/ei.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
@@ -488,7 +488,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"asm_ifdef_ifndef_directives", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.set DEF_SYM, 1\\n.ifdef DEF_SYM\\n.byte 11\\n.else\\n.byte 22\\n.endif\\n.ifdef UNDEF_SYM\\n.byte 33\\n.else\\n.byte 44\\n.endif\\n.ifndef UNDEF_SYM2\\n.byte 55\\n.else\\n.byte 66\\n.endif\\n' > {W}/id.s && "
-		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]; }\\n' > {W}/id.c && "
+		 "printf 'extern char base[] __asm__(\"base\");\\nint main(void){ return base[0]+base[1]+base[2]; }\\n' > {W}/id.c && "
 		 "{MCC} -B{B} {W}/id.s {W}/id.c -o {W}/id.exe 2>{W}/id.err; link=$?; "
 		 "{W}/id.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
@@ -504,7 +504,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"asm_if_compare_variants", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.ifeq 0\\n.byte 1\\n.else\\n.byte 2\\n.endif\\n.ifne 5\\n.byte 4\\n.else\\n.byte 8\\n.endif\\n.ifgt 3\\n.byte 16\\n.else\\n.byte 32\\n.endif\\n.iflt 3\\n.byte 64\\n.else\\n.byte 8\\n.endif\\n' > {W}/ic.s && "
-		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]+base[3]; }\\n' > {W}/ic.c && "
+		 "printf 'extern char base[] __asm__(\"base\");\\nint main(void){ return base[0]+base[1]+base[2]+base[3]; }\\n' > {W}/ic.c && "
 		 "{MCC} -B{B} {W}/ic.s {W}/ic.c -o {W}/ic.exe 2>{W}/ic.err; link=$?; "
 		 "{W}/ic.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
@@ -512,7 +512,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"asm_p2align_max_skip", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.byte 1,2,3,4,5\\n.p2align 4,,15\\n.globl m1\\nm1:\\n.byte 9\\n.p2align 4,,3\\n.globl m2\\nm2:\\n.long 0\\n' > {W}/pa.s && "
-		 "printf 'extern char base[], m1[], m2[];\\nint main(void){ return (int)(m1-base) + (int)(m2-base); }\\n' > {W}/pa.c && "
+		 "printf 'extern char base[] __asm__(\"base\"), m1[] __asm__(\"m1\"), m2[] __asm__(\"m2\");\\nint main(void){ return (int)(m1-base) + (int)(m2-base); }\\n' > {W}/pa.c && "
 		 "{MCC} -B{B} {W}/pa.s {W}/pa.c -o {W}/pa.exe 2>{W}/pa.err; link=$?; "
 		 "{W}/pa.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
@@ -520,7 +520,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"asm_comm_lcomm_directives", "",
 		 "printf '.comm sharedbuf, 16, 8\\n.lcomm localbuf, 32, 4\\n' > {W}/cl.s && "
-		 "printf 'extern char sharedbuf[16];\\nint main(void){ sharedbuf[0]=42; sharedbuf[15]=58; return sharedbuf[0]+sharedbuf[15]; }\\n' > {W}/cl.c && "
+		 "printf 'extern char sharedbuf[16] __asm__(\"sharedbuf\");\\nint main(void){ sharedbuf[0]=42; sharedbuf[15]=58; return sharedbuf[0]+sharedbuf[15]; }\\n' > {W}/cl.c && "
 		 "{MCC} -B{B} {W}/cl.s {W}/cl.c -o {W}/cl.exe 2>{W}/cl.err; link=$?; "
 		 "{W}/cl.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
