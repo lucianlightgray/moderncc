@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30255   | 2026-08-19T12:55Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10412   | 2026-08-19T11:12Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T12:45Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T12:57Z |
 
 ## Contracts — blocking, highest priority
 
@@ -387,7 +387,7 @@
       OWNER: — | STATE: OPEN | SHA: 635b850a | TS: 2026-08-18T05:30Z
       REF: INVESTIGATIONS.md#r20-parsedepth-sizeof | DEPS: —
 - [ ] T-mac-30111 [S] Fix: [LOW-MED, diagnostic] `-Wsequence-point` misses read-vs-write conflicts + is reset per function argument — `seqp_check` warns only on `writes>=2` (`mccgen.c:458`); reads recorded (`gv:2629`) but used only for de-dup, so `a[i]=i++`/`x=i+i++`/`f(i,i++)` compile clean (gcc-16/clang warn — real 6.5p2 UB); `seqp_flush` per-arg (`:14356/14380`) hides inter-arg conflicts. No miscompile (codegen==clang), just under-reports. Fix: warn when a WRITE coexists with any read/write on the same object; flush once after all args.
-      OWNER: — | STATE: OPEN | SHA: 635b850a | TS: 2026-08-18T05:30Z
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 635b850a | TS: 2026-08-19T12:57Z | NOTE (win-x64): claiming part (b) — the per-argument `seqp_flush` hides inter-argument unsequenced modifications; moving it to a single flush after ALL args (the C11 6.5.2.2p10 pre-call sequence point). Verified locally: `g(i++,i++)` now warns, `g(i++,j++)` clean (different objects, no false positive), `i=i++` still warns; cli 344/344, exec no new reds.
       REF: INVESTIGATIONS.md#r20-seqpoint | DEPS: —
 - [ ] T-mac-30112 [S] Fix: [LOW cluster] (1) `objsec-reject-malformed` false-FAILs on macOS — the T-mac-30023 guard crafts a GNU-`ar` malformation but mac uses BSD `ar`+`__.SYMDEF`, so mcc accepts (rc=0); NOT a security regression (BSD reader `mcc_load_alacarte_bsd` IS bounded, `mccelf.c:3736-3790`) but a false suite red + the malformed-BSD-archive path is untested on mac — skip on non-GNU-ar or add a `__.SYMDEF` malformed case. (2) `-run` binds undefined externals to mcc-internal globals via `RTLD_DEFAULT` (`mccrun.c:797`/`mcchost.c:1462`) while AOT errors (`mccmacho.c:2549`); contrived (prefixed globals) but a run-vs-AOT soundness split — restrict -run resolution to a libc set. (3) GPU host-pointer import works on Vulkan, refused-with-reason on Metal (`mccgpu.c:3129-3138` vs `:833-846`; guarded, likely intended).
       OWNER: — | STATE: OPEN | SHA: 635b850a | TS: 2026-08-18T05:30Z
