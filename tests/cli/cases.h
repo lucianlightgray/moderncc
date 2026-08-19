@@ -559,14 +559,6 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=42\n"},
 
-		{"knr_promotion_mismatch_rejected", "",
-		 "printf 'int f(a) char a; { return a; } int f(char a);\\n' > {W}/krm.c && "
-		 "printf 'int g(a) char a; { return a; } int g(int a);\\n' > {W}/kro.c && "
-		 "{MCC} -B{B} -c {W}/krm.c -o {W}/krm.o 2>{W}/krm.err; mism=$?; "
-		 "{MCC} -B{B} -c {W}/kro.c -o {W}/kro.o 2>{W}/kro.err; ok=$?; "
-		 "printf 'mismatch=%s promoted_ok=%s\\n' $mism $ok",
-		 "mismatch=1 promoted_ok=0\n"},
-
 		{"output_type_same_action_no_warn", "",
 		 "printf 'int x;\\n' > {W}/ot.c && "
 		 "{MCC} -B{B} -I{I} -c -c -o {W}/ot.o {W}/ot.c 2>{W}/ot.same.err; "

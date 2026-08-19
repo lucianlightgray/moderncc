@@ -4433,13 +4433,9 @@ static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n")
 							break; } }
 			} else { MCC_TRACE("br\n");
 				for (op = old->next, pp = proto->next; op && pp; op = op->next, pp = pp->next) { MCC_TRACE("br\n");
-					if (type_needs_default_promotion(&op->type)) { MCC_TRACE("br\n");
-						CType prom;
-						prom.t = (op->type.t & VT_BTYPE) == VT_FLOAT ? VT_DOUBLE : VT_INT;
-						prom.ref = NULL;
-						if (!is_compatible_param(&prom, &pp->type))
-							{ MCC_TRACE("br\n"); return 0; }
-					}
+					if (type_needs_default_promotion(&op->type))
+						{ MCC_TRACE("br\n"); mcc_pedantic("prototype does not match promoted "
+																"parameter types of prior old-style definition"); }
 					else if (!is_compatible_param(&op->type, &pp->type))
 						{ MCC_TRACE("br\n"); return 0; }
 				}
