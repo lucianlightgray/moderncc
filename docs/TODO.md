@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T19:02Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T19:14Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10415   | 2026-08-19T18:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T19:05Z |
 
@@ -282,7 +282,7 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-mac-30158 [S] Fix: [MED, wrong init order] constructor/destructor priority silently discarded — `ctor_priority:` (`mccgen.c:6388-6393`) evaluates the priority via expr_const() then throws it away; `FuncAttr` (`mcc.h:311-324`) has func_ctor/func_dtor bits but NO priority field; emission uses fixed `.init_array`/`.fini_array` (`:18158-18161`, `mccelf.c:1502-1509` add_array) with no `.init_array.NNNNN` sections. Prioritized ctors run in SOURCE order not ascending-priority, unprioritized-after-prioritized violated, silently. Confirmed on ELF too. Basic before/after-main + dtor-vs-atexit LIFO + exit()-skip are CORRECT. Fix: store priority in FuncAttr, emit `.init_array.NNNNN`/`.fini_array.NNNNN` (ELF) + order Mach-O __mod_init_func.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-ctor-priority | DEPS: —
-- [ ] T-mac-30162 [S] Fix: [MED, link correctness] `#pragma weak` ignored → symbol strong, alias dropped — `#pragma weak wsym` leaves wsym STRONG (nm: mcc `D _wsym` vs clang/gcc `weak external`); `#pragma weak alias = target` dropped entirely (no alias symbol). No handler in pragma_parse (`mccpp.c:2807`). Dup-symbol link errors / missing weak-override. Clusters w/ T-mac-30135 weak/weakref attr. Fix: weak pragma handler marking the sym weak (reuse a.weak) + weak-alias to target.
+- [ ] T-mac-30162 [S] Fix: [MED, link correctness] `#pragma weak` — **CORE DONE (5519d195, 2026-08-19T19:14Z): `#pragma weak <sym>` now marks the symbol STB_WEAK** (pragma_parse records the name in mcc_state->pragma_weak_syms; update_storage maps it to STB_WEAK; verified nm W + strong-override-wins link; zero o0 drift, treegate 100%, cell diag.pragma-weak). RESIDUAL: the `= alias` form + pragma-after-definition. Original: `#pragma weak wsym` leaves wsym STRONG (nm: mcc `D _wsym` vs clang/gcc `weak external`); `#pragma weak alias = target` dropped entirely (no alias symbol). No handler in pragma_parse (`mccpp.c:2807`). Dup-symbol link errors / missing weak-override. Clusters w/ T-mac-30135 weak/weakref attr. Fix: weak pragma handler marking the sym weak (reuse a.weak) + weak-alias to target.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-weak | DEPS: —
 - [ ] T-mac-30164 [S] Fix: [MED] `#pragma GCC visibility push/pop` unsupported (ELF+Mach-O) — no handler (`mccpp.c:2807`); `#pragma GCC visibility push(hidden)`...`pop` leaves syms DEFAULT on ELF (cross symtab: p_hidden→DEFAULT, should be HIDDEN) and (compounded by T-mac-30157) no effect on Mach-O. `-fvisibility=` command-line IS honored on ELF. Fix: visibility push/pop stack feeding the same a.visibility path the attribute uses. DEP: benefits from T-mac-30157 for Mach-O.
