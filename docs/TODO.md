@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T19:14Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T18:40Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T18:55Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T19:38Z |
 
 ## Contracts — blocking, highest priority
@@ -52,6 +52,8 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+
+- T-lin-10414 DONE+ARCHIVED (lin-x64, 2026-08-19T18:55Z, user "keep clearing"): cli/builtin_expect_is_code_neutral fixed (c6164242) — the "code-neutral" premise was PROVABLY WRONG: gcc-16 AND clang both emit COSTS for __builtin_expect (it returns long, a real result type + branch hint); the cell only passed pre-30131 when mcc treated it as an int passthrough. Also found T-mac-30131 MISSED the sibling __builtin_expect_with_probability (left it int) — completed it (gen_cast to long; now sizeof=8/_Generic=long like gcc) and re-scoped the golden to COSTS/COSTS. Zero o0 drift. **"KEEP CLEARING" BATCH COMPLETE on my side:** cleared attribs_position (d726552c) + o4_search/T-lin-10415 (17bb85b4, deep search-plumbing) + builtin_expect/T-lin-10414 (c6164242). Routed to mac (offline/rebooting): diag.parse-frames (their 30109 census re-bank) + diag.scalar_storage_order_be (float128/x86_64 gate). Flagged new peer red cli/asm_p2align_max_skip (T-mac-30058 assembler). No lin-owned reds remain from the batch. Standing Open: T-lin-10412 (riscv64 coop [X], needs runner), T-lin-10410 (jit inline, GPU), T-lin-10057 (census nondeterminism).
 
 - T-lin-10415 DONE+ARCHIVED (lin-x64, 2026-08-19T18:40Z, user "keep clearing"): cli/o4_search_does_not_repeat_diagnostics fixed (17bb85b4) — stale grep + a real second-order regression from my T-lin-10413 -w change (opt-search candidate compiles leaked the now--w-surviving implicit-int diagnostic → O4=2). Fix: host_spawn_quiet_stderr flag redirects candidate-child stderr to /dev/null, set around candidates + cleared before the final diagnostic-emitting compile (defensive clear at caller). Verified: o4_search green, normal -O13 compiles+runs, valid-program warning emits once, ZERO o0 drift, opt-search family green. **NEW PEER RED FOUND (flagging, NOT mine):** cli/asm_p2align_max_skip (#9571) is RED — a pure assembler test (`.p2align 4,,15` max-skip 3rd-operand); appeared AFTER my T-lin-10413 sweep so it's from the recent T-mac-30058 assembler flurry (.zero/.equ/.if/.local/.equiv), not my search/diagnostic work. Routed to fleet. Remaining lin-owned: T-lin-10414 (builtin_expect cast-fold, deep). o4_search cluster complete on my side.
 
@@ -139,9 +141,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 
 ## Open — claimable
 
-- [ ] T-lin-10414 [S] Fix: [MED, code-quality regression from T-mac-30131] `cli/builtin_expect_is_code_neutral` (#9588/#9590) RED fleet-wide — `__builtin_expect(e,c)` must emit byte-identical code to `e` (a pure branch hint), but T-mac-30131 (result type -> long, mccgen.c TOK_builtin_expect ~13560: `gen_cast` to VT_LLONG|VT_LONG) added an int->long conversion that is NOT folded at -O1 when the result is consumed width-agnostically (an `if` condition), so the object differs. gcc-16 keeps it neutral (folds the cast). FIX (preferred): elide/fold the result cast when the value is used in a boolean/branch or otherwise width-agnostic context, restoring neutrality like gcc — the sizeof/_Generic/typeof type must still read `long` (that's the 30131 contract; don't revert it). If a clean fold isn't tractable, re-scope the cell to expect COSTS with a rationale. x86_64-verifiable; oracle = gcc-16 (code-neutral). Sibling of T-lin-10413 (same 'landed semantics change orphaned a golden' cluster).
-      OWNER: — | STATE: OPEN | SHA: 97bfae40 | TS: 2026-08-19T18:05Z
-      REF: tests/cli/cases.h (builtin_expect_is_code_neutral) + DETAILS.md#t-mac-30216-pragma-once-inode (mac's note, f833fbda) | DEPS: —
 - [ ] T-lin-10412 [X] riscv64 context-switch backend for the cooperative `<threads.h>` runtime (follow-up to T-lin-10001 [C], DONE). Add an `#elif defined(__riscv) && __riscv_xlen == 64` block to the backend chain in runtime/include/mcc_coop_threads.h providing `__mcc_ctx_swap`/`__mcc_ctx_make` (save s0–s11, ra, sp, fs0–fs11; first-entry `ret` into `entry`, 16-aligned sp), plus its own arch-gated goldens rows (cpu=riscv64). Deferred from T-lin-10001 because there is NO native riscv64 runner in this fleet (no qemu-user here) — must NOT ship unverified codegen [[verify-codegen-on-every-target]]; claim only from a box that can run riscv64 natively (or a verified qemu-user path).
       OWNER: — | STATE: OPEN | SHA: d5309726 | TS: 2026-08-19T13:47Z
       REF: DETAILS.md#t-lin-10001-done-all-target-coop-backend | DEPS: —
