@@ -3108,6 +3108,8 @@ ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offs
 		if (!name[0])
 			{ MCC_TRACE("br\n"); continue; }
 		bind = (ns->n_type & N_EXT) ? STB_GLOBAL : STB_LOCAL;
+		if ((ns->n_type & N_EXT) && (ns->n_desc & (N_WEAK_DEF | N_WEAK_REF)))
+			{ MCC_TRACE("br\n"); bind = STB_WEAK; }
 		switch (ns->n_type & N_TYPE) { MCC_TRACE("br\n");
 		case N_UNDF:
 			if ((ns->n_type & N_EXT) && ns->n_value) { MCC_TRACE("br\n");

@@ -9971,6 +9971,30 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     endif()
 
     if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+        # T-mac-30098: the Mach-O object reader must map N_WEAK_DEF/N_WEAK_REF
+        # to STB_WEAK, or an external clang/system .o with weak symbols is
+        # unlinkable ("defined twice").
+        add_test(NAME macho-weak-read
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/weak-read.sh"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-weak-read-work" "-B${CMAKE_BINARY_DIR}")
+        set_tests_properties(macho-weak-read PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+        add_test(NAME macho-weak-read-known-positive
+            COMMAND "${CMAKE_COMMAND}" -E env "WEAK_READ_MUTATE=1"
+                    sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/weak-read.sh"
+                    "$<TARGET_FILE:mcc>" "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/macho-weak-read-kp-work" "-B${CMAKE_BINARY_DIR}")
+        set_tests_properties(macho-weak-read-known-positive PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "macho" SKIP_RETURN_CODE 77)
+    else()
+        mcc_skip_test(macho-weak-read
+            "linking external weak-symbol objects into a Mach-O image needs a Darwin host")
+        mcc_skip_test(macho-weak-read-known-positive
+            "linking external weak-symbol objects into a Mach-O image needs a Darwin host")
+    endif()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         # T-mac-30157: hidden/internal visibility → Mach-O private_extern.
         add_test(NAME macho-visibility
             COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/macho/visibility.sh"
