@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T13:07Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T13:56Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T13:47Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T13:45Z |
 
@@ -390,7 +390,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-mac-30106 [S] Fix: [LOW cluster] (1) float→(u)int32 out-of-range/NaN CONST-fold wraps host 64-bit cast while codegen saturates (`mccgen.c:5451-5461`; `(int)1e30f`→fold -1/runtime INT_MAX; host-dependent → determinism smell). (2) `gen_opif` non-finite bail backwards + `ieee_finite(double)` called w/ long double (`mccgen.c:4064/983`; latent on x86 80-bit host). (3) DWARF register-param described at home stack slot whole-fn, no loclist (`mccdbg.c:2828-2832`). (4) DWARF static-local at CU scope; `_Complex` as anon struct not DW_ATE_complex_float; no const/volatile/restrict/_Atomic qualifier DIEs (`mccdbg.c:2880/2506-2600`; fidelity). (5) x86_64 -O2 promotion prologue over-saves/dups callee regs (`mccast.c:2853`; quality). (6) x86_64 struct-assign forward `rep movs` vs memmove elsewhere → overlap UB backend split (`x86_64-gen.c:3254-3280`; info).
       OWNER: — | STATE: OPEN | SHA: c81ce7c4 | TS: 2026-08-18T05:00Z
       REF: INVESTIGATIONS.md#r19-low-cluster | DEPS: —
-- [ ] T-mac-30098 [S] Fix: [HIGH] Mach-O object READER drops the weak bit → external clang/system `.o` with weak symbols unlinkable — `macho_load_object_file` sets `bind` from `N_EXT` only (`mccmacho.c:3100`) → `set_elf_sym` (`:3124`), never consulting `n_desc` for `N_WEAK_DEF(0x80)`/`N_WEAK_REF(0x40)`, so weak externals import as STRONG; the ELF resolver needs `STB_WEAK` (`mccelf.c:642-645`) and mcc's own Mach-O WRITER emits N_WEAK_DEF (`:1032-1034`) — read-side only. Verified: two clang `.o` w/ `__attribute__((weak)) int shared(){}` → mcc "'_shared' defined twice"; ld links (1 1). Breaks C++/GNU inline/template/vtable/weak idioms. Distinct from COFF T-mac-30019 + Mach-O write-side INVESTIGATIONS:253. Fix: `bind=STB_WEAK` when `n_desc&(N_WEAK_DEF|N_WEAK_REF)`; prefer STT_FUNC/OBJECT from N_SECT.
       OWNER: — | STATE: OPEN | SHA: 12b38cd6 | TS: 2026-08-18T04:30Z
       REF: INVESTIGATIONS.md#r18-macho-reader-weak | DEPS: —
 - [ ] T-mac-30100 [S] Fix: [MED, latent] RIR case-value capture truncates `__int128` switch labels to 64 bits — `rir_hook_case((long long)cr->v1,(long long)cr->v2)` (`mccgen.c:16281`, sink two `long long` `mccrir.c:500`) drops `v1hi/v2hi`; baseline lowers on the full 128-bit boundary (`:15304,15314`) but replay reconstructs the high word by sign-extension `cr->v1hi=uns?0:(v1>>63)` (`mccast.c:6345-6346`). `case((__int128)1<<64):` (hi=1) replays as hi=0 → wrong boundary. Masked by replay-fallback byte-compare in default builds; ships wrong only under `-fno-replay-fallback` on int128-capable target (read-verified; arm64-macOS rejects int128 switch). Fix: widen `rir_hook_case`/`RIR_M_CASE` to carry v1hi/v2hi + use in replay.
