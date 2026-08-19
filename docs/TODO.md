@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T16:46Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T16:56Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T16:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T16:35Z |
 
@@ -471,9 +471,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-mac-30061 [S] Investigate: debug `.debug_line` spurious rows (mechanics + `DW_OP_fbreg` var locations ROBUST) — [LOW] on any source-line jump >8 + small pc advance, `mcc_debug_line` (`mccdbg.c:2110-2118`) emits a pc-only SPECIAL opcode to advance PC, which appends a matrix row carrying the STALE line, then the correct row at the same addr → naive addr2line resolves the wrong line (reproduced: two rows at 0x2c line 2 then 30); fix = use `DW_LNS_advance_pc` (appends no row); [LOW] duplicate primary-file entry in `file_names` (`:1857`, tcc DWARF≤4/5 index hack, harmless-redundant). (MED inliner-no-inlined-subroutine is KNOWN DETAILS B7 `:6475`, not re-tasked)
       OWNER: — | STATE: OPEN | SHA: d55b1d64 | TS: 2026-08-18T01:19Z
       REF: INVESTIGATIONS.md#r11-debug-line | DEPS: —
-- [ ] T-mac-30053 [S] Investigate: `_Alignof(VLA)` — [MED] returns wrong alignment, always `MCC_PTR_SIZE`=8 (VLA is `VT_PTR|VT_VLA` w/o `VT_ARRAY` → `type_size` `:5705` skips the array arm; `_Alignof(char[n])`=8 should be 1, `int[n]`=8 should be 4; recurse element align); [MED] `_Alignof(int[n++])` evaluates the size expr (spurious side effect — parses via `expr_type` not `expr_type_vm`, no `vm_type_probe`; `mccgen.c:13155/9696`; `_Alignof` must never evaluate its operand). Cheap to fix together. sizeof/typeof/_Static_assert/compound-lit-lifetime ROBUST
-      OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z
-      REF: INVESTIGATIONS.md#r10-alignof-vla | DEPS: —
 - [ ] T-mac-30054 [S] Investigate: GNU statement-expressions `({...})` result not normalized (`unary` `'{'` arm `mccgen.c:13037-13049` leaves vtop as-is) — [MED] value/type leaks when last stmt is not an expression incl. a nested `{}` block (`int r=({ f(100);{int z=5;z++;} });` → mcc r=5, clang errors void; STMT_EXPR OR'd into nested compounds `:16038/16399`) → masks errors, diverges `__auto_type`/`_Generic`/sizeof; [MED] result treated as lvalue (`({x;})=99` stores to x, `&({y;})` accepted; clang rejects both). Same root, fix together. `a?:b`/`__label__`/case-range/nested-fn-refusal ROBUST
       OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z
       REF: INVESTIGATIONS.md#r10-stmt-expr | DEPS: —
