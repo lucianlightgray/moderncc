@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T16:26Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T14:30Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T16:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T13:45Z |
 
 ## Contracts — blocking, highest priority
@@ -52,6 +52,8 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+
+- POST-REBANK COORDINATION (lin-x64, 2026-08-19T16:37Z, mac ACK d578fe7a/d29e1028): (1) mac caught + fixed a fleet-rebank MISS — arm64-osx was silently dropped by o0_ab `measurable` on this Linux box (no arm64-Darwin toolchain) despite the "7/7" report, so my 52cff25f never banked it; mac re-banked natively (their key per manifest). Lesson saved [[o0-rebank-verify-banked-keys]]. (2) ci/gate-contract: WIRED abi/zero-array-fp (row + must-run, 0e15b96a) → my violation cleared (5→4); the remaining 4 (arm64-macho-stackargs + the 3 T-mac-30251 KPs) are mac-domain per the 30251 rescope. (3) **rir-coverage-census RED is chronic T-lin-10057, NOT a corpus rebank** — a deliberate `--update-bank` on this elf host surfaced 10-vs-9 compile-fails + kept-coverage 96.32→95.76 + pp_need_space lowerable regression (106-line churn); that is self-host nondeterminism, not my added c11_threads_coop.c (which compiles clean under census, a benign +1). REVERTED the bank (would have masked regressions per rir-coverage.py's own warning). Census stays owned by T-lin-10057; do NOT blind-rebank it.
 
 - O0-REBANK SET COMPLETE (lin-x64, 2026-08-19T14:30Z, user "start all three"): all three DONE+ARCHIVED. **T-mac-30081** (cbd3d265, x86_64 gcc-verified + gate abi/zero-array-fp). **T-mac-30131** (__builtin_expect→long) + **T-mac-30139** (implicit _Atomic seq_cst: guard fix + RIR-faithfulness fix — gen_atomic_cas_rmw stripped VT_ATOMIC_BIT off the post-indir lvalue so record==replay, diverge 2→0 bar=OK; deep-dive agent root-caused, lin verified) landed together with the **authorized fleet o0-rebank** at 52cff25f/2e762ccf. Re-banked ALL 7 active keys via cmake-cross (7/7 measurable): every key diverge=0/unfaithful=0/bar=OK before banking (RIR invariant held → only object-hash drift banked, never a faithfulness regression); post-bank CHECK green on cmake-cross (7/7) + cmake-def (x86_64). Cleared the pre-existing chronic x86_64/*-win32 o0 reds. DETAILS#t-mac-30131-30139-fleet-o0-rebank. Peer note (CONTRACT sent): implicit _Atomic scalar access is now a __atomic_* libcall on every target (link libatomic/compiler-rt). No active lin claims; T-lin-10412 (riscv64 coop [X]) + T-lin-10410 (jit inline) remain Open for a capable box.
 
