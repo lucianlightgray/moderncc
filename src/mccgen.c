@@ -6540,7 +6540,7 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 		ctor_priority:
 			if (tok == '(') { MCC_TRACE("br\n");
 				next();
-				expr_const();
+				ad->ctor_prio = expr_const() + 1;
 				skip(')');
 			}
 			break;
@@ -18786,7 +18786,7 @@ static Section *fnsec_for(Sym *sym) { MCC_TRACE("enter\n");
 	return s;
 }
 
-static void gen_function(Sym *sym) {
+static void gen_function(Sym *sym, int ctor_prio) {
 	MCC_TRACE("%s\n", get_tok_str(sym->v, NULL));
 	struct scope f = {0};
 
@@ -18821,10 +18821,16 @@ static void gen_function(Sym *sym) {
 
 	put_extern_sym(sym, cur_text_section, ind, 0);
 
-	if (sym->type.ref->f.func_ctor)
-		{ MCC_TRACE("br\n"); add_array(mcc_state, ".init_array", sym->c); }
-	if (sym->type.ref->f.func_dtor)
-		{ MCC_TRACE("br\n"); add_array(mcc_state, ".fini_array", sym->c); }
+	if (sym->type.ref->f.func_ctor) { MCC_TRACE("br\n");
+		add_array(mcc_state, ".init_array", sym->c);
+		dynarray_add(&mcc_state->ctor_init_prio, &mcc_state->nb_ctor_init_prio,
+								 (void *)(intptr_t)ctor_prio);
+	}
+	if (sym->type.ref->f.func_dtor) { MCC_TRACE("br\n");
+		add_array(mcc_state, ".fini_array", sym->c);
+		dynarray_add(&mcc_state->ctor_fini_prio, &mcc_state->nb_ctor_fini_prio,
+								 (void *)(intptr_t)ctor_prio);
+	}
 
 	mcc_debug_funcstart(mcc_state, sym);
 
@@ -18924,13 +18930,13 @@ static void gen_inline_functions(MCCState *s) {
 					int save_off = ts->data_offset;
 					int save_rel = ts->reloc ? ts->reloc->data_offset : 0;
 					ElfSym saved = *elfsym(sym);
-					gen_function(sym);
+					gen_function(sym, 0);
 					ts->data_offset = save_off;
 					if (ts->reloc)
 						{ MCC_TRACE("br\n"); ts->reloc->data_offset = save_rel; }
 					*elfsym(sym) = saved;
 				} else { MCC_TRACE("br\n");
-					gen_function(sym);
+					gen_function(sym, 0);
 				}
 				end_macro();
 
@@ -19487,7 +19493,7 @@ static int decl(int l) {
 						{ MCC_TRACE("br\n"); cur_text_section = fnsec_for(sym); }
 					else if (cur_text_section->sh_num > bss_section->sh_num)
 						{ MCC_TRACE("br\n"); cur_text_section->sh_flags = text_section->sh_flags; }
-					gen_function(sym);
+					gen_function(sym, ad.ctor_prio);
 				}
 				CST_OPEN_AT(CST_FunctionDef, cst_dm);
 				CST_CLOSE();

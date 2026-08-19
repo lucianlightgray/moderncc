@@ -498,6 +498,7 @@ typedef struct AttributeDef {
 	char auto_type;
 	char auto_seen;
 	char ext_seen;
+	int ctor_prio;
 } AttributeDef;
 
 typedef struct InlineFunc {
@@ -906,6 +907,11 @@ struct MCCState {
 	int nb_inline_fns;
 	struct AliasFixup **alias_fixups;
 	int nb_alias_fixups;
+
+	void **ctor_init_prio;
+	int nb_ctor_init_prio;
+	void **ctor_fini_prio;
+	int nb_ctor_fini_prio;
 
 	Section **sections;
 	int nb_sections;

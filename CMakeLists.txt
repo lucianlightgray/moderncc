@@ -5141,6 +5141,17 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/decimal-ull-rank" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30158: constructor/destructor priority must order .init_array /
+        # .fini_array by ascending priority (unprioritized last), matching gcc,
+        # rather than source order. Declaration order is scrambled vs priority so
+        # the source-order behavior (2/1/D M z/x/y) fails this regex.
+        add_test(NAME "diag/ctor-dtor-priority"
+            COMMAND ${_mcc_exe} -w -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/ctor_dtor_priority.c")
+        set_tests_properties("diag/ctor-dtor-priority" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "12DMzyx")
+
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_diag_ok.c")
             add_test(NAME "diag/pragma-diagnostic-suppress"
                 COMMAND ${_mcc_exe} -Wsign-compare -Werror -run

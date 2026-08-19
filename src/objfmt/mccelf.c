@@ -1862,6 +1862,51 @@ static void finalize_linker_symbols(MCCState *s1, int *sec_order) { MCC_TRACE("e
 	update_linker_sym(s1, "end", end, end->sh_size);
 }
 
+static int ctor_prio_key(int enc) { MCC_TRACE("enter\n");
+	return enc == 0 ? 0x7fffffff : enc - 1;
+}
+
+static void reorder_ctor_array(MCCState *s1, const char *secname,
+															 void **prios, int nb_prio) { MCC_TRACE("enter\n");
+	Section *s, *sr;
+	ElfW_Rel *rel;
+	int n, k, i, j, *orig, *idx;
+
+	s = have_section(s1, secname);
+	if (!s || !s->reloc)
+		{ MCC_TRACE("br\n"); return; }
+	sr = s->reloc;
+	n = sr->data_offset / sizeof(ElfW_Rel);
+	if (n < 2 || n != nb_prio)
+		{ MCC_TRACE("br\n"); return; }
+
+	orig = mcc_malloc(n * sizeof(int));
+	idx = mcc_malloc(n * sizeof(int));
+	k = 0;
+	for_each_elem(sr, 0, rel, ElfW_Rel) {
+		if (k >= n) { MCC_TRACE("br\n"); break; }
+		orig[k] = ELFW(R_SYM)(rel->r_info);
+		idx[k] = k;
+		k++;
+	}
+	for (i = 1; i < n; i++) { MCC_TRACE("br\n");
+		int cur = idx[i];
+		int ck = ctor_prio_key((int)(intptr_t)prios[cur]);
+		for (j = i - 1;
+				 j >= 0 && ctor_prio_key((int)(intptr_t)prios[idx[j]]) > ck; j--)
+			{ MCC_TRACE("br\n"); idx[j + 1] = idx[j]; }
+		idx[j + 1] = cur;
+	}
+	k = 0;
+	for_each_elem(sr, 0, rel, ElfW_Rel) {
+		if (k >= n) { MCC_TRACE("br\n"); break; }
+		rel->r_info = ELFW(R_INFO)(orig[idx[k]], ELFW(R_TYPE)(rel->r_info));
+		k++;
+	}
+	mcc_free(orig);
+	mcc_free(idx);
+}
+
 static void mcc_add_linker_symbols(MCCState *s1) { MCC_TRACE("enter\n");
 	char buf[1024];
 	Section *s;
@@ -1883,6 +1928,10 @@ static void mcc_add_linker_symbols(MCCState *s1) { MCC_TRACE("enter\n");
 #ifdef MCC_TARGET_RISCV64
 	set_global_sym(s1, "__global_pointer$", data_section, 0x800);
 #endif
+	reorder_ctor_array(s1, ".init_array", s1->ctor_init_prio,
+										 s1->nb_ctor_init_prio);
+	reorder_ctor_array(s1, ".fini_array", s1->ctor_fini_prio,
+										 s1->nb_ctor_fini_prio);
 	add_init_array_defines(s1, ".preinit_array");
 	add_init_array_defines(s1, ".init_array");
 	add_init_array_defines(s1, ".fini_array");
