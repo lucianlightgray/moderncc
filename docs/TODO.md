@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T20:32Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T21:58Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T22:00Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T22:10Z |
 
 ## Contracts — blocking, highest priority
@@ -54,10 +54,8 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
-- [ ] T-lin-10395 [S] Fix: [LOW] unsuffixed decimal in [2^63,2^64) typed `unsigned long` (not in the standard decimal candidate list) — on LP64 mccpp leaves lcount=1 so the token is TOK_CULONG; should be long-long rank (`unsigned long long`, clang/C90 parity, target-uniform; ILP32 already does this). Bump lcount=2 in the decimal >=2^63 branch. o0-neutral (no corpus unsuffixed decimal >=2^63).
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: 41e71bad | TS: 2026-08-19T21:58Z
-      REF: DETAILS.md#t-lin-10395-decimal-ull | DEPS: —
 
+- SESSION (lin-x64, 2026-08-19T22:00Z, /goal=execute INSTRUCTIONS until TODO empty): **T-lin-10395 [S] DONE+ARCHIVED** (code b9a1c351 / docs 00237144) — an unsuffixed decimal in [2^63,2^64) now has long-long rank (`unsigned long long`, clang/C90 parity, target-uniform) instead of the non-candidate `unsigned long`; one `lcount=2` in the decimal >=2^63 branch of mccpp. o0-neutral (no corpus unsuffixed decimal >=2^63; o0-baseline plain+gated+KP + 162 literal-typing exec cells green). TDD diag/decimal-ull-rank, anti-vacuous. DETAILS#t-lin-10395-decimal-ull. **SESSION TALLY: 4 [S] DONE+ARCHIVED** — T-win-50032 (clz/ctz(0) zero-fixup, RED-cell greened + x86_64 o0-rebank), T-mac-30138 (static stmt-expr const init), T-mac-30145 (static/constexpr compound-literal const init), T-lin-10395 (decimal ull rank). Each TDD + oracle-verified + o0-neutral (50032 bounded-drift+rebanked). Remaining lin-verifiable [S] queue is now deep-only: T-mac-30158 (ctor priority — FuncAttr is a full 32-bit bitfield, needs a side-table + linker .init_array.N ordering), T-mac-30167 (_Alignof packed member — needs an SValue align slot), T-mac-30165 (overflow_p fold infra), T-mac-30197 (label-diff reloc const-init); plus target-specific (__float128 30176/30177, arm64-asm, riscv64, Mach-O), GPU (hardware/gaming), and cosmetic/oracle-divergent clusters. **PRE-EXISTING reds (NOT mine, standing):** cross-key o0 staleness atomic_*/feature_macros on all *-win32 + codeopt on x86_64-osx (needs a cross re-bank turn); rir-coverage-census wide-corpus drift. No active lin claims; tree clean, HEAD pushed.
 
 - SESSION (lin-x64, 2026-08-19T21:55Z, /goal=execute INSTRUCTIONS until TODO empty): **T-mac-30145 [S] DONE+ARCHIVED** (code 2d95e4b3 / docs 2042e76a) — a `static`/`constexpr` compound literal now requires a constant initializer (gcc parity). One `else if` in the compound-literal arm of `unary()`: `type.t & (VT_STATIC|VT_CONSTEXPR)` → `r=VT_CONST` (constant-init path + static storage duration), so `(static int[]){a}`/`(constexpr int[]){a}` error "initializer element is not constant"; plain CLs untouched. o0-neutral (no corpus uses static/constexpr CLs; o0-baseline plain+gated+KP green). Oracle-verified vs gcc-16; TDD diag/static-constexpr-cl-valid + diag/{static,constexpr}-cl-nonconst-rejected, anti-vacuous. DETAILS#t-mac-30145-static-constexpr-cl.
 
