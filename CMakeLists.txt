@@ -10178,6 +10178,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             FIXTURES_REQUIRED MCC_BUILT LABELS "diagnostics" SKIP_RETURN_CODE 77
             TIMEOUT 60)
 
+        add_test(NAME diag.case-range-warn
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/case-range-warn.sh"
+                    "$<TARGET_FILE:mcc>"
+                    "${CMAKE_BINARY_DIR}/diag-case-range-warn-work")
+        set_tests_properties(diag.case-range-warn PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "diagnostics" SKIP_RETURN_CODE 77
+            TIMEOUT 60)
+
         add_test(NAME diag.format-attribute
             COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/format-attribute.sh"
                     "$<TARGET_FILE:mcc>"

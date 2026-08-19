@@ -15445,6 +15445,15 @@ static uint64_t expr_case_const(int t, uint64_t *hi) { MCC_TRACE("enter\n");
 	if ((t & VT_BTYPE) != VT_INT128) { MCC_TRACE("br\n");
 		if (chi != 0 && chi != (uint64_t)((int64_t)c >> 63))
 			{ MCC_TRACE("br\n"); mcc_error("integer constant expression does not fit in 64 bits"); }
+		if ((t & VT_BTYPE) == VT_BYTE || (t & VT_BTYPE) == VT_SHORT) { MCC_TRACE("br\n");
+			int cw = (t & VT_BTYPE) == VT_BYTE ? 8 : 16;
+			int64_t csc = (int64_t)c;
+			int64_t chival = (t & VT_UNSIGNED) ? (int64_t)(((uint64_t)1 << cw) - 1)
+																						 : (((int64_t)1 << (cw - 1)) - 1);
+			int64_t cloval = (t & VT_UNSIGNED) ? 0 : (-chival - 1);
+			if (csc < cloval || csc > chival)
+				{ MCC_TRACE("br\n"); mcc_warning("case label value is out of range for the switch condition type"); }
+		}
 		c = value64(c, t);
 		chi = (t & VT_UNSIGNED) ? 0 : (uint64_t)((int64_t)c >> 63);
 	}
