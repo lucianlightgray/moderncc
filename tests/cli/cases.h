@@ -448,6 +448,17 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'nomg_rc=%s mg_rc=%s dep=%s\\n' $nomg $yes $(grep -Fc 'gen_cfg.h' {W}/mg.yes.mk)",
 		 "nomg_rc=1 mg_rc=0 dep=1\n"},
 
+		{"preprocess_system_header_flag", "",
+		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
+		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
+		 "printf '#include <sf.h>\\n#include \"uh.h\"\\nint x;\\n' > {W}/pp.c && "
+		 "{MCC} -B{B} -I{W} -isystem {W}/sysh -E {W}/pp.c > {W}/pp.out 2>{W}/pp.err; "
+		 "printf 'sys=%s usr=%s cmdline=%s\\n' "
+		 "$(grep -F 'sf.h' {W}/pp.out | grep -Ec ' 3$') "
+		 "$(grep -F 'uh.h' {W}/pp.out | grep -Ec ' 3$') "
+		 "$(grep -F 'command-line' {W}/pp.out | grep -Ec ' 3$')",
+		 "sys=1 usr=0 cmdline=0\n"},
+
 		{"output_type_same_action_no_warn", "",
 		 "printf 'int x;\\n' > {W}/ot.c && "
 		 "{MCC} -B{B} -I{I} -c -c -o {W}/ot.o {W}/ot.c 2>{W}/ot.same.err; "

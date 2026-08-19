@@ -6192,12 +6192,13 @@ static void pp_line(MCCState *s1, BufferedFile *f, int level) { MCC_TRACE("enter
 	} else if (s1->Pflag == LINE_MACRO_OUTPUT_FORMAT_STD) { MCC_TRACE("br\n");
 		fprintf(s1->ppfp, "#line %d \"%s\"\n", f->line_num, fn);
 	} else { MCC_TRACE("br\n");
-		fprintf(s1->ppfp, "# %d \"%s\"%s\n", f->line_num, fn,
+		fprintf(s1->ppfp, "# %d \"%s\"%s%s\n", f->line_num, fn,
 						level > 0
 								? " 1"
 						: level < 0
 								? " 2"
-								: "");
+								: "",
+						(f->system_header && fn[0] != '<') ? " 3" : "");
 	}
 	f->line_ref = f->line_num;
 }
