@@ -542,8 +542,10 @@ static void reg_pass_rec(CType *type, int *rc, int *fieldofs, int ofs) { MCC_TRA
 		if (type->ref->type.t == VT_UNION)
 			{ MCC_TRACE("br\n"); rc[0] = -1; }
 		else
-			{ MCC_TRACE("br\n"); for (f = type->ref->next; f; f = f->next)
-				{ MCC_TRACE("br\n"); reg_pass_rec(&f->type, rc, fieldofs, ofs + f->c); } }
+			{ MCC_TRACE("br\n"); for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
+				if ((f->type.t & VT_ARRAY) && f->type.ref->c == 0)
+					{ MCC_TRACE("br\n"); continue; }
+				reg_pass_rec(&f->type, rc, fieldofs, ofs + f->c); } }
 	} else if (type->t & VT_ARRAY) { MCC_TRACE("br\n");
 		if (type->ref->c < 0 || type->ref->c > 2)
 			{ MCC_TRACE("br\n"); rc[0] = -1; }

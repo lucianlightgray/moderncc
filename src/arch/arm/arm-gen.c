@@ -771,7 +771,10 @@ static int arm_hfa_members(CType *type, int *pbt) { MCC_TRACE("enter\n");
 	if (fb == VT_STRUCT) { MCC_TRACE("br\n");
 		int total = 0;
 		for (struct Sym *f = ft->ref->next; f; f = f->next) { MCC_TRACE("br\n");
-			int n = arm_hfa_members(&f->type, pbt);
+			int n;
+			if ((f->type.t & VT_ARRAY) && f->type.ref->c == 0)
+				{ MCC_TRACE("br\n"); continue; }
+			n = arm_hfa_members(&f->type, pbt);
 			if (n < 0)
 				{ MCC_TRACE("br\n"); return -1; }
 			total += n;

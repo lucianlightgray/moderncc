@@ -1165,8 +1165,11 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 		}
 
 		mode = x86_64_mode_none;
-		for (f = f->next; f; f = f->next)
-			{ MCC_TRACE("br\n"); mode = classify_x86_64_merge(mode, classify_x86_64_inner(&f->type)); }
+		for (f = f->next; f; f = f->next) { MCC_TRACE("br\n");
+			if ((f->type.t & VT_ARRAY) && f->type.ref->c == 0)
+				{ MCC_TRACE("br\n"); continue; }
+			mode = classify_x86_64_merge(mode, classify_x86_64_inner(&f->type));
+		}
 
 		return mode;
 	}

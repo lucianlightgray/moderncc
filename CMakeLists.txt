@@ -8293,6 +8293,33 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             "needs a reference cc and a native unemulated arm64 Darwin host")
     endif()
 
+    # abi/zero-array-fp -- a struct with a trailing zero-length array member
+    # (struct{double a,b; char pad[0];}) must keep its FP-aggregate register
+    # class; the phantom [0] member must be skipped in argument classification.
+    # Both directions must RUN here against a native reference cc.
+    if(_ref_cc AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR)
+        add_test(NAME abi/zero-array-fp
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/zero-array-fp-abi.sh"
+                    "${_mcc_exe}" "${_ref_cc}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/zero-array-fp-abi")
+        set_tests_properties(abi/zero-array-fp PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+        add_test(NAME abi/zero-array-fp-known-positive
+            COMMAND "${CMAKE_COMMAND}" -E env "ZEROARR_MUTATE=1"
+                    sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/zero-array-fp-abi.sh"
+                    "${_mcc_exe}" "${_ref_cc}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}"
+                    "${CMAKE_BINARY_DIR}/zero-array-fp-abi-kp")
+        set_tests_properties(abi/zero-array-fp-known-positive PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+    else()
+        mcc_skip_test(abi/zero-array-fp
+            "needs a reference cc and a native unemulated host: both directions must run here")
+        mcc_skip_test(abi/zero-array-fp-known-positive
+            "needs a reference cc and a native unemulated host: both directions must run here")
+    endif()
+
     if(MCC_CPU MATCHES "^(i386|x86_64)$"
        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/asm/asm_c_connect/part1.c")
         add_test(NAME asm-c-connect-test COMMAND "$<TARGET_FILE:mccharness>" asmconnect
