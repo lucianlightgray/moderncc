@@ -4952,7 +4952,7 @@ redo:
 					{ MCC_TRACE("br\n"); bf_trunc = p; }
 			}
 		}
-		if (op_class == CMP_OP && (mcc_state->warn_sign_compare & WARN_ON) && !is_float(combtype.t) && (t1 & VT_UNSIGNED) != (t2 & VT_UNSIGNED)) { MCC_TRACE("br\n");
+		if (op_class == CMP_OP && (mcc_state->warn_sign_compare & WARN_ON) && !is_float(combtype.t) && (combtype.t & VT_UNSIGNED) && (t1 & VT_UNSIGNED) != (t2 & VT_UNSIGNED)) { MCC_TRACE("br\n");
 			int ac = (vtop[-1].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 			int bc = (vtop[0].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 			int warn;

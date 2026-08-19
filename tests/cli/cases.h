@@ -2364,7 +2364,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"wsign_compare_constant_operand", "",
 		 "printf 'int f(int i,unsigned u){int r=0;\\n r+=(i<5U);\\n r+=(u==-1);\\n return r;}\\n' > {W}/sc_bad.c && "
-		 "printf 'int g(int i,unsigned u){int r=0;\\n r+=(i<0U);\\n r+=(u==5);\\n r+=(i>=0U);\\n return r;}\\n' > {W}/sc_ok.c && "
+		 "printf 'int g(int i,unsigned u){int r=0;\\n r+=(i<0U);\\n r+=(u==5);\\n r+=(i>=0U);\\n r+=(u==-1L);\\n return r;}\\n' > {W}/sc_ok.c && "
 		 "{ {MCC} -B{B} -I{I} -Wsign-compare -c {W}/sc_bad.c -o /dev/null 2>&1; "
 		 "{MCC} -B{B} -I{I} -Wsign-compare -Werror -c {W}/sc_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; "
 		 "{MCC} -B{B} -I{I} -c {W}/sc_bad.c -o /dev/null 2>&1 && echo SILENT_DEFAULT; } | "
