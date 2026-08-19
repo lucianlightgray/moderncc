@@ -1802,6 +1802,11 @@ static void merge_funcattr(struct FuncAttr *fa, struct FuncAttr *fa1) { MCC_TRAC
 		{ MCC_TRACE("br\n"); fa->func_ctor = 1; }
 	if (fa1->func_dtor)
 		{ MCC_TRACE("br\n"); fa->func_dtor = 1; }
+	if (fa1->func_fmt_kind && !fa->func_fmt_kind) { MCC_TRACE("br\n");
+		fa->func_fmt_kind = fa1->func_fmt_kind;
+		fa->func_fmt_arg = fa1->func_fmt_arg;
+		fa->func_fmt_first = fa1->func_fmt_first;
+	}
 }
 
 static void merge_attr(AttributeDef *ad, AttributeDef *ad1) { MCC_TRACE("enter\n");
@@ -6693,8 +6698,42 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			ad->f.func_noinl = 1;
 			break;
 		case TOK_FORMAT1:
-		case TOK_FORMAT2:
-			goto skip_param;
+		case TOK_FORMAT2: {
+			int fmt_kind, fmt_idx, fmt_first;
+			const char *arch;
+			skip('(');
+			arch = get_tok_str(tok, NULL);
+			if (!strcmp(arch, "printf") || !strcmp(arch, "__printf__") ||
+					!strcmp(arch, "gnu_printf")) { MCC_TRACE("br\n");
+				fmt_kind = 1;
+			} else if (!strcmp(arch, "scanf") || !strcmp(arch, "__scanf__") ||
+					!strcmp(arch, "gnu_scanf")) { MCC_TRACE("br\n");
+				fmt_kind = 2;
+			} else { MCC_TRACE("br\n");
+				fmt_kind = 0;
+			}
+			next();
+			if (fmt_kind == 0) { MCC_TRACE("br\n");
+				int depth = 1;
+				while (depth && tok != -1) { MCC_TRACE("br\n");
+					if (tok == '(') { MCC_TRACE("br\n"); depth++; }
+					else if (tok == ')') { MCC_TRACE("br\n"); depth--; }
+					next();
+				}
+				break;
+			}
+			skip(',');
+			fmt_idx = expr_const();
+			skip(',');
+			fmt_first = expr_const();
+			skip(')');
+			if (fmt_idx >= 1 && fmt_idx <= 15 && fmt_first >= 0 && fmt_first <= 31) { MCC_TRACE("br\n");
+				ad->f.func_fmt_kind = fmt_kind;
+				ad->f.func_fmt_arg = fmt_idx;
+				ad->f.func_fmt_first = fmt_first;
+			}
+			break;
+		}
 		case TOK_NORETURN1:
 		case TOK_NORETURN2:
 			ad->f.func_noreturn = 1;
@@ -11034,6 +11073,13 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 		}
 		while (i < favail && (fmt[i] == '-' || fmt[i] == '+' || fmt[i] == ' ' || fmt[i] == '#' || fmt[i] == '0'))
 			{ MCC_TRACE("br\n"); i++; }
+		{
+			int posn = i;
+			while (posn < favail && fmt[posn] >= '0' && fmt[posn] <= '9')
+				{ MCC_TRACE("br\n"); posn++; }
+			if (posn > i && posn < favail && fmt[posn] == '$')
+				{ MCC_TRACE("br\n"); return; }
+		}
 		if (is_scanf && i < favail && fmt[i] == '*') { MCC_TRACE("br\n");
 			i++;
 		}
@@ -14677,8 +14723,16 @@ tok_next:
 			}
 
 			if (fmt_fname && !mcc_state->reverse_funcargs && (s->type.t & VT_BTYPE) != VT_STRUCT) { MCC_TRACE("br\n");
-				int is_scanf, fa, fv;
-				if (format_func_spec(fmt_fname, &is_scanf, &fa, &fv) && nb_args >= fa) { MCC_TRACE("br\n");
+				int is_scanf, fa, fv, have_spec;
+				if (s->f.func_fmt_kind) { MCC_TRACE("br\n");
+					is_scanf = (s->f.func_fmt_kind == 2);
+					fa = s->f.func_fmt_arg;
+					fv = s->f.func_fmt_first;
+					have_spec = (fv >= 1);
+				} else { MCC_TRACE("br\n");
+					have_spec = format_func_spec(fmt_fname, &is_scanf, &fa, &fv);
+				}
+				if (have_spec && nb_args >= fa) { MCC_TRACE("br\n");
 					int favail;
 					const char *fstr =
 							format_str_literal(vtop - (nb_args - fa), &favail);

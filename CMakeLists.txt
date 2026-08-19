@@ -9996,6 +9996,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(diag.return-type-gating PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT LABELS "diagnostics" SKIP_RETURN_CODE 77
             TIMEOUT 60)
+
+        add_test(NAME diag.format-attribute
+            COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/diagnostics/format-attribute.sh"
+                    "$<TARGET_FILE:mcc>"
+                    "${CMAKE_BINARY_DIR}/diag-format-attribute-work")
+        set_tests_properties(diag.format-attribute PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT LABELS "diagnostics" SKIP_RETURN_CODE 77
+            TIMEOUT 60)
     endif()
 
     if(UNIX)

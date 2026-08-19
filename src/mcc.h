@@ -328,7 +328,10 @@ struct FuncAttr {
 			func_noinl : 1,
 			func_gnuinl : 1,
 			func_star_param : 1,
-			xxxx : 12;
+			func_fmt_kind : 2,
+			func_fmt_arg : 4,
+			func_fmt_first : 5,
+			xxxx : 1;
 };
 
 typedef struct Sym {
