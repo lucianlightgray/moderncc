@@ -1161,6 +1161,12 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'flexible array member in a struct with no named members'; echo END",
 		 "0\nVLA_STRUCT_OK\nrange of 'int'\ncomma operator in a constant expression\nin a 'for' loop initializer\n'_Noreturn' used outside of a function\nflexible array member\nforward references to 'enum' types\n'sizeof' applied to a function type\ndoes not support '_Static_assert' before C11\nflexible array member in a struct with no named members\nEND\n"},
 
+		{"noreturn_nonfunc_default_error", "",
+		 "printf '_Noreturn int x;\\n' > {W}/nrnf.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/nrnf.c -o {W}/nrnf.o 2>&1 | "
+		 "grep -oE \"error: ._Noreturn. used outside of a function\"; echo DONE",
+		 "error: '_Noreturn' used outside of a function\nDONE\n"},
+
 		{"c9911_diag_gaps", "",
 		 "printf 'static int x; int x;\\nint main(void){return x;}\\n' > {W}/cg1.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/cg1.c -o {W}/cg1.o 2>&1 | "

@@ -18981,7 +18981,7 @@ static int decl(int l) {
 					(type.t & VT_BTYPE) != VT_FUNC)
 				{ MCC_TRACE("br\n"); mcc_error("object with variably modified type must have no linkage"); }
 			if ((ad.storage_class & 128) && (type.t & VT_BTYPE) != VT_FUNC)
-				{ MCC_TRACE("br\n"); mcc_pedantic("'_Noreturn' used outside of a function declaration"); }
+				{ MCC_TRACE("br\n"); mcc_error("'_Noreturn' used outside of a function declaration"); }
 			if (type.t & VT_TLS) { MCC_TRACE("br\n");
 				if (type.t & VT_TYPEDEF)
 					{ MCC_TRACE("br\n"); mcc_error("'_Thread_local' used with 'typedef'"); }
