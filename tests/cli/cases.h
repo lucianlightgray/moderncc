@@ -441,6 +441,13 @@ static const cli_case_t cli_cases[] = {
 		 "grep -Fc 'a$$b\\#c.h' {W}/depd/out.mk",
 		 "1\n"},
 
+		{"depfile_mg_missing_header", "",
+		 "printf '#include \"gen_cfg.h\"\\nint x;\\n' > {W}/mg.c && "
+		 "{MCC} -B{B} -I{I} -M -MF {W}/mg.nomg.mk {W}/mg.c >{W}/mg.nomg.out 2>{W}/mg.nomg.err; nomg=$?; "
+		 "{MCC} -B{B} -I{I} -M -MG -MF {W}/mg.yes.mk {W}/mg.c >{W}/mg.yes.out 2>{W}/mg.yes.err; yes=$?; "
+		 "printf 'nomg_rc=%s mg_rc=%s dep=%s\\n' $nomg $yes $(grep -Fc 'gen_cfg.h' {W}/mg.yes.mk)",
+		 "nomg_rc=1 mg_rc=0 dep=1\n"},
+
 		{"output_type_same_action_no_warn", "",
 		 "printf 'int x;\\n' > {W}/ot.c && "
 		 "{MCC} -B{B} -I{I} -c -c -o {W}/ot.o {W}/ot.c 2>{W}/ot.same.err; "

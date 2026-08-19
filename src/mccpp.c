@@ -1547,6 +1547,11 @@ static int parse_include(MCCState *s1, int do_next, int test, int is_import) { M
 #endif
 			} else if (test)
 				{ MCC_TRACE("br\n"); return 0; }
+			else if (s1->gen_deps && s1->gen_deps_missing_ok) { MCC_TRACE("br\n");
+				dynarray_add(&s1->target_deps, &s1->nb_target_deps,
+										 mcc_strdup(name));
+				return 1;
+			}
 			else
 				{ MCC_TRACE("br\n"); mcc_error("include file '%s' not found", name); }
 			if (!fw) { MCC_TRACE("br\n");

@@ -781,6 +781,7 @@ struct MCCState {
 	unsigned char gen_deps;
 	unsigned char include_sys_deps;
 	unsigned char gen_phony_deps;
+	unsigned char gen_deps_missing_ok;
 
 	unsigned char do_debug;
 	unsigned char dwarf;

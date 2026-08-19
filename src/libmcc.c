@@ -2225,6 +2225,7 @@ enum {
 	MCC_OPTION_MF,
 	MCC_OPTION_MM,
 	MCC_OPTION_MMD,
+	MCC_OPTION_MG,
 	MCC_OPTION_MP,
 	MCC_OPTION_MT,
 	MCC_OPTION_MQ,
@@ -2360,6 +2361,7 @@ static const MCCOption mcc_options[] = {
 		{"MM", MCC_OPTION_MM, 0},
 		{"MD", MCC_OPTION_MD, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"MMD", MCC_OPTION_MMD, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"MG", MCC_OPTION_MG, 0},
 		{"MF", MCC_OPTION_MF, MCC_OPTION_HAS_ARG},
 		{"MP", MCC_OPTION_MP, 0},
 		{"MT", MCC_OPTION_MT, MCC_OPTION_HAS_ARG},
@@ -3386,6 +3388,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			break;
 		case MCC_OPTION_MP:
 			s->gen_phony_deps = 1;
+			break;
+		case MCC_OPTION_MG:
+			s->gen_deps_missing_ok = 1;
 			break;
 		case MCC_OPTION_S:
 			x = MCC_OUTPUT_ASM;
