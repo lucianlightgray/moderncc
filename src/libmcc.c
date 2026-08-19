@@ -1199,6 +1199,9 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->pic = mcc_target_defaults.pic;
 	s->warn_implicit_function_declaration = WARN_ON;
 	s->warn_deprecated_declarations = WARN_ON;
+	s->warn_unused_result = WARN_ON;
+	s->warn_nonnull = WARN_ON;
+	s->warn_sentinel = WARN_ON;
 	s->warn_unsupported_option = WARN_ON;
 	s->warn_discarded_qualifiers = 1;
 	s->warn_sequence_point = 1;
@@ -2434,6 +2437,9 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_undefined_internal), 0, "undefined-internal"},
 		{offsetof(MCCState, warn_return_local_addr), 0, "return-local-addr"},
 		{offsetof(MCCState, warn_deprecated_declarations), WD_ALL, "deprecated-declarations"},
+		{offsetof(MCCState, warn_unused_result), WD_ALL, "unused-result"},
+		{offsetof(MCCState, warn_nonnull), WD_ALL, "nonnull"},
+		{offsetof(MCCState, warn_sentinel), WD_ALL, "sentinel"},
 		{0, 0, NULL}};
 
 typedef char mcc_optflag_offsets_fit

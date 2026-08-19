@@ -313,7 +313,11 @@ struct SymAttr {
 			full_bitfield : 1,
 			ms_struct : 1,
 			gcc_struct : 1,
-			reverse_so : 1;
+			reverse_so : 1,
+			warn_unused_result : 1,
+			sentinel_attr : 1,
+			nonnull_all : 1,
+			nonnull_mask : 16;
 };
 
 struct FuncAttr {
@@ -759,6 +763,9 @@ struct MCCState {
 	unsigned char warn_undefined_internal;
 	unsigned char warn_return_local_addr;
 	unsigned char warn_deprecated_declarations;
+	unsigned char warn_unused_result;
+	unsigned char warn_nonnull;
+	unsigned char warn_sentinel;
 	unsigned char warn_extra_ptr_zero_cmp;
 	int max_errors;
 	unsigned char warn_pedantic;

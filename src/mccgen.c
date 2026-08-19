@@ -6468,25 +6468,33 @@ ST_FUNC int exact_log2p1(int i) { MCC_TRACE("enter\n");
 
 static int in_func_params;
 
+static const char *attr_canon_name(int t, char *buf, size_t bufsz) { MCC_TRACE("enter\n");
+	const char *n = get_tok_str(t, NULL);
+	size_t l = strlen(n);
+	if (l > 4 && n[0] == '_' && n[1] == '_' && n[l - 1] == '_' && n[l - 2] == '_' &&
+			l - 4 < bufsz) { MCC_TRACE("br\n");
+		memcpy(buf, n + 2, l - 4);
+		buf[l - 4] = '\0';
+		return buf;
+	}
+	return n;
+}
+
 static int attr_ignore_silently(int t) { MCC_TRACE("enter\n");
 	static const char *const hints[] = {
 		"hot", "cold", "flatten", "no_reorder", "no_stack_protector", "no_icf",
-		"warn_unused_result", "nonnull", "returns_nonnull", "sentinel"
+		"returns_nonnull"
 	};
-	const char *n = get_tok_str(t, NULL);
 	char buf[32];
-	size_t l = strlen(n), i;
-	if (l > 4 && n[0] == '_' && n[1] == '_' && n[l - 1] == '_' && n[l - 2] == '_' &&
-			l - 4 < sizeof buf) { MCC_TRACE("br\n");
-		memcpy(buf, n + 2, l - 4);
-		buf[l - 4] = '\0';
-		n = buf;
-	}
+	const char *n = attr_canon_name(t, buf, sizeof buf);
+	size_t i;
 	for (i = 0; i < sizeof hints / sizeof hints[0]; i++)
 		{ MCC_TRACE("br\n"); if (!strcmp(n, hints[i]))
 			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
 }
+
+static int wur_call_name;
 
 static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 	int n;
@@ -6866,7 +6874,38 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 		case TOK_DLLIMPORT:
 			ad->a.dllimport = 1;
 			break;
-		default:
+		default: {
+			char cbuf[32];
+			const char *cn = attr_canon_name(t, cbuf, sizeof cbuf);
+			if (!strcmp(cn, "warn_unused_result")) { MCC_TRACE("br\n");
+				ad->a.warn_unused_result = 1;
+				goto skip_param;
+			}
+			if (!strcmp(cn, "sentinel")) { MCC_TRACE("br\n");
+				ad->a.sentinel_attr = 1;
+				goto skip_param;
+			}
+			if (!strcmp(cn, "nonnull")) { MCC_TRACE("br\n");
+				if (tok == '(') { MCC_TRACE("br\n");
+					next();
+					if (tok == ')') { MCC_TRACE("br\n");
+						ad->a.nonnull_all = 1;
+					} else { MCC_TRACE("br\n");
+						for (;;) { MCC_TRACE("br\n");
+							int pos = expr_const();
+							if (pos >= 1 && pos <= 16)
+								{ MCC_TRACE("br\n"); ad->a.nonnull_mask |= 1u << (pos - 1); }
+							if (tok != ',')
+								{ MCC_TRACE("br\n"); break; }
+							next();
+						}
+					}
+					skip(')');
+				} else { MCC_TRACE("br\n");
+					ad->a.nonnull_all = 1;
+				}
+				break;
+			}
 			if (!attr_ignore_silently(t))
 				{ MCC_TRACE("br\n"); mcc_warning_c(warn_attributes)("'%s' attribute ignored", get_tok_str(t, NULL)); }
 		skip_param:
@@ -6881,6 +6920,7 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 				} while (parenthesis && tok != -1);
 			}
 			break;
+		}
 		}
 	}
 }
@@ -13089,6 +13129,7 @@ static void unary_nested(void) { MCC_TRACE("enter\n");
 	unsigned char save_pedantic_errors = mcc_state->pedantic_errors;
 	uint32_t cst_um = CST_MARK();
 	uint16_t cst_nk = 0;
+	int wur_consuming_unary = 0;
 #define CST_PRIMARY()                 \
 	do {                                \
 		CST_OPEN_AT(CST_Primary, cst_um); \
@@ -13121,8 +13162,10 @@ tok_next:
 	case TOK_ALIGNOF2:
 	case TOK_ALIGNOF3:
 		cst_nk = CST_Unary;
+		wur_consuming_unary = 1;
 		break;
 	default:
+		wur_consuming_unary = 0;
 		break;
 	}
 	switch (tok) { MCC_TRACE("br\n");
@@ -14517,10 +14560,14 @@ tok_next:
 		break;
 	}
 
+	if (wur_consuming_unary)
+		{ MCC_TRACE("br\n"); wur_call_name = 0; }
+
 	while (1) { MCC_TRACE("br\n");
 		if (tok == TOK_INC || tok == TOK_DEC) { MCC_TRACE("br\n");
 			inc(1, tok);
 			expr_has_effect = 1;
+			wur_call_name = 0;
 			next();
 		} else if (tok == '.' || tok == TOK_ARROW) { MCC_TRACE("br\n");
 			int qualifiers, cumofs, base_nonlval;
@@ -14586,6 +14633,7 @@ tok_next:
 			next();
 			CST_OPEN_AT(CST_Member, cst_um);
 			CST_CLOSE();
+			wur_call_name = 0;
 		} else if (tok == '[') { MCC_TRACE("br\n");
 			int sub_revso;
 			next();
@@ -14614,12 +14662,15 @@ tok_next:
 			skip(']');
 			CST_OPEN_AT(CST_Index, cst_um);
 			CST_CLOSE();
+			wur_call_name = 0;
 		} else if (tok == '(') { MCC_TRACE("br\n");
 			SValue ret;
 			Sym *sa;
 			int nb_args, ret_nregs, ret_align, regsize, variadic;
 			TokenString *p, *p2;
 			const char *fmt_fname = NULL;
+			struct SymAttr ca;
+			int callee_tok = 0;
 
 			if ((mcc_state->warn_format & WARN_ON) && (vtop->r & VT_SYM) && vtop->sym)
 				{ MCC_TRACE("br\n"); fmt_fname = get_tok_str(vtop->sym->v, NULL); }
@@ -14637,6 +14688,14 @@ tok_next:
 				vtop->r &= ~VT_LVAL;
 			}
 			s = vtop->type.ref;
+			ca = s->a;
+			if ((vtop->r & VT_SYM) && vtop->sym) { MCC_TRACE("br\n");
+				callee_tok = vtop->sym->v;
+				ca.warn_unused_result |= vtop->sym->a.warn_unused_result;
+				ca.sentinel_attr |= vtop->sym->a.sentinel_attr;
+				ca.nonnull_all |= vtop->sym->a.nonnull_all;
+				ca.nonnull_mask |= vtop->sym->a.nonnull_mask;
+			}
 			if (((s->type.t & VT_BTYPE) == VT_STRUCT || IS_ENUM(s->type.t)) && s->type.ref->c < 0) { MCC_TRACE("br\n");
 				if ((vtop->r & VT_SYM) && vtop->sym)
 					{ MCC_TRACE("br\n"); mcc_error("calling '%s' with incomplete return type",
@@ -14746,20 +14805,53 @@ tok_next:
 				}
 			}
 
+			if (!mcc_state->reverse_funcargs && (s->type.t & VT_BTYPE) != VT_STRUCT) { MCC_TRACE("br\n");
+				int k;
+				if ((mcc_state->warn_nonnull & WARN_ON) && (ca.nonnull_all || ca.nonnull_mask)) { MCC_TRACE("br\n");
+					Sym *pa = s->next;
+					for (k = 1; k <= nb_args; k++) { MCC_TRACE("br\n");
+						int is_nn = 0;
+						if (ca.nonnull_all)
+							{ MCC_TRACE("br\n"); is_nn = pa && (pa->type.t & VT_BTYPE) == VT_PTR; }
+						else if (k <= 16)
+							{ MCC_TRACE("br\n"); is_nn = (ca.nonnull_mask >> (k - 1)) & 1; }
+						if (is_nn && is_null_pointer(vtop - (nb_args - k)))
+							{ MCC_TRACE("br\n"); mcc_warning_c(warn_nonnull)(
+									"argument %d null where non-null expected", k); }
+						if (pa)
+							{ MCC_TRACE("br\n"); pa = pa->next; }
+					}
+				}
+				if ((mcc_state->warn_sentinel & WARN_ON) && ca.sentinel_attr &&
+						s->f.func_type == FUNC_ELLIPSIS) { MCC_TRACE("br\n");
+					int named = 0;
+					Sym *pa;
+					for (pa = s->next; pa; pa = pa->next)
+						{ MCC_TRACE("br\n"); named++; }
+					if (nb_args > named && !is_null_pointer(vtop))
+						{ MCC_TRACE("br\n"); mcc_warning_c(warn_sentinel)(
+								"missing sentinel in function call"); }
+				}
+			}
+
 			next();
 			vcheck_cmp();
 			if (mcc_state->fold_math &&
 					(foldmath_try(s, nb_args) || foldfc_try(s, nb_args))) { MCC_TRACE("br\n");
 				expr_has_effect = 1;
+				wur_call_name = 0;
 				goto call_folded;
 			}
 			if (absbuiltin_try(s, nb_args)) { MCC_TRACE("br\n");
 				expr_has_effect = 1;
+				wur_call_name = 0;
 				goto call_folded;
 			}
 			rir_hook_call_begin();
 			gfunc_call(nb_args);
 			expr_has_effect = 1;
+			wur_call_name = (ca.warn_unused_result && callee_tok &&
+					(s->type.t & VT_BTYPE) != VT_VOID) ? callee_tok : 0;
 
 			if (ret_nregs < 0) { MCC_TRACE("br\n");
 				vsetc(&ret.type, ret.r, &ret.c);
@@ -14895,6 +14987,7 @@ static void expr_landor(int op);
 static void expr_infix(int p) { MCC_TRACE("enter\n");
 	int t = tok, p2;
 	while ((p2 = precedence(t)) >= p) { MCC_TRACE("br\n");
+		wur_call_name = 0;
 		if (t == TOK_LOR || t == TOK_LAND) { MCC_TRACE("br\n");
 			expr_landor(t);
 		} else { MCC_TRACE("br\n");
@@ -15064,6 +15157,7 @@ static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 		CST_CLOSE();
 	}
 	if (tok == '?') { MCC_TRACE("br\n");
+		wur_call_name = 0;
 		next();
 		c = condition_3way();
 		seqp_flush();
@@ -15242,6 +15336,7 @@ static void expr_eq(void) { MCC_TRACE("enter\n");
 			gen_op(TOK_ASSIGN_OP(t));
 		}
 		vstore();
+		wur_call_name = 0;
 	}
 	if (was_assign) { MCC_TRACE("br\n");
 		CST_OPEN_AT(CST_Binary, cst_m);
@@ -16799,7 +16894,13 @@ again:
 					gexpr();
 				} else { MCC_TRACE("br\n");
 					expr_has_effect = 0;
+					wur_call_name = 0;
 					gexpr();
+					if ((mcc_state->warn_unused_result & WARN_ON) && wur_call_name)
+						{ MCC_TRACE("br\n"); mcc_warning_c(warn_unused_result)(
+								"ignoring return value of '%s' declared with attribute "
+								"'warn_unused_result'",
+								get_tok_str(wur_call_name, NULL)); }
 					if ((mcc_state->warn_unused_value & WARN_ON) && !expr_has_effect && !(vtop->type.t & VT_VOLATILE))
 						{ MCC_TRACE("br\n"); mcc_warning_c(warn_unused_value)(
 								"value computed is not used"); }

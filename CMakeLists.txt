@@ -7883,6 +7883,45 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(codegen-hint-attrs PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    # T-mac-30181: discarding the result of a warn_unused_result function warns
+    # (-Wunused-result); T-mac-30183: a null constant passed where a nonnull
+    # parameter is required warns (-Wnonnull), and a variadic sentinel call whose
+    # last argument is not a null pointer constant warns (-Wsentinel). The clean
+    # cell proves non-vacuity: correct usage stays silent under -Wall -Werror.
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/unused_result_warn.c")
+        add_test(NAME "diag/unused-result" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/unused_result_warn.c"
+                    -o "${CMAKE_BINARY_DIR}/unused-result-warn.o")
+        set_tests_properties("diag/unused-result" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "ignoring return value of 'f' declared with attribute 'warn_unused_result'")
+    endif()
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/nonnull_warn.c")
+        add_test(NAME "diag/nonnull" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/nonnull_warn.c"
+                    -o "${CMAKE_BINARY_DIR}/nonnull-warn.o")
+        set_tests_properties("diag/nonnull" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "argument 1 null where non-null expected")
+    endif()
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/sentinel_warn.c")
+        add_test(NAME "diag/sentinel" COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/sentinel_warn.c"
+                    -o "${CMAKE_BINARY_DIR}/sentinel-warn.o")
+        set_tests_properties("diag/sentinel" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "missing sentinel in function call")
+    endif()
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/nonnull_sentinel_clean.c")
+        add_test(NAME "diag/nonnull-sentinel-clean" COMMAND ${_mcc_exe} -Wall -Werror -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/nonnull_sentinel_clean.c")
+        set_tests_properties("diag/nonnull-sentinel-clean" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/xpreprocessor_forward.c")
         add_test(NAME driver/xpreprocessor-forward COMMAND ${_mcc_exe}
                     -Xpreprocessor -DFOO=41 -run
