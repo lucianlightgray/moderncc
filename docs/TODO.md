@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T16:26Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T16:37Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T16:37Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T13:45Z |
 
@@ -180,9 +180,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-mac-30249 [S] Fix: [MED, wrong value] distinct empty-struct objects share the same address — `struct E{};` → mcc gives two distinct zero-size objects (locals or globals) the same address so `&a!=&b` yields 0; both oracles guarantee distinct objects compare unequal (mcc `0 0 0` vs clang/gcc `1 1 1`). sizeof==0 + "no named members" pedantic warn agree; only object identity diverges. `struct_layout` assigns size 0 (`mccgen.c:6878`; diag `:7526/:7616`) → 0-byte object gets no distinct storage slot, overlapping locals/globals collapse. Niche (empty-struct-as-unique-marker). Fix: lay out empty aggregates with min storage size 1 (keep sizeof per-GNU-C) OR fold distinct-named-object addr comparisons to unequal.
       OWNER: — | STATE: OPEN | SHA: 9d5dd812 | TS: 2026-08-18T22:45Z
       REF: INVESTIGATIONS.md#r37-empty-struct-id | DEPS: —
-- [ ] T-mac-30250 [S] Fix: [MED, over-defined macro] `__STDC_ISO_10646__` defined by mcc, undefined by both oracles on Apple arm64 — mcc predefines `__STDC_ISO_10646__ = 201706L` (`mccdefs.h:54`); clang+gcc-16 both leave it UNDEFINED on this target (`__STDC_UTF_16__`/`__STDC_UTF_32__`==1 agree). Can flip `#ifdef` feature paths (wchar_t-is-Unicode assumptions). Arguably defensible (wchar_t holds code points) but diverges from both toolchains. Fix: match the platform — drop the define on Apple targets (or gate per target).
-      OWNER: — | STATE: OPEN | SHA: 9d5dd812 | TS: 2026-08-18T22:45Z
-      REF: INVESTIGATIONS.md#r37-iso10646 | DEPS: —
       OWNER: — | STATE: OPEN | SHA: 99a5df23 | TS: 2026-08-18T21:30Z
       REF: INVESTIGATIONS.md#r36-pragma-op-E | DEPS: —
 - [ ] T-mac-30236 [S] Fix: [MED, wrong value] `#line` near INT_MAX corrupts `__LINE__` — `#line 2147483647` then 2 lines → mcc `__LINE__` 2147483647 then **-2147483648** (signed wrap); clang+gcc-16 give …2147483648. `#line 2147483648` → mcc silently clamps to 2147483647 (`n = line_ovf ? 2147483647 : (int)nn` `mccpp.c:3063`); oracles carry 2147483648. Cause: `file->line_num` is `int` (`mccpp.c:149`, stored `:3077`) → post-#line `line_num++` (`:862`) overflows. Contrived but a negative `__LINE__` is a genuine wrong value diverging from both. Fix: widen line_num + the __LINE__ emission path to 64-bit, or saturate the increment.
