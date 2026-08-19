@@ -13526,6 +13526,13 @@ tok_next:
 				{ MCC_TRACE("br\n"); mcc_pedantic("'_Alignof' applied to a void type"); }
 		}
 		if (t == TOK_SIZEOF) { MCC_TRACE("br\n");
+			/* T-mac-30194(2): give the specific incomplete-type diagnostic
+			 * (like the _Alignof path below) instead of the generic "unknown
+			 * type size" that vpush_type_size emits from many contexts. */
+			if (!(type.t & VT_VLA) && !is_vla_struct(&type) &&
+					type_size(&type, &align) < 0 &&
+					!((type.t & (VT_ARRAY | VT_VLA)) && mcc_state->cversion >= 202400))
+				{ MCC_TRACE("br\n"); mcc_error("'sizeof' applied to an incomplete type"); }
 			vpush_type_size(&type, &align);
 			gen_cast_s(VT_SIZE_T);
 		} else { MCC_TRACE("br\n");

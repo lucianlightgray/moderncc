@@ -1194,6 +1194,12 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'prag_macro[.]c:[0-9]+: note: #pragma message: hi'",
 		 "prag_macro.c:2: note: #pragma message: hi\n"},
 
+		{"sizeof_incomplete_specific_msg", "",
+		 "printf 'struct S; int n = sizeof(struct S);\\n' > {W}/inc.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/inc.c -o {W}/inc.o 2>&1 | "
+		 "grep -oE \".sizeof. applied to an incomplete type\"; echo DONE",
+		 "'sizeof' applied to an incomplete type\nDONE\n"},
+
 		{"c9911_diag_gaps", "",
 		 "printf 'static int x; int x;\\nint main(void){return x;}\\n' > {W}/cg1.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/cg1.c -o {W}/cg1.o 2>&1 | "
