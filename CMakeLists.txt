@@ -7860,6 +7860,22 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             COMMAND sh -c "printf 'int x;\n' | '$<TARGET_FILE:mcc>' -E -")
         set_tests_properties(driver/stdin-filename PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT PASS_REGULAR_EXPRESSION "\"<stdin>\"")
+
+        # T-mac-30227 residual: the initial synthetic -E marker uses line 0
+        # for stdin, matching gcc (# 0 "<stdin>").
+        add_test(NAME driver/stdin-initial-marker
+            COMMAND sh -c "printf 'int x;\n' | '$<TARGET_FILE:mcc>' -E -")
+        set_tests_properties(driver/stdin-initial-marker PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT PASS_REGULAR_EXPRESSION "# 0 \"<stdin>\"")
+
+        # T-mac-30227 residual regression guard: a named file's real-content
+        # marker stays line 1 (# 1 "<name>"), never regressed to # 0.
+        add_test(NAME driver/named-content-marker
+            COMMAND "$<TARGET_FILE:mcc>" -E
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/emarker_named.c")
+        set_tests_properties(driver/named-content-marker PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "# 1 \"[^\"]*emarker_named\\.c\"")
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_vla.c")

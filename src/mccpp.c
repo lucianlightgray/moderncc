@@ -6464,8 +6464,11 @@ ST_FUNC int mcc_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 
 	token_seen = TOK_LINEFEED, spcs = 0, level = 0;
-	if (file->prev)
-		{ MCC_TRACE("br\n"); pp_line(s1, file->prev, level++); }
+	if (file->prev) { MCC_TRACE("br\n");
+		file->prev->line_num--;
+		pp_line(s1, file->prev, level++);
+		file->prev->line_ref = ++file->prev->line_num;
+	}
 	pp_line(s1, file, level);
 
 	for (;;) { MCC_TRACE("br\n");
