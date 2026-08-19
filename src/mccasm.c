@@ -455,6 +455,7 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 	case TOK_ASMDIR_p2align:
 	case TOK_ASMDIR_skip:
 	case TOK_ASMDIR_space:
+	case TOK_ASMDIR_zero:
 		tok1 = tok;
 		next();
 		n = asm_int_expr(s1);
@@ -653,6 +654,8 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		goto zero_pad;
 	} break;
 	case TOK_ASMDIR_set:
+	case TOK_ASMDIR_equ:
+	case TOK_ASMDIR_equiv:
 		next();
 		tok1 = tok;
 		next();

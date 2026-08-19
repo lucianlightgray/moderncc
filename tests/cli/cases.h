@@ -454,6 +454,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'start=%s end=%s\\n' $(grep -Fc 'START' {W}/lw.err) $(grep -Fc 'END' {W}/lw.err)",
 		 "start=1 end=1\n"},
 
+		{"asm_zero_equ_equiv_directives", "",
+		 "printf '.data\\n.globl asmval\\nasmval:\\n.equ MYV, 42\\n.long MYV\\n.zero 8\\n.globl asmval2\\nasmval2:\\n.equiv MYV2, 58\\n.long MYV2\\n' > {W}/dz.s && "
+		 "printf 'extern int asmval, asmval2;\\nint main(void){ return asmval + asmval2; }\\n' > {W}/dz.c && "
+		 "{MCC} -B{B} {W}/dz.s {W}/dz.c -o {W}/dz.exe 2>{W}/dz.err; link=$?; "
+		 "{W}/dz.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=100\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
