@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T23:09Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T22:30Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T22:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T23:09Z |
 
 ## Contracts — blocking, highest priority
@@ -55,6 +55,8 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+
+- SESSION CHECKPOINT (lin-x64, 2026-08-19T22:35Z, /goal=execute INSTRUCTIONS until TODO empty): consolidated tally — **5 [S] DONE+ARCHIVED + 1 ELF feature slice + 1 finding taskified + 1 redundant test-family retired + a fleet-flagged deadlock root-fixed**. Archived: T-win-50032 (clz/ctz(0), RED greened), T-mac-30138 (static stmt-expr const init), T-mac-30145 (static/constexpr CL const init), T-lin-10395 (decimal ull rank), **T-lin-10417 (-fopt-search-threads serial-by-default — root-fixed the deadlock mac FLAGGED, retired the redundant exec-search-threads/* family)**. Slice: T-mac-30158 ctor/dtor PRIORITY (ELF done+verified, Mach-O residual→mac, IN_PROGRESS/TTL-resumable). Minted: T-lin-10416 (stale win32/osx o0 boards). COLLAB: sent mac gcc -Wsign-compare oracle data for their T-mac-30052 residual (offered to take it). **ENV FACT (saved to memory [[lin-box-gcc-15-not-16]]):** this lin box is gcc-15.3.0, NOT gcc-16 — my "gcc-16" labels this session were really gcc-15 (stable-semantics tasks unaffected; matters for warning-heuristic tasks). Remaining lin-verifiable [S] all DEEP/delicate (inspected: 30167 alignof — global-carry over-triggers on `_Alignof(s.x+1)` sub-exprs; 30165 overflow_p — library macros need reimpl as intrinsics; 30197 label-diff — needs data relocations; 30142 — breaking default-c23 change; 30149 — codegen-affecting) or other-platform/GPU/human. No new clean lin claims available. Tree clean, HEAD pushed, only active claim = T-mac-30158 (ELF done, Mach-O for mac).
 
 - SESSION (lin-x64, 2026-08-19T22:30Z, mac FLAG in my opt-search domain): **T-lin-10417 [S] DONE+ARCHIVED** (code d91d2d88) — fixed the -fopt-search-threads DEADLOCK mac flagged (exec-search-threads/atomic_counter, 35+ min hang). The threaded optimization-search pool is documented OFF/unsafe (workers race on ast_cur/ast_*_env); gated its dispatch (mccast.c ~:20486) behind MCC_OPT_SEARCH_THREADS_UNSAFE so -fopt-search-threads runs SERIALLY by default (correct, deterministic, no deadlock) — fixes the feature fleet-wide, not just the test. o0-neutral (search path not reached at -O0; o0-baseline green). New guard opt/search-threads-no-deadlock (TIMEOUT 60, ~1s). DETAILS#t-lin-10417-search-threads-serial. Acked mac.
 
