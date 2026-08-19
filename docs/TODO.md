@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T20:32Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T21:45Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T21:50Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T22:10Z |
 
 ## Contracts — blocking, highest priority
@@ -55,9 +55,7 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
-- [ ] T-mac-30138 [S] Fix: [MED] block-scope `static` rejects a CONSTANT statement-expression initializer (`static int s=({7;})`) — mcc errors "constant expected" before parsing; gcc+clang fold. Parse the stmt-expr and accept iff the result folds to a constant.
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: 9cd4fb3c | TS: 2026-08-19T21:47Z
-      REF: DETAILS.md#t-mac-30138-static-stmtexpr-const | DEPS: —
+- SESSION (lin-x64, 2026-08-19T21:50Z, /goal=execute INSTRUCTIONS until TODO empty): **T-mac-30138 [S] DONE+ARCHIVED** (code 378b00ee / docs d2046ea1) — block-scope `static` initialized by a constant statement-expression (`static int s=({7;})`) now accepted (gcc/clang parity). The stmt-expr arm of `unary()` parsed-then-gates instead of erroring pre-parse: accept iff the result is a constant (`(vtop->r & (VT_VALMASK|VT_LVAL))==VT_CONST` — int or symbol-address), else `initializer element is not constant`; runtime path unchanged. o0-neutral (o0-baseline plain+gated+KP green; the accept path runs only for programs every prior mcc rejected). Oracle-verified vs gcc-16+clang, 7 cases (incl. address-const + cast-fold); TDD diag/static-stmtexpr-{const-valid,nonconst-rejected}, anti-vacuous. DETAILS#t-mac-30138-static-stmtexpr-const.
 
 
 - SESSION (lin-x64, 2026-08-19T21:45Z, /goal=execute INSTRUCTIONS until TODO empty): **T-win-50032 [S] DONE+ARCHIVED** (code 7e0b8819 / docs ac2cb695) — runtime `__builtin_clz/ctz(0)` now matches the fold (both return the bit width) via a branchless zero-fixup in `gen_bitscan` (sentinel mov + `cmovz`; clz sentinel 2w-1 so the kept `xor r,(w-1)` maps it to w). Greens the pre-existing red `builtins/clz-ctz-zero`; non-zero results byte-identical to gcc-16 across every single-bit position. Re-banked the 3 x86_64 o0 keys for the 2 runtime-clz/ctz corpus files (native x86_64 + surgical win32/osx bitscan lines from fix-built cross binaries; rir census unchanged, replay faithful) and caught up the pre-existing one-file-stale `x86_64.gated.rir.txt` (324→325, all-faithful, bar=OK). Native o0-baseline plain+gated + treegate GREEN. **PRE-EXISTING reds confirmed NOT mine** (recorded, FYI'd win+mac): cross-key o0 staleness `atomic_*`/`feature_macros` on ALL `*-win32` keys (incl. i386/arm/arm64-win32 whose backends gen_bitscan can't touch) + `codeopt.c` on x86_64-osx (none use clz/ctz); `rir-coverage-census` (wide corpus 402-file drift, self-labeled pre-existing+corpus-mix, 0 gone/47 new). DETAILS#t-win-50032-bitscan-zero-fixup.
