@@ -6374,7 +6374,8 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}/tests"
                         "${CMAKE_BINARY_DIR}/exec-search-threads-${_gn}" --only "${_gn}")
             set_tests_properties("exec-search-threads/${_gn}" PROPERTIES FIXTURES_REQUIRED MCC_BUILT
-                SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-threads;MCC_DEV=1;MCC_SEARCH_WORKER=1")
+                SKIP_RETURN_CODE 77 TIMEOUT 240
+                ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-O13 -fopt-search -fopt-search-threads;MCC_DEV=1;MCC_SEARCH_WORKER=1")
         endforeach()
 
         foreach(_gl IN LISTS _exec_glines)
