@@ -693,13 +693,21 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 	} break;
 	case TOK_ASMDIR_set:
 	case TOK_ASMDIR_equ:
-	case TOK_ASMDIR_equiv:
+	case TOK_ASMDIR_equiv: {
+		int is_equiv = (tok == TOK_ASMDIR_equiv);
 		next();
 		tok1 = tok;
+		if (is_equiv) { MCC_TRACE("br\n");
+			Sym *prev = asm_label_find(tok1);
+			if (prev && prev->c && elfsym(prev)->st_shndx != SHN_UNDEF)
+				{ MCC_TRACE("br\n"); mcc_error("symbol '%s' is already defined",
+									get_tok_str(tok1, NULL)); }
+		}
 		next();
 		if (tok == ',')
 			{ MCC_TRACE("br\n"); set_symbol(s1, tok1); }
 		break;
+	}
 	case TOK_ASMDIR_comm:
 	case TOK_ASMDIR_lcomm: {
 		Section *prev_sec;

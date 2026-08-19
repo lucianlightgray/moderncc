@@ -478,6 +478,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=110\n"},
 
+		{"asm_equiv_redefinition_errors", "",
+		 "printf '.equiv foo, 5\\n.equiv foo, 6\\n.long foo\\n' > {W}/eq.s && "
+		 "{MCC} -B{B} -c {W}/eq.s -o {W}/eq.o 2>{W}/eq.err; equiv=$?; "
+		 "printf '.equ bar, 5\\n.equ bar, 6\\n.long bar\\n' > {W}/eu.s && "
+		 "{MCC} -B{B} -c {W}/eu.s -o {W}/eu.o 2>{W}/eu.err; equ=$?; "
+		 "printf 'equiv_rc=%s equ_rc=%s\\n' $equiv $equ",
+		 "equiv_rc=1 equ_rc=0\n"},
+
 		{"asm_if_compare_variants", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.ifeq 0\\n.byte 1\\n.else\\n.byte 2\\n.endif\\n.ifne 5\\n.byte 4\\n.else\\n.byte 8\\n.endif\\n.ifgt 3\\n.byte 16\\n.else\\n.byte 32\\n.endif\\n.iflt 3\\n.byte 64\\n.else\\n.byte 8\\n.endif\\n' > {W}/ic.s && "
 		 "printf 'extern char base[];\\nint main(void){ return base[0]+base[1]+base[2]+base[3]; }\\n' > {W}/ic.c && "
