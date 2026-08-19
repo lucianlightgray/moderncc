@@ -130,6 +130,51 @@ static void *__mcc_ctx_make(void *__base, unsigned long __size, void (*__entry)(
 	return (void *)__sp;
 }
 
+#elif defined(__x86_64__) && defined(_WIN32)
+
+/*
+ * x86_64-PE/Windows context switch (T-win-50033) via Win32 Fibers.
+ *
+ * A Fiber carries exactly the Win64 per-context state a hand-rolled swap would
+ * otherwise have to shuffle by hand -- the TIB stack fields (StackBase /
+ * StackLimit / DeallocationStack that __chkstk and SEH read), the SEH chain,
+ * and the callee-saved xmm6-xmm15 -- so the OS primitives are both simpler and
+ * more correct than inline asm here. The opaque `sp` slot the scheduler keeps
+ * per fiber holds the fiber handle (it never dereferences sp), and the malloc'd
+ * coop stack buffer is unused (CreateFiber allocates its own stack).
+ *
+ * GetCurrentFiber() is a TEB macro (reads gs:[0x20]), not a kernel32 export, so
+ * it is unresolvable under `mcc -run`; we avoid it entirely. main's handle is
+ * captured lazily on its first swap-away, when its stored sp is still 0 -- a
+ * worker already carries the handle CreateFiber returned. IsThreadAFiber is
+ * likewise skipped (also not reachable under -run): sp==0 uniquely means "this
+ * context has no handle yet", which for the single OS thread is main pre-convert.
+ *
+ * Known limitation (documented follow-up, matches the timed-wait clock note):
+ * the scheduler has no per-backend free hook, so a fiber handle is not
+ * DeleteFiber'd when its struct is freed -- the OS fiber leaks until process
+ * exit. Harmless for single-run programs and the gate.
+ */
+
+extern void *ConvertThreadToFiber(void *__param);
+extern void *CreateFiber(unsigned long long __stack_size, void (*__start)(void *), void *__param);
+extern void SwitchToFiber(void *__fiber);
+
+static void __mcc_fiber_proc(void *__entry) {
+	((void (*)(void))__entry)();
+}
+
+static void __mcc_ctx_swap(void **__save_sp, void *__to_sp) {
+	if (!*__save_sp)
+		*__save_sp = ConvertThreadToFiber((void *)0);
+	SwitchToFiber(__to_sp);
+}
+
+static void *__mcc_ctx_make(void *__base, unsigned long __size, void (*__entry)(void)) {
+	(void)__base;
+	return CreateFiber((unsigned long long)__size, __mcc_fiber_proc, (void *)__entry);
+}
+
 #else
 #error "mcc_coop_threads.h: no __mcc_ctx_swap/__mcc_ctx_make backend for this target -- add the per-target [X] context switch (T-lin-10001 [C] core; arm64/win/riscv64 owned by mac/win)."
 #endif
