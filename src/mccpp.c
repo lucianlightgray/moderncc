@@ -2735,6 +2735,7 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		}
 	} else if (tok == TOK_pragma_message) { MCC_TRACE("br\n");
 		int paren = 0;
+		CString pmsg;
 		next();
 		if (tok == '(') { MCC_TRACE("br\n");
 			paren = 1;
@@ -2742,13 +2743,20 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		}
 		if (tok != TOK_STR)
 			{ MCC_TRACE("br\n"); goto pragma_err; }
+		cstr_new(&pmsg);
+		/* concatenate adjacent string literals, e.g. #pragma message("a " "b") */
+		while (tok == TOK_STR) { MCC_TRACE("br\n");
+			cstr_cat(&pmsg, (char *)tokc.str.data, -1);
+			next();
+		}
+		cstr_ccat(&pmsg, '\0');
 		if (file)
 			{ MCC_TRACE("br\n"); fprintf(stderr, "%s:%d: note: #pragma message: %s\n",
-							file->filename, file->line_num, (char *)tokc.str.data); }
+							file->filename, file->line_num, (char *)pmsg.data); }
 		else
 			{ MCC_TRACE("br\n"); fprintf(stderr, "note: #pragma message: %s\n",
-							(char *)tokc.str.data); }
-		next();
+							(char *)pmsg.data); }
+		cstr_free(&pmsg);
 		if (paren) { MCC_TRACE("br\n");
 			if (tok != ')')
 				{ MCC_TRACE("br\n"); goto pragma_err; }

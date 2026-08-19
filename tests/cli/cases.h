@@ -1167,6 +1167,12 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE \"error: ._Noreturn. used outside of a function\"; echo DONE",
 		 "error: '_Noreturn' used outside of a function\nDONE\n"},
 
+		{"pragma_message_concat", "",
+		 "printf '#pragma message(\"a \" \"b\" \" c\")\\nint main(void){return 0;}\\n' > {W}/pmc.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/pmc.c -o {W}/pmc.o 2>&1 | "
+		 "grep -oE 'message: a b c'; echo DONE",
+		 "message: a b c\nDONE\n"},
+
 		{"c9911_diag_gaps", "",
 		 "printf 'static int x; int x;\\nint main(void){return x;}\\n' > {W}/cg1.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/cg1.c -o {W}/cg1.o 2>&1 | "
