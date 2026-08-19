@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-18T22:36Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:44Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50032   | 2026-08-19T00:24Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50032   | 2026-08-19T00:33Z |
 
 ## Contracts — blocking, highest priority
 
@@ -293,8 +293,8 @@
 - [ ] T-mac-30162 [S] Fix: [MED, link correctness] `#pragma weak` ignored → symbol strong, alias dropped — `#pragma weak wsym` leaves wsym STRONG (nm: mcc `D _wsym` vs clang/gcc `weak external`); `#pragma weak alias = target` dropped entirely (no alias symbol). No handler in pragma_parse (`mccpp.c:2807`). Dup-symbol link errors / missing weak-override. Clusters w/ T-mac-30135 weak/weakref attr. Fix: weak pragma handler marking the sym weak (reuse a.weak) + weak-alias to target.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-weak | DEPS: —
-- [ ] T-mac-30163 [S] Fix: [MED, content loss] `#pragma message` truncates adjacent string concat + wrong macro-_Pragma location — `#pragma message("a " "b")` prints only `a ` (handler `mccpp.c:2693-2716` reads a single TOK_STR at `:2700`, no concat); same for `_Pragma(message("x " y))` from a macro. Also macro-built _Pragma reports file `:pragma:` (`mcc_open_bf :5531`) not the real location. Fix: concatenate adjacent literals in the message operand; propagate real source location for macro _Pragma.
-      OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
+- [ ] T-mac-30163 [S] Fix: [MED, content loss] `#pragma message` — SLICE DONE (concat, 34f94b5e): the handler (mccpp.c:2736) now loops over adjacent `TOK_STR` tokens into a CString before emitting the note, so `#pragma message("a " "b")` prints `a b` (was `a `). Census-neutral (same 2 fprintf sites, fmt/census-oracle green), o0-neutral (diagnostic-only), TDD cli/pragma_message_concat, anti-vacuity verified. TTL-resumable. RESIDUAL: macro-built `_Pragma(message("x " y))` still reports the synthetic `:pragma:` location (`mcc_open_bf` ~mccpp.c:5531) rather than the real source location — needs location propagation through the _Pragma destringize path.
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 34f94b5e | TS: 2026-08-19T00:33Z
       REF: INVESTIGATIONS.md#r27-pragma-message | DEPS: —
 - [ ] T-mac-30164 [S] Fix: [MED] `#pragma GCC visibility push/pop` unsupported (ELF+Mach-O) — no handler (`mccpp.c:2807`); `#pragma GCC visibility push(hidden)`...`pop` leaves syms DEFAULT on ELF (cross symtab: p_hidden→DEFAULT, should be HIDDEN) and (compounded by T-mac-30157) no effect on Mach-O. `-fvisibility=` command-line IS honored on ELF. Fix: visibility push/pop stack feeding the same a.visibility path the attribute uses. DEP: benefits from T-mac-30157 for Mach-O.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
