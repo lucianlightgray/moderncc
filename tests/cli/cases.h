@@ -542,6 +542,16 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} {W}/f16b.c -o {W}/f16b.exe 2>{W}/f16b.err; {W}/f16b.exe; printf 'r=%s\\n' $?",
 		 "r=7\n"},
 
+		{"knr_char_param_promotion", "",
+		 "printf 'int f(a) char a;{return a;} int f(char a);\\n' > {W}/kd.c && "
+		 "printf 'int h(a) char a;{return a+1;} int main(void){ return h(200)==-55 ? 7 : 0; }\\n' > {W}/kb.c && "
+		 "printf 'int g(char a); int g(a) char a;{return a+1;} int use(void){return g(1);}\\n' > {W}/kp.c && "
+		 "{MCC} -B{B} -c {W}/kd.c -o {W}/kd.o 2>{W}/kd.e; rej=$?; "
+		 "{MCC} -B{B} {W}/kb.c -o {W}/kb.exe 2>{W}/kb.e; {W}/kb.exe; body=$?; "
+		 "{MCC} -B{B} -c {W}/kp.c -o {W}/kp.o 2>{W}/kp.e; pf=$?; "
+		 "printf 'reject=%s body=%s protofirst=%s\\n' $rej $body $pf",
+		 "reject=1 body=7 protofirst=0\n"},
+
 		{"preprocess_C_keeps_comments", "",
 		 "printf '#define M 1 /* DIRCMT */\\nint aa; /* BLOCKCMT */ int bb; // LINECMT\\nint cc = M;\\n' > {W}/kc.c && "
 		 "{MCC} -B{B} -E -C {W}/kc.c > {W}/kcC.out 2>{W}/kc.e1 && "

@@ -317,6 +317,7 @@ struct SymAttr {
 			warn_unused_result : 1,
 			sentinel_attr : 1,
 			nonnull_all : 1,
+			old_promote : 1,
 			nonnull_mask : 16;
 };
 

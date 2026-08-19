@@ -4433,9 +4433,17 @@ static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n")
 							break; } }
 			} else { MCC_TRACE("br\n");
 				for (op = old->next, pp = proto->next; op && pp; op = op->next, pp = pp->next) { MCC_TRACE("br\n");
-					if (type_needs_default_promotion(&op->type))
-						{ MCC_TRACE("br\n"); mcc_pedantic("prototype does not match promoted "
+					if (type_needs_default_promotion(&op->type)) { MCC_TRACE("br\n");
+						if (op->a.old_promote) { MCC_TRACE("br\n");
+							CType prom;
+							prom.t = VT_INT;
+							prom.ref = NULL;
+							if (!is_compatible_param(&prom, &pp->type))
+								{ MCC_TRACE("br\n"); return 0; }
+						} else
+							{ MCC_TRACE("br\n"); mcc_pedantic("prototype does not match promoted "
 																"parameter types of prior old-style definition"); }
+					}
 					else if (!is_compatible_param(&op->type, &pp->type))
 						{ MCC_TRACE("br\n"); return 0; }
 				}
@@ -19490,6 +19498,10 @@ static int decl(int l) {
 						}
 						if (sa->type.t == VT_FLOAT)
 							{ MCC_TRACE("br\n"); sa->type.t = VT_DOUBLE; }
+						else if ((sa->type.t & VT_BTYPE) == VT_BYTE ||
+										 (sa->type.t & VT_BTYPE) == VT_BOOL ||
+										 (sa->type.t & VT_BTYPE) == VT_SHORT)
+							{ MCC_TRACE("br\n"); sa->a.old_promote = 1; }
 					}
 				}
 
