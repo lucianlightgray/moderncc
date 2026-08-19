@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30253   | 2026-08-19T10:33Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10412   | 2026-08-19T03:12Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10412   | 2026-08-19T10:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50033   | 2026-08-19T01:45Z |
 
 ## Contracts — blocking, highest priority
@@ -126,6 +126,9 @@
 
 ## Open — claimable
 
+- [ ] T-lin-10001 [C] Build the single-threaded `<threads.h>` backend for the task-representation/resume-state model (Q-lin-10411 ANSWER: build now, no eager cheat). All prior slices DONE+green (1/2/3a/3b at 1dc90229 + slice-4 lock-narrowing at a152b175); the backend is the sole remaining slice and IS in `[C]` scope. Correct yielding at every C11 blocking point (`cnd_wait`/contended `mtx_lock`/`thrd_join`/barrier) via stackful coroutines (ucontext/per-target asm across x86_64/arm64/riscv64/PE) or whole-program CPS — a large, target-coupled feature. NO existing gate: implementer AUTHORS the smoke test first (genuine worker→creator back-dependency the eager run-to-completion shortcut deadlocks on). Best owned by lin (originating session), but claimable by any session that can build+run the yielding backend on its target.
+      OWNER: — | STATE: OPEN | SHA: a152b175 | TS: 2026-08-19T10:40Z
+      REF: DETAILS.md#q-lin-10411-answer-build-threads-h-backend | DEPS: —
 - [ ] T-lin-10410 [S] Deep `mcc --jit` INLINE of the CPU<->GPU transaction into JIT-generated function bodies (follow-up to T-lin-10405, whose Phase A/B/C + demonstrable accumulator milestone is DONE e6a5b930). Goal: arbitrary JIT'd C programs delegate frame-equivalence-certified statement slices to the GPU inline (not just the harness-driven accumulator). BLOCKERS (grounded, from the Phase-C agent): (a) gaps 2-3 — mccslice.h's kernel builder needs the GPU EMITTER but mccast.c/libmcc.c configure mccgpu.h with MCC_GPU_ORACLE not MCC_GPU_EMITTER → reconcile the macro configs across TUs; (b) gaps 4-6 — mccjit_slice_search is expression-only; a GPU-dispatching path needs a trampoline capturing the built MccSliceFrame/MccSliceKernel (no C closures) + the whole-body BasicBlock from the serialized MccjitIntent; (c) known-positive must perturb a TOP-LEVEL live-out store (loop-carried slots are register-promoted → frame-store mutation is a device no-op). Deep JIT codegen; verify on a GPU (RTX 5070 Ti here) with parity + GPU-taken + mutation.
       OWNER: — | STATE: OPEN | SHA: e6a5b930 | TS: 2026-08-19T02:45Z
       REF: DETAILS.md#t-lin-10405-phase-c-milestone-done | DEPS: —
@@ -747,9 +750,7 @@
 
 ## Blocked — awaiting QUESTIONS.md
 
-- [ ] T-lin-10001 [C] A task representation with an explicit resume state, replacing the C11 threading implementation — all implementation slices DONE+green (1/2/3a/3b at 1dc90229 + slice-4 mccjit_swap_lock narrowing at a152b175: peak workers 1→4, ~1.7× wall, deterministic known-positive jit/selftest-shutdown-swap-wide, zero o0 drift). ONLY the `<threads.h>` single-threaded backend remains — a large coroutine/CPS feature (threads.h is 100% pthread-coupled; correct yielding at C11 blocking points needs ucontext/asm stack-switch or whole-program CPS), a `[C]` with NO dependents and NO gate to watch it → want-blocked, not schedule-blocked.
-      OWNER: — | STATE: BLOCKED | SHA: a152b175 | TS: 2026-08-19T02:55Z
-      REF: DETAILS.md#t-lin-10001-slice-4-and-backend-spike | DEPS: — | BLOCKS-ON: Q-lin-10411 (build the backend now / defer / drop from [C] scope?)
+_Empty — T-lin-10001 unblocked by Q-lin-10411 ANSWER (build the backend now; SHA 5cb9e337) and re-OPENed to the Open zone 2026-08-19T10:40Z._
 
 
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
