@@ -5866,9 +5866,9 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 		cstr_printf(cs, "#define __MCC_MINOR__ %d\n", _min);
 		cstr_printf(cs, "#define __TINYC__ %d\n", _maj);
 	}
-	cstr_printf(cs, "#define __GNUC__ 4\n");
-	cstr_printf(cs, "#define __GNUC_MINOR__ 2\n");
-	cstr_printf(cs, "#define __GNUC_PATCHLEVEL__ 1\n");
+	cstr_printf(cs, "#define __GNUC__ %d\n", MCC_GNUC_MAJOR);
+	cstr_printf(cs, "#define __GNUC_MINOR__ %d\n", MCC_GNUC_MINOR);
+	cstr_printf(cs, "#define __GNUC_PATCHLEVEL__ %d\n", MCC_GNUC_PATCHLEVEL);
 	if (gnu89_inline_semantics(s1))
 		{ MCC_TRACE("br\n"); putdef(cs, "__GNUC_GNU_INLINE__"); }
 	else

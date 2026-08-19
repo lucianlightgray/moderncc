@@ -3403,7 +3403,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			printf("%s\n", dumpmachine_str);
 			exit(0);
 		case MCC_OPTION_dumpversion:
-			printf("%d.%d\n", MCC_VERSION_MAJOR, MCC_VERSION_MINOR);
+			/* Report the emulated GCC version (matches the __GNUC__* predefines),
+			 * not the date-based MCC_VERSION which breaks CMake/autoconf probes. */
+			printf("%d.%d.%d\n", MCC_GNUC_MAJOR, MCC_GNUC_MINOR, MCC_GNUC_PATCHLEVEL);
 			exit(0);
 
 		case MCC_OPTION_x:

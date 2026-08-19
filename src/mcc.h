@@ -18,6 +18,13 @@
 #define MCC_VERSION_MAJOR ((int)((MCC_VERSION) / 1000000))
 #define MCC_VERSION_MINOR ((int)((MCC_VERSION) % 1000000))
 
+/* GCC version mcc emulates: reported by -dumpversion (so build systems that
+ * parse it get a sane, gcc-compatible version, not the date-based MCC_VERSION)
+ * and by the __GNUC__/__GNUC_MINOR__/__GNUC_PATCHLEVEL__ predefines. */
+#define MCC_GNUC_MAJOR 4
+#define MCC_GNUC_MINOR 2
+#define MCC_GNUC_PATCHLEVEL 1
+
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>

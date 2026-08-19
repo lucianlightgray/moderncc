@@ -716,8 +716,8 @@ static const cli_case_t cli_cases[] = {
 		 "TRIPLE_OK\n"},
 
 		{"dumpversion_format", "",
-		 "{MCC} -dumpversion | grep -cE '^[0-9]+\\.[0-9]+'",
-		 "1\n"},
+		 "{MCC} -dumpversion | grep -qE '^[0-9]{1,3}\\.[0-9]+\\.[0-9]+$' && echo VER_OK",
+		 "VER_OK\n"},
 
 		{"inline_main_diag", "",
 		 "printf 'inline int main(void){return 0;}\\n' > {W}/im.c && "
