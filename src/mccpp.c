@@ -5659,6 +5659,8 @@ static void pragma_operator(void) { MCC_TRACE("enter\n");
 	const int *saved_macro_ptr;
 	char *content;
 	int n;
+	const char *pragma_file;
+	int pragma_line;
 
 	next();
 	if (tok != '(')
@@ -5678,7 +5680,13 @@ static void pragma_operator(void) { MCC_TRACE("enter\n");
 	next();
 
 	saved_macro_ptr = macro_ptr;
-	mcc_open_bf(s1, ":pragma:", n + 1);
+	/* T-mac-30163: report the real source location of a macro-built _Pragma
+	 * (e.g. #pragma message), not the synthetic ":pragma:" buffer name.
+	 * mcc_open_bf pstrcpy's the name, so passing the real filename is safe. */
+	pragma_file = file->filename;
+	pragma_line = file->line_num;
+	mcc_open_bf(s1, pragma_file, n + 1);
+	file->line_num = pragma_line;
 	memcpy(file->buffer, content, n + 1);
 	macro_ptr = NULL;
 	pragma_parse(s1);
