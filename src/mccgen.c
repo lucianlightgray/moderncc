@@ -10852,6 +10852,7 @@ static void gen_atomic_cas_rmw(int op, int ret_new) { MCC_TRACE("enter\n");
 
 	vset(&pt, VT_LOCAL | VT_LVAL, s_pa);
 	indir();
+	vtop->type.t &= ~VT_ATOMIC_BIT;
 	vset(&at, VT_LOCAL | VT_LVAL, s_vo);
 	vswap();
 	vstore();
@@ -10911,7 +10912,7 @@ static int atomic_store_needs_libcall(SValue *sv) { MCC_TRACE("enter\n");
 	if (bt == VT_STRUCT || is_float(sv->type.t))
 		{ MCC_TRACE("br\n"); return 0; }
 	size = type_size(&sv->type, &align);
-	if (size <= MCC_PTR_SIZE || size > 8 || (size & (size - 1)))
+	if (size < 1 || size > 8 || (size & (size - 1)))
 		{ MCC_TRACE("br\n"); return 0; }
 	return size;
 }
@@ -13557,7 +13558,8 @@ tok_next:
 		}
 		break;
 
-	case TOK_builtin_expect:
+	case TOK_builtin_expect: {
+		CType lt;
 		next();
 		skip('(');
 		expr_eq();
@@ -13567,7 +13569,11 @@ tok_next:
 		vpop();
 		nocode_wanted--;
 		skip(')');
+		lt.t = (LONG_SIZE == 8) ? (VT_LLONG | VT_LONG) : (VT_INT | VT_LONG);
+		lt.ref = NULL;
+		gen_cast(&lt);
 		break;
+	}
 	case TOK_builtin_assume:
 		next();
 		skip('(');

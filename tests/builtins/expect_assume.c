@@ -1,13 +1,15 @@
-/* T-mac-30125: __builtin_assume is a real intrinsic (typechecks its unevaluated
- * operand); __builtin_expect/unreachable/trap/assume statements don't trip
- * -Wunused-value; __builtin_expect preserves its operand's value.
- * (The __builtin_expect result-TYPE-is-long fix is split to T-mac-30131 — it
- * shifts the o0-baseline bank for codeopt.c and needs a fleet re-bank.) */
+/* T-mac-30125/30131: __builtin_expect result type is `long` (sizeof/_Generic),
+ * value preserved; __builtin_expect/unreachable/trap/assume statements don't trip
+ * -Wunused-value; __builtin_assume is a real intrinsic (typechecks its
+ * unevaluated operand). (T-mac-30131 landed the result-TYPE-is-long fix with the
+ * fleet o0-baseline re-bank for codeopt.c.) */
 #include <stdio.h>
 static int calls = 0;
 static int se(void) { calls++; return 1; }
 int main(void) {
 	int fails = 0;
+	if (sizeof(__builtin_expect((char)1, 0)) != sizeof(long)) fails++;
+	if (_Generic(__builtin_expect(1, 0), long: 1, int: 2, default: 0) != 1) fails++;
 	if ((int)__builtin_expect(7, 0) != 7) fails++;
 	__builtin_assume(se() > 0);           /* operand unevaluated */
 	if (calls != 0) fails++;
