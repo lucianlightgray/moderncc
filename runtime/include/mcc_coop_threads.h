@@ -175,6 +175,57 @@ static void *__mcc_ctx_make(void *__base, unsigned long __size, void (*__entry)(
 	return CreateFiber((unsigned long long)__size, __mcc_fiber_proc, (void *)__entry);
 }
 
+#elif defined(__aarch64__)
+
+#ifdef __APPLE__
+#define __MCC_CTX_SWAP_SYM "___mcc_ctx_swap"
+#else
+#define __MCC_CTX_SWAP_SYM "__mcc_ctx_swap"
+#endif
+
+__asm__(
+	".text\n"
+	".p2align 2\n"
+	".globl " __MCC_CTX_SWAP_SYM "\n"
+	__MCC_CTX_SWAP_SYM ":\n"
+	"	stp x19, x20, [sp, #-160]!\n"
+	"	stp x21, x22, [sp, #16]\n"
+	"	stp x23, x24, [sp, #32]\n"
+	"	stp x25, x26, [sp, #48]\n"
+	"	stp x27, x28, [sp, #64]\n"
+	"	stp x29, x30, [sp, #80]\n"
+	"	stp d8,  d9,  [sp, #96]\n"
+	"	stp d10, d11, [sp, #112]\n"
+	"	stp d12, d13, [sp, #128]\n"
+	"	stp d14, d15, [sp, #144]\n"
+	"	mov x2, sp\n"
+	"	str x2, [x0]\n"
+	"	mov sp, x1\n"
+	"	ldp x19, x20, [sp]\n"
+	"	ldp x21, x22, [sp, #16]\n"
+	"	ldp x23, x24, [sp, #32]\n"
+	"	ldp x25, x26, [sp, #48]\n"
+	"	ldp x27, x28, [sp, #64]\n"
+	"	ldp x29, x30, [sp, #80]\n"
+	"	ldp d8,  d9,  [sp, #96]\n"
+	"	ldp d10, d11, [sp, #112]\n"
+	"	ldp d12, d13, [sp, #128]\n"
+	"	ldp d14, d15, [sp, #144]\n"
+	"	add sp, sp, #160\n"
+	"	ret\n"
+);
+
+extern void __mcc_ctx_swap(void **__save_sp, void *__to_sp);
+
+static void *__mcc_ctx_make(void *__base, unsigned long __size, void (*__entry)(void)) {
+	uintptr_t __top = ((uintptr_t)__base + __size) & ~(uintptr_t)15;
+	void **__sp = (void **)(__top - 160);
+	for (int __i = 0; __i < 20; __i++)
+		__sp[__i] = (void *)0;
+	__sp[11] = (void *)__entry;
+	return (void *)__sp;
+}
+
 #else
 #error "mcc_coop_threads.h: no __mcc_ctx_swap/__mcc_ctx_make backend for this target -- add the per-target [X] context switch (T-lin-10001 [C] core; arm64/win/riscv64 owned by mac/win)."
 #endif
