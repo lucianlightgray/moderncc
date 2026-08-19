@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T16:37Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30256   | 2026-08-19T16:46Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10413   | 2026-08-19T16:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T16:35Z |
 
@@ -408,9 +408,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-mac-30086 [S] Fix: [MED→HIGH] `__LDBL_*` predefines report `double` precision on quad-`long double` targets — on Linux-arm64/riscv64 `long double` IS IEEE quad in `float.h` (`:127-147`, MANT_DIG 113) and codegen (`arm64-gen.c:1958-1968`, `riscv64-gen.c:430,741`, LDOUBLE_SIZE 16) but `mccdefs.h:308-318` maps `__LDBL_MANT_DIG__`→53/`__LDBL_MAX__`→1.79e308 → `_Static_assert(LDBL_MANT_DIG==__LDBL_MANT_DIG__)` fails, tgmath misroutes; PLUS mccdefs-internal contradiction: `__LDBL_MIN__`=e-4932 (`:502-508`) vs `__LDBL_MAX__`=e+308. Distinct from Apple/Win SIZE issue T-mac-30029. Fix: add arm64/riscv64 (non-Apple/non-Win) quad branch to mccdefs `#else`. Verify on Linux-arm64/riscv64 (qemu).
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-ldbl-macros | DEPS: —
-- [ ] T-mac-30087 [S] Fix: [MED] `__WINT_MAX__`/`__WINT_MIN__` hardcoded unsigned but `__WINT_TYPE__` signed `int` on macOS/BSD — `mccdefs.h:48-51` sets signed `int` wint_t on Apple/BSD but `:240-241` unconditionally `__WINT_MAX__ 0xffffffffU`/`__WINT_MIN__ 0U` → `_Static_assert(__WINT_MAX__==2147483647)` fails (gcc/clang macOS), WEOF/`_Generic` mishandled. Distinct from PE-only WINT unsigned-short items (INVESTIGATIONS:134/152). Fix: make MAX/MIN follow `__WINT_TYPE__` signedness.
-      OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
-      REF: INVESTIGATIONS.md#r16-wint-sign | DEPS: —
 - [ ] T-mac-30088 [S] Fix: [MED] riscv64 stores sub-word/int STACK args narrow (SB/SH/SW) leaving the XLEN slot's high bytes undefined — `gfunc_call` aligns slots to XLEN but stores original sub-word type (`riscv64-gen.c:697-710`, `store()` SB/SH/SW `:455-463`); arm64 always STR X (`arm64-gen.c:1316-1319`). `mcc -S` shows `sb a0,0(sp)`. A conformant callee widening from the slot sees garbage. Latent (self-consistent mcc↔mcc, matches upstream TCC). Fix: set stack-arg store type VT_LLONG before `vstore()`. Verify on riscv64 (qemu).
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-riscv-stackslot | DEPS: —
