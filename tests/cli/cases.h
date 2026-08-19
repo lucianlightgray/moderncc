@@ -448,6 +448,12 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'nomg_rc=%s mg_rc=%s dep=%s\\n' $nomg $yes $(grep -Fc 'gen_cfg.h' {W}/mg.yes.mk)",
 		 "nomg_rc=1 mg_rc=0 dep=1\n"},
 
+		{"preprocess_long_warning_not_truncated", "",
+		 "printf '#warning START%01100dEND\\nint a;\\n' 0 > {W}/lw.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/lw.c -o {W}/lw.o 2>{W}/lw.err; "
+		 "printf 'start=%s end=%s\\n' $(grep -Fc 'START' {W}/lw.err) $(grep -Fc 'END' {W}/lw.err)",
+		 "start=1 end=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

@@ -2997,7 +2997,7 @@ static uint16_t cst_pp_dir_kind(int t) { MCC_TRACE("enter\n");
 ST_FUNC void preprocess(int is_bof) { MCC_TRACE("enter\n");
 	MCCState *s1 = mcc_state;
 	int c, n, saved_parse_flags;
-	char buf[1024], *q;
+	char *q;
 	Sym *s;
 	uint32_t cst_pp_first = 0;
 	uint16_t cst_pp_kind = 0;
@@ -3224,18 +3224,19 @@ redo:
 
 	case TOK_ERROR:
 	case TOK_WARNING: {
-		q = buf;
+		CString ecstr;
+		cstr_new(&ecstr);
 		c = skip_spaces();
 		while (c != '\n' && c != CH_EOF) { MCC_TRACE("br\n");
-			if ((q - buf) < sizeof(buf) - 1)
-				{ MCC_TRACE("br\n"); *q++ = c; }
+			cstr_ccat(&ecstr, c);
 			c = ninp();
 		}
-		*q = '\0';
+		cstr_ccat(&ecstr, '\0');
 		if (tok == TOK_ERROR)
-			{ MCC_TRACE("br\n"); mcc_error("#error %s", buf); }
+			{ MCC_TRACE("br\n"); mcc_error("#error %s", (char *)ecstr.data); }
 		else
-			{ MCC_TRACE("br\n"); mcc_warning_c(warn_cpp)("#warning %s", buf); }
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_cpp)("#warning %s", (char *)ecstr.data); }
+		cstr_free(&ecstr);
 		next_nomacro();
 		break;
 	}
