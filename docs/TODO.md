@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T20:32Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T21:55Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10416   | 2026-08-19T21:58Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T22:10Z |
 
 ## Contracts — blocking, highest priority
@@ -54,6 +54,10 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+- [ ] T-lin-10395 [S] Fix: [LOW] unsuffixed decimal in [2^63,2^64) typed `unsigned long` (not in the standard decimal candidate list) — on LP64 mccpp leaves lcount=1 so the token is TOK_CULONG; should be long-long rank (`unsigned long long`, clang/C90 parity, target-uniform; ILP32 already does this). Bump lcount=2 in the decimal >=2^63 branch. o0-neutral (no corpus unsuffixed decimal >=2^63).
+      OWNER: lin-x64 | STATE: CLAIMED | SHA: 41e71bad | TS: 2026-08-19T21:58Z
+      REF: DETAILS.md#t-lin-10395-decimal-ull | DEPS: —
+
 
 - SESSION (lin-x64, 2026-08-19T21:55Z, /goal=execute INSTRUCTIONS until TODO empty): **T-mac-30145 [S] DONE+ARCHIVED** (code 2d95e4b3 / docs 2042e76a) — a `static`/`constexpr` compound literal now requires a constant initializer (gcc parity). One `else if` in the compound-literal arm of `unary()`: `type.t & (VT_STATIC|VT_CONSTEXPR)` → `r=VT_CONST` (constant-init path + static storage duration), so `(static int[]){a}`/`(constexpr int[]){a}` error "initializer element is not constant"; plain CLs untouched. o0-neutral (no corpus uses static/constexpr CLs; o0-baseline plain+gated+KP green). Oracle-verified vs gcc-16; TDD diag/static-constexpr-cl-valid + diag/{static,constexpr}-cl-nonconst-rejected, anti-vacuous. DETAILS#t-mac-30145-static-constexpr-cl.
 
@@ -525,9 +529,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-lin-10396 [S] Investigate (SECURITY, follow-up to T-mac-30023): remaining object-reader bounds — Mach-O dylib exports `iextdef`/`nextdef` unbounded + `nsyms==0` NULL-deref (`mccmacho.c:3296-3308`); DLL export name-count DWORD→int truncation under-alloc then `namep[i]` read (`mccpe.c:1717-1732`); unbounded Mach-O load-command walk `cmdsize==0`→infinite loop (`mccmacho.c:3290`); `load_data` silent short-read → uninitialized parse buffers (`mccelf.c:3370`, broad helper, needs NULL-on-fail signature change)
       OWNER: — | STATE: OPEN | SHA: 77504f52 | TS: 2026-08-17T21:49Z
       REF: DETAILS.md#t-mac-30023-landed-lin-x64 | DEPS: — | NOTE: split from T-mac-30023 (the COFF reloc OOB write + archive nsyms OOB read are DONE + ASan/crash-verified there). Each remaining item needs its own crafted Mach-O/PE-image repro. Verify like T-mac-30023: ASan mcc_s (`-DMCC_BUILD_SANITIZE=ON`, run `-Bcmake-debug`) or cross mcc; extend tests/objsec/reject-malformed.sh.
-- [ ] T-lin-10395 [S] Decimal literal in `[2^63,2^64)` typed `unsigned long` not `unsigned long long` on LP64 (`mccpp.c:3776/3780`) — `_Generic(10000000000000000000,…)` returns default vs gcc/clang's `unsigned long long`; + "integer constant overflow" warning less apt than gcc's "so large that it is unsigned"
-      OWNER: — | STATE: OPEN | SHA: 41e71bad | TS: 2026-08-17T21:25Z
-      REF: DETAILS.md#t-mac-30032-landed-lin-x64 | DEPS: — | NOTE: LOW — split from T-mac-30032 (sub-item 4). CORRECTED after measuring (lin, 2026-08-17): this is a 3-WAY divergence, NOT a simple ul→ull. On LP64 an unsuffixed decimal in [2^63,2^64): gcc → `__int128` (doesn't fit long long, extends to the signed 128-bit type), clang → `unsigned long long`, mcc → `unsigned long` (matches NEITHER; `_Generic` returns default). mcc DOES support `__int128` (VT_INT128, sizeof 16 verified), so a gcc-faithful fix routes the literal to `__int128` — but that's (a) a DESIGN CHOICE (gcc `__int128` vs clang `ull`; mcc emulates gcc/CC_NAME) and (b) non-trivial (the decimal path at mccpp.c:3910-3917 only produces CINT/CLONG/CLLONG from the 64-bit `n`; a 128-bit constant needs the wide carrier). Careful: an explicit `L`/`LL` suffix must NOT be rerouted (gcc gives `L`→`unsigned long`/`__int128`, `LL`→`__int128` per fit), and value is correct today (`%llu` prints right) — only rank/_Generic differs. `__bf16` const path (sub-item 3) was a NON-ISSUE — verified working (DETAILS anchor).
 - [ ] T-mac-30030 [S] Investigate: long-double self-host determinism hole — folding uses HOST long double (`mccgen.c:4019`), mcc's own `parse_number` depends on it (`mccpp.c:3379`), `LDOUBLE_WORDS` host-derived; no gate catches a STABLE stage-0→stage-1 divergence, `selftest.c` has no float coverage; self-host face of T-mac-30029
       OWNER: — | STATE: OPEN | SHA: 8b0abb63 | TS: 2026-08-17T20:40Z
       REF: INVESTIGATIONS.md#longdouble-selfhost-determinism | DEPS: —
