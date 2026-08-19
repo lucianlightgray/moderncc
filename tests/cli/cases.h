@@ -1574,6 +1574,14 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE \"operation on '[sa]' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
 		 "1 CLEAN_OK\n1 operation on 'a' may be undefined\n1 operation on 's' may be undefined\n"},
 
+		{"wsequence_point_interarg", "",
+		 "printf 'void g(int,int);\\nvoid f(int i){ g(i++, i++); }\\n' > {W}/spi.c && "
+		 "printf 'void g(int,int);\\nvoid h(int i,int j){ g(i++, j++); }\\n' > {W}/spj.c && "
+		 "{ {MCC} -B{B} -I{I} -c {W}/spi.c -o {W}/spi.o 2>&1; "
+		 "{MCC} -B{B} -I{I} -c {W}/spj.c -o {W}/spj.o 2>&1 && echo CLEAN_OK; } | "
+		 "grep -oE \"operation on 'i' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
+		 "1 CLEAN_OK\n1 operation on 'i' may be undefined\n"},
+
 		{"jump_constraints", "",
 		 "printf 'void f(void){break;}\\n' > {W}/j1.c && "
 		 "printf 'void f(void){continue;}\\n' > {W}/j2.c && "

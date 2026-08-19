@@ -14761,7 +14761,6 @@ tok_next:
 						pre_seq = rir_cast_seq;
 						gfunc_param_typed(s, sa);
 						rir_hook_call_argcast(pre_seq);
-						seqp_flush();
 					}
 					nb_args++;
 					if (sa)
@@ -14785,10 +14784,15 @@ tok_next:
 					expr_eq();
 					gfunc_param_typed(s, sa);
 					end_macro();
-					seqp_flush();
 				}
 				vrev(n);
 			}
+			/* T-mac-30111(b): the sequence point is after ALL arguments are
+			 * evaluated, not after each one -- flush once here (reached by both the
+			 * forward and reverse arg paths) so an unsequenced modification ACROSS
+			 * arguments (e.g. f(i++, i++)) is diagnosed; arg evaluations are
+			 * unsequenced relative to each other (C11 6.5.2.2p10). */
+			seqp_flush();
 
 			if (fmt_fname && !mcc_state->reverse_funcargs && (s->type.t & VT_BTYPE) != VT_STRUCT) { MCC_TRACE("br\n");
 				int is_scanf, fa, fv, have_spec;
