@@ -55,8 +55,8 @@
   "unary": 16,
   "unary_nested": 848
  },
- "max_parse_depth": 512,
- "need_bytes": 544768,
+ "max_parse_depth": 384,
+ "need_bytes": 413696,
  "per_level_bytes": {
   "alignasnest": 192,
   "asmparen": 480,
