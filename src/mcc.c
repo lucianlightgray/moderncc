@@ -1283,6 +1283,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 	quiet_at = argn;
 	cv[argn] = "-w";
 	cv[argn + 1] = NULL;
+	host_spawn_quiet_stderr = 1;
 	so_stop = 0;
 	host_install_interrupt(so_on_stop);
 	host_setenv("MCC_SEARCH_WORKER", "1");
@@ -1368,6 +1369,7 @@ static int mcc_superopt_perfn(int argc, char **argv, MCCState *s,
 									best_cfg[fi]); }
 	host_setenv("MCC_AST_FN_CONFIG", cfg);
 	cv[quiet_at] = NULL;
+	host_spawn_quiet_stderr = 0;
 	if (so_spawn_must(cv, 300000u, 4) != 0) { MCC_TRACE("br\n");
 		remove(cand);
 		mcc_free(cfg);
@@ -1450,6 +1452,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	quiet_at = argn;
 	cv[argn] = "-w";
 	cv[argn + 1] = NULL;
+	host_spawn_quiet_stderr = 1;
 
 	if (so_jitscore) { MCC_TRACE("br\n");
 		int rn = 0;
@@ -1555,6 +1558,7 @@ static int mcc_superopt_search(int argc, char **argv, MCCState *s,
 	}
 
 	cv[quiet_at] = NULL;
+	host_spawn_quiet_stderr = 0;
 	if (so_eval_capped(cv, cand_tmp, best_gate, best_budget, best_limit) < 0) { MCC_TRACE("br\n");
 		remove(cand_tmp);
 		mcc_free(cv);
@@ -1737,9 +1741,13 @@ redo:
 		if (!s->outfile)
 			{ MCC_TRACE("br\n"); s->outfile = default_outputfile(s, s->files[0]->name); }
 		MCC_TRACE_V(s->verbose, "superopt dispatch %s -> %s\n", s->files[0]->name, s->outfile);
-		if (so(argc0, argv0, s, s->outfile) == 0) { MCC_TRACE("br\n");
-			mcc_delete(s);
-			return 0;
+		{
+			int so_rc = so(argc0, argv0, s, s->outfile);
+			host_spawn_quiet_stderr = 0;
+			if (so_rc == 0) { MCC_TRACE("br\n");
+				mcc_delete(s);
+				return 0;
+			}
 		}
 		s->optimize_search_ticks = 0;
 	}

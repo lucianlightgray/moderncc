@@ -235,6 +235,8 @@ typedef struct HostSpawnOpts {
 
 ST_FUNC int host_spawn_ex(const char *const *argv, const HostSpawnOpts *o);
 
+extern int host_spawn_quiet_stderr;
+
 ST_FUNC MAYBE_UNUSED int host_spawn_timeout(const char *const *cv, unsigned timeout_ms,
 																						const volatile int *stop);
 ST_FUNC MAYBE_UNUSED int host_spawn_retry(const char *const *cv, unsigned timeout_ms,

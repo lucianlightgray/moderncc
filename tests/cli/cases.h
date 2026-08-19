@@ -10,8 +10,8 @@ static const cli_case_t cli_cases[] = {
 		 "XDG_CACHE_HOME={W}/c1 {MCC} -B{B} -I{I} -O1 -c {W}/od.c -o {W}/o1.o 2>{W}/e1.txt; "
 		 "XDG_CACHE_HOME={W}/c4 {MCC} -B{B} -I{I} -O13 -c {W}/od.c -o {W}/o4.o 2>{W}/e4.txt; "
 		 "printf 'O1=%s O4=%s\\n' "
-		 "$(grep -c 'type defaults to int' {W}/e1.txt) "
-		 "$(grep -c 'type defaults to int' {W}/e4.txt)",
+		 "$(grep -c 'type defaults to' {W}/e1.txt) "
+		 "$(grep -c 'type defaults to' {W}/e4.txt)",
 		 "O1=1 O4=1"},
 
 		{"fast_math_implies_no_math_errno", "cpu=x86_64,os=linux",

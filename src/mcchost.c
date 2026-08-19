@@ -851,6 +851,8 @@ typedef struct host_w32_pmc {
 __declspec(dllimport) BOOL WINAPI K32GetProcessMemoryInfo(HANDLE, host_w32_pmc *, DWORD);
 #endif
 
+int host_spawn_quiet_stderr = 0;
+
 ST_FUNC MAYBE_UNUSED int host_spawn_timeout(const char *const *cv, unsigned timeout_ms,
 																						const volatile int *stop) { MCC_TRACE("enter\n");
 #ifdef _WIN32
@@ -891,6 +893,14 @@ ST_FUNC MAYBE_UNUSED int host_spawn_timeout(const char *const *cv, unsigned time
 	if (pid < 0)
 		{ MCC_TRACE("br\n"); return -1; }
 	if (pid == 0) { MCC_TRACE("br\n");
+		if (host_spawn_quiet_stderr) { MCC_TRACE("br\n");
+			int nfd = open("/dev/null", O_WRONLY);
+			if (nfd >= 0) { MCC_TRACE("br\n");
+				dup2(nfd, 2);
+				if (nfd != 2)
+					{ MCC_TRACE("br\n"); close(nfd); }
+			}
+		}
 		execvp(cv[0], (char *const *)cv);
 		_exit(127);
 	}
