@@ -602,6 +602,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/dz4.c -o {W}/dz4.o 2>&1 | grep -oE 'division by zero in constant'; echo CONST_DONE",
 		 "division by zero\ndivision by zero\nCOMPILED\nNOWARN_DONE\nSIZEOF_DONE\ndivision by zero in constant\nCONST_DONE\n"},
 
+	{"hex_escape_no_digits_diag", "",
+		 "printf 'char c[] = \"\\\\x\";\\n' > {W}/hx.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/hx.c -o {W}/hx.o 2>&1 | grep -oE 'used with no following hex digits'; "
+		 "printf 'char d[] = \"\\\\u12\";\\n' > {W}/hu.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/hu.c -o {W}/hu.o 2>&1 | grep -oE 'universal-character-name expected'; "
+		 "printf 'char e[] = \"\\\\x41\";\\nint main(void){return e[0];}\\n' > {W}/hv.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/hv.c -o {W}/hv.o && echo VALID_OK",
+		 "used with no following hex digits\nuniversal-character-name expected\nVALID_OK\n"},
+
 	{"c11_keyword_feature_pedantic", "",
 		 "printf '_Alignas(16) int x;\\nint main(void){return 0;}\\n' > {W}/k1.c && "
 		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/k1.c -o {W}/k1.o 2>&1 | "

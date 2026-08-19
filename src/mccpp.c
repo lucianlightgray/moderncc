@@ -3320,8 +3320,16 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 						{ MCC_TRACE("br\n"); c = c - 'A' + 10; }
 					else if (isnum(c))
 						{ MCC_TRACE("br\n"); c = c - '0'; }
-					else if (i >= 0)
-						{ MCC_TRACE("br\n"); expect("more hex digits in universal-character-name"); }
+					else if (i >= 0) { MCC_TRACE("br\n");
+						/* T-mac-30148(4): `\x` is a hex escape, not a universal
+						 * character name -- give gcc/clang's specific message
+						 * instead of the misleading UCN wording. `\u`/`\U` (is_ucn)
+						 * keep the UCN message. */
+						if (is_ucn)
+							{ MCC_TRACE("br\n"); expect("more hex digits in universal-character-name"); }
+						else
+							{ MCC_TRACE("br\n"); mcc_error("'\\x' used with no following hex digits"); }
+					}
 					else { MCC_TRACE("br\n");
 						if (!is_long && n > 0xFF)
 							{ MCC_TRACE("br\n"); mcc_warning("hex escape sequence out of range"); }
