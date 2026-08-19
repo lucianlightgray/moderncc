@@ -1,7 +1,7 @@
 _Alignas(16) int i1;
 int _Alignas(16) i2;
 void _Alignas(16) * p2;
-_Alignas(16) i3;
+_Alignas(16) int i3;
 int _Alignas(double) i4;
 int _Alignas(int) i5;
 #if 0

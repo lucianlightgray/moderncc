@@ -18995,6 +18995,14 @@ static void auto_type_relink_vm(CType *type, CType *real, int v, int kind) { MCC
 		{ MCC_TRACE("br\n"); sym->type.ref = real->ref; }
 }
 
+static void implicit_int_permerror(const char *msg) { MCC_TRACE("enter\n");
+	if (mcc_state->cversion >= 199901 && !mcc_state->permissive &&
+			(mcc_state->warn_implicit_int & WARN_ON))
+		{ MCC_TRACE("br\n"); mcc_error_noabort("%s", msg); }
+	else
+		{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_int)("%s", msg); }
+}
+
 static int decl(int l) {
 	int v, has_init, r, oldint, gnu_ei, got_decl = 0;
 	CType type, btype;
@@ -19018,7 +19026,7 @@ static int decl(int l) {
 		}
 		if (decl_had_btype) { MCC_TRACE("br\n");
 			if (adbase.implicit_int)
-				{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_int)("type defaults to 'int' in declaration"); }
+				{ MCC_TRACE("br\n"); implicit_int_permerror("type defaults to 'int' in declaration"); }
 		} else { MCC_TRACE("br\n");
 			if (l == VT_JMP) { MCC_TRACE("br\n");
 				mcc_state->warn_pedantic = decl_save_pedantic;
@@ -19107,7 +19115,7 @@ static int decl(int l) {
 			}
 			if ((type.t & VT_BTYPE) == VT_FUNC) { MCC_TRACE("br\n");
 				if (oldint)
-					{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_int)("return type defaults to 'int'"); }
+					{ MCC_TRACE("br\n"); implicit_int_permerror("return type defaults to 'int'"); }
 				if ((type.t & VT_STATIC) && (l != VT_CONST))
 					{ MCC_TRACE("br\n"); mcc_error("function without file scope cannot be static"); }
 				sym = type.ref;
@@ -19131,7 +19139,7 @@ static int decl(int l) {
 					ad.a.weak = 1;
 				}
 			} else if (oldint) { MCC_TRACE("br\n");
-				mcc_warning_c(warn_implicit_int)("type defaults to 'int'");
+				implicit_int_permerror("type defaults to 'int'");
 			}
 
 			if (in_for_init && (type.t & (VT_STATIC | VT_EXTERN | VT_TYPEDEF)))
