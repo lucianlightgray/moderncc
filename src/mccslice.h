@@ -2222,6 +2222,49 @@ static int mcc_slice_run_frame_gpu(MccSliceFrame *f, MccSliceKernel *k,
 	return MCC_TASK_DONE;
 }
 
+static int mcc_slice_frame_certify(MccSliceFrame *f, MccSliceKernel *k,
+																	 const int64_t *tuples, int ntuple) {
+	int64_t *cf, *gf, *crv, *grv;
+	int *cdef;
+	unsigned char *gdef;
+	long n, i;
+	int t, j, ok = 1;
+	if (!f || !k || !k->code.p || !tuples || ntuple < 1 || f->nslot < 1)
+		return 0;
+	n = (long)ntuple * f->nslot;
+	cf = (int64_t *)malloc((size_t)n * sizeof *cf);
+	gf = (int64_t *)malloc((size_t)n * sizeof *gf);
+	crv = (int64_t *)malloc((size_t)ntuple * sizeof *crv);
+	grv = (int64_t *)malloc((size_t)ntuple * sizeof *grv);
+	cdef = (int *)malloc((size_t)ntuple * sizeof *cdef);
+	gdef = (unsigned char *)malloc((size_t)ntuple * sizeof *gdef);
+	if (!cf || !gf || !crv || !grv || !cdef || !gdef) {
+		free(cf); free(gf); free(crv); free(grv); free(cdef); free(gdef);
+		return 0;
+	}
+	for (i = 0; i < n; i++)
+		cf[i] = gf[i] = tuples[i];
+	for (t = 0; t < ntuple; t++)
+		if (mcc_slice_frame_exec_cpu2(f, cf + (long)t * f->nslot, &crv[t],
+																	&cdef[t]) != 1)
+			ok = 0;
+	if (ok && mcc_slice_run_frame_gpu(f, k, gf, ntuple, grv, gdef) != MCC_TASK_DONE)
+		ok = 0;
+	for (t = 0; ok && t < ntuple; t++) {
+		for (j = 0; j < f->nslot; j++)
+			if (cf[(long)t * f->nslot + j] != gf[(long)t * f->nslot + j])
+				ok = 0;
+		if (f->ret != AST_NONE) {
+			if (crv[t] != grv[t])
+				ok = 0;
+			if ((int)gdef[t] != cdef[t])
+				ok = 0;
+		}
+	}
+	free(cf); free(gf); free(crv); free(grv); free(cdef); free(gdef);
+	return ok;
+}
+
 static int mcc_slice_tick_gpu(MccTask *t) {
 	MccSliceWork *w = (MccSliceWork *)t->ctx;
 	return mcc_slice_run_gpu(w, w->kernel, w->budget);

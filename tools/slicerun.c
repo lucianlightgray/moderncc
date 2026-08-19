@@ -2068,6 +2068,140 @@ static void suite_txn(void) {
 	}
 }
 
+static AstLocal jittxn_build_accumulator(AstArena *a) {
+	AstLocal bb = ast_node(a, AST_BasicBlock);
+	AstLocal lp = ast_node(a, AST_If);
+	AstLocal incr = ast_node(a, AST_BasicBlock);
+	AstLocal body = ast_node(a, AST_BasicBlock);
+	AstLocal r = ast_node(a, AST_Return);
+	ast_set_op(a, lp, 3);
+	ast_add_child(a, lp,
+								mk_bin(a, TOK_LT, mk_ref(a, -24, VT_INT),
+											 mk_ref(a, -16, VT_INT), VT_INT));
+	ast_add_child(a, incr,
+								mk_store(a, -24,
+												 mk_bin(a, '+', mk_ref(a, -24, VT_INT),
+																mk_lit(a, 1, VT_INT), VT_INT),
+												 VT_INT));
+	ast_add_child(a, body,
+								mk_store(a, -8,
+												 mk_bin(a, '+', mk_ref(a, -8, VT_INT),
+																mk_ref(a, -24, VT_INT), VT_INT),
+												 VT_INT));
+	ast_add_child(a, lp, incr);
+	ast_add_child(a, lp, body);
+	ast_add_child(a, bb, lp);
+	ast_add_child(a, bb, mk_store(a, -32, mk_ref(a, -8, VT_INT), VT_INT));
+	ast_add_child(a, r, mk_ref(a, -32, VT_INT));
+	ast_add_child(a, bb, r);
+	return bb;
+}
+
+static void suite_jit_txn(void) {
+	static const int64_t AS[] = {0, 1, 7, 100};
+	static const int64_t NS[] = {0, 1, 2, 5, 16};
+	int NA = (int)(sizeof AS / sizeof AS[0]);
+	int NN = (int)(sizeof NS / sizeof NS[0]);
+	int ntuple = NA * NN;
+	AstArena *a;
+	AstLocal bb;
+	MccSliceFrame fr;
+	MccSliceKernel k;
+	int64_t tup[20 * MCC_SLICE_MAXSLOT], gf[20 * MCC_SLICE_MAXSLOT];
+	int64_t grv[20], crv[20];
+	unsigned char gdef[20];
+	int cdef[20];
+	int sa = -1, sn = -1, si = -1, sr = -1, i, t, ia, in, certified, ok_range;
+	long disp_before, disp_mut;
+
+	if (!g_have_device) {
+		if (g_device_required) {
+			fprintf(stderr, "FAIL slicerun: no usable device but a device is required\n");
+			g_failures++;
+		}
+		return;
+	}
+
+	a = ast_arena_new();
+	bb = jittxn_build_accumulator(a);
+
+	CHECK(mcc_slice_frame_from_ast(a, bb, &fr) == 1,
+				"jittxn: the accumulator (bounded for-loop + live-out + return) is frame work");
+	CHECK(fr.nloop == 1, "jittxn: the loop is counted");
+	CHECK(fr.ret != AST_NONE, "jittxn: the trailing return is recorded");
+	for (i = 0; i < fr.nslot; i++) {
+		if (fr.slot[i] == -8) sa = i;
+		if (fr.slot[i] == -16) sn = i;
+		if (fr.slot[i] == -24) si = i;
+		if (fr.slot[i] == -32) sr = i;
+	}
+	CHECK(sa >= 0 && sn >= 0 && si >= 0 && sr >= 0, "jittxn: a/n/i/r slots mapped");
+
+	for (ia = 0; ia < NA; ia++)
+		for (in = 0; in < NN; in++) {
+			int tt = ia * NN + in;
+			for (i = 0; i < fr.nslot; i++)
+				tup[(long)tt * fr.nslot + i] =
+						(i == sa) ? AS[ia] : (i == sn) ? NS[in] : 0;
+		}
+
+	if (mcc_slice_frame_kernel_build(&fr, &k) != 1) {
+		unsupported("frame kernels", "T-lin-10405 accumulator transaction");
+		ast_arena_free(a);
+		return;
+	}
+
+	certified = mcc_slice_frame_certify(&fr, &k, tup, ntuple);
+	CHECK(certified == 1,
+				"jittxn: Phase C -- the accumulator frame is GPU/CPU equivalent over the range");
+
+	if (certified) {
+		for (t = 0; t < (long)ntuple * fr.nslot; t++)
+			gf[t] = tup[t];
+		disp_before = mcc_slice_dispatch_count;
+		CHECK(mcc_slice_run_frame_gpu(&fr, &k, gf, ntuple, grv, gdef) == MCC_TASK_DONE,
+					"jittxn: the certified accumulator is delegated to the device");
+		CHECK(mcc_slice_dispatch_count > disp_before,
+					"jittxn: a GPU dispatch actually happened (GPU-taken)");
+		for (t = 0; t < ntuple; t++)
+			mcc_slice_frame_exec_cpu2(&fr, tup + (long)t * fr.nslot, &crv[t], &cdef[t]);
+		ok_range = 1;
+		for (ia = 0; ia < NA; ia++)
+			for (in = 0; in < NN; in++) {
+				int tt = ia * NN + in;
+				int64_t want = AS[ia] + (NS[in] > 0 ? NS[in] * (NS[in] - 1) / 2 : 0);
+				if (grv[tt] != want || grv[tt] != crv[tt] || gdef[tt] != 1)
+					ok_range = 0;
+			}
+		CHECK(ok_range == 1,
+					"jittxn: the device-returned accumulator equals a+n*(n-1)/2 == CPU over the whole range");
+		fprintf(stderr,
+						"[jit-gpu-txn] accumulator delegated to GPU: f(1,5)=%lld f(100,16)=%lld "
+						"over %d inputs, all bit-identical to CPU (dispatch #%ld)\n",
+						(long long)grv[1 * NN + 3], (long long)grv[3 * NN + 4], ntuple,
+						mcc_slice_dispatch_count);
+	}
+	mcc_slice_kernel_free(&k);
+
+	mcc_slice_set_mutate(1);
+	if (mcc_slice_frame_kernel_build(&fr, &k) == 1) {
+		disp_mut = mcc_slice_dispatch_count;
+		certified = mcc_slice_frame_certify(&fr, &k, tup, ntuple);
+		CHECK(mcc_slice_dispatch_count > disp_mut,
+					"jittxn: the mutated kernel still dispatched to the device (non-vacuity)");
+		CHECK(certified == 0,
+					"jittxn: known-positive -- a mutated device kernel FAILS Phase C parity, so the gate keeps it on the CPU");
+		fprintf(stderr,
+						"[jit-gpu-txn] mutated kernel dispatched (#%ld) but diverged from CPU -> "
+						"Phase C refused; delegation withheld\n",
+						mcc_slice_dispatch_count);
+		mcc_slice_kernel_free(&k);
+	}
+	mcc_slice_set_mutate(0);
+
+	ast_arena_free(a);
+}
+
 static void suite_frame(void) {
 	AstArena *a;
 	MccSliceFrame fr;
@@ -10365,7 +10499,8 @@ static int slicerun_main(int argc, char **argv) {
 				"task",  "work",   "cpu",	 "gpu",		"bytes",	"wide64",
 				"f64",	 "ops",		"frame", "mem",		"deref",	"fmt",
 				"fault", "sched",	"ext",	 "rwstore", "arrow",	"effect",
-				"hostimport", "thread", "lost", "quiesce", "f64cross", "route", "txn"};
+				"hostimport", "thread", "lost", "quiesce", "f64cross", "route", "txn",
+				"jittxn"};
 		size_t si;
 		int known = 0;
 		for (si = 0; si < sizeof SUITES / sizeof SUITES[0]; si++)
@@ -10403,6 +10538,8 @@ static int slicerun_main(int argc, char **argv) {
 		suite_ops();
 	if (!only || !strcmp(only, "txn"))
 		suite_txn();
+	if (only && !strcmp(only, "jittxn"))
+		suite_jit_txn();
 	if (!only || !strcmp(only, "frame"))
 		suite_frame();
 	if (!only || !strcmp(only, "mem"))
@@ -10447,6 +10584,7 @@ static int slicerun_main(int argc, char **argv) {
 			 !strcmp(only, "mem") || !strcmp(only, "deref") ||
 			 !strcmp(only, "ext") || !strcmp(only, "arrow") ||
 			 !strcmp(only, "f64") || !strcmp(only, "fmt") ||
+			 !strcmp(only, "jittxn") ||
 			 !strcmp(only, "hostimport")) &&
 			!g_have_device) {
 		fprintf(stderr, "SKIP: slicerun %s is a device differential and no usable "

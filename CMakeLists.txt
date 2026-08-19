@@ -3964,6 +3964,20 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("slice/txn" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 PASS_REGULAR_EXPRESSION "gpu-txn.*cpu consumed c=17 a=170")
+            # T-lin-10405 Phase C/D: the frame-equivalence-gated accumulator
+            # transaction. The bounded-loop accumulator frame is certified
+            # GPU==CPU over an input range (Phase C), delegated to the device
+            # and its returned value consumed (Phase D, GPU-taken + parity), and
+            # a mcc_slice_set_mutate known-positive proves the gate is live: a
+            # perturbed device kernel still dispatches but is refused certification.
+            set(_jittxn_args jittxn)
+            if(MCC_GPU_REQUIRED)
+                list(APPEND _jittxn_args --require-device)
+            endif()
+            add_test(NAME "slice/jit-txn" COMMAND slicerun ${_jittxn_args})
+            set_tests_properties("slice/jit-txn" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                PASS_REGULAR_EXPRESSION "accumulator delegated to GPU.*bit-identical to CPU")
             add_test(NAME "slice/effect-known-positive"
                 COMMAND "${CMAKE_COMMAND}"
                         -DRUNNER=$<TARGET_FILE:slicerun>
