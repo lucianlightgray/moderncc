@@ -15183,18 +15183,32 @@ static void init_prec(void) { MCC_TRACE("enter\n");
 
 static void expr_landor(int op);
 
+static int expr_top_op;
+
 static void expr_infix(int p) { MCC_TRACE("enter\n");
 	int t = tok, p2;
+	expr_top_op = 0;
 	while ((p2 = precedence(t)) >= p) { MCC_TRACE("br\n");
 		wur_call_name = 0;
 		if (t == TOK_LOR || t == TOK_LAND) { MCC_TRACE("br\n");
 			expr_landor(t);
+			expr_top_op = t;
 		} else { MCC_TRACE("br\n");
+			int left_op = expr_top_op, right_op, lp, rp;
 			next();
 			unary();
+			expr_top_op = 0;
 			if (precedence(tok) > p2)
 				{ MCC_TRACE("br\n"); expr_infix(p2 + 1); }
+			right_op = expr_top_op;
+			lp = precedence(left_op);
+			rp = precedence(right_op);
+			if ((t == '&' || t == '|' || t == '^') && (mcc_state->warn_parentheses & WARN_ON) &&
+					((lp == 6 || lp == 7) || (rp == 6 || rp == 7))) { MCC_TRACE("br\n");
+				mcc_warning_c(warn_parentheses)(
+						"suggest parentheses around comparison in operand of '%c'", t); }
 			gen_op(t);
+			expr_top_op = t;
 		}
 		t = tok;
 	}

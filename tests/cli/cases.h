@@ -2343,6 +2343,15 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE \"expects argument of type 'long long'|expects argument of type 'int'|CLEAN_OK|SILENT_DEFAULT\" | LC_ALL=C sort | uniq -c | sed 's/^ *//'",
 		 "1 CLEAN_OK\n1 SILENT_DEFAULT\n1 expects argument of type 'int'\n1 expects argument of type 'long long'\n"},
 
+		{"wparentheses_bitwise_vs_comparison", "",
+		 "printf 'int f(int a,int b,int c){ return (a & b==c) + (a==b & c); }\\n' > {W}/wpp_bad.c && "
+		 "printf 'int g(int a,int b,int c){ return ((a&b)==c) + (a & (b==c)); }\\n' > {W}/wpp_ok.c && "
+		 "{ {MCC} -B{B} -I{I} -Wparentheses -c {W}/wpp_bad.c -o /dev/null 2>&1; "
+		 "{MCC} -B{B} -I{I} -Wparentheses -Werror -c {W}/wpp_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; "
+		 "{MCC} -B{B} -I{I} -c {W}/wpp_bad.c -o /dev/null 2>&1 && echo SILENT_DEFAULT; } | "
+		 "grep -oE \"operand of '&'|CLEAN_OK|SILENT_DEFAULT\" | LC_ALL=C sort | uniq -c | sed 's/^ *//'",
+		 "1 CLEAN_OK\n1 SILENT_DEFAULT\n2 operand of '&'\n"},
+
 		{"wpedantic_alias", "",
 		 "printf 'int x = 0o5;\\nint main(void){return x;}\\n' > {W}/wp.c && "
 		 "{ {MCC} -B{B} -I{I} -Wpedantic -c {W}/wp.c -o /dev/null 2>&1; "
