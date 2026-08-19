@@ -444,7 +444,7 @@ static void pop_section(MCCState *s1) { MCC_TRACE("enter\n");
 }
 
 static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n");
-	int n, offset, v, size, tok1, c;
+	int n, offset, v, size, tok1, c, is_align, maxskip;
 	Section *sec;
 	uint8_t *ptr;
 
@@ -457,6 +457,9 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 	case TOK_ASMDIR_space:
 	case TOK_ASMDIR_zero:
 		tok1 = tok;
+		is_align = (tok1 == TOK_ASMDIR_align || tok1 == TOK_ASMDIR_balign ||
+								tok1 == TOK_ASMDIR_p2align);
+		maxskip = -1;
 		next();
 		n = asm_int_expr(s1);
 #ifdef MCC_TARGET_ARM64
@@ -485,8 +488,18 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		v = 0;
 		if (tok == ',') { MCC_TRACE("br\n");
 			next();
-			v = asm_int_expr(s1), c = 0;
+			if (is_align && tok == ',') { MCC_TRACE("br\n");
+				/* .p2align exp,,max_skip -- fill argument omitted */
+			} else { MCC_TRACE("br\n");
+				v = asm_int_expr(s1), c = 0;
+			}
+			if (is_align && tok == ',') { MCC_TRACE("br\n");
+				next();
+				maxskip = asm_int_expr(s1);
+			}
 		}
+		if (is_align && maxskip >= 0 && size > maxskip)
+			{ MCC_TRACE("br\n"); size = 0; }
 	zero_pad:
 		if ((uint64_t)ind + size >= 1 << 30)
 			{ MCC_TRACE("br\n"); mcc_error("too much data"); }
