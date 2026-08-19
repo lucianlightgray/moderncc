@@ -13527,9 +13527,8 @@ tok_next:
 			}
 		} else if (tok == '{') { MCC_TRACE("br\n");
 			int saved_nocode_wanted = nocode_wanted;
+			int want_const = CONST_WANTED && !NOEVAL_WANTED;
 			mcc_pedantic("ISO C forbids braced-groups within expressions");
-			if (CONST_WANTED && !NOEVAL_WANTED)
-				{ MCC_TRACE("br\n"); expect("constant"); }
 			if (0 == local_scope)
 				{ MCC_TRACE("br\n"); mcc_error("statement expression outside of function"); }
 			save_regs(0);
@@ -13538,6 +13537,8 @@ tok_next:
 			if (saved_nocode_wanted)
 				{ MCC_TRACE("br\n"); nocode_wanted = saved_nocode_wanted; }
 			skip(')');
+			if (want_const && (vtop->r & (VT_VALMASK | VT_LVAL)) != VT_CONST)
+				{ MCC_TRACE("br\n"); mcc_error("initializer element is not constant"); }
 		} else { MCC_TRACE("br\n");
 			gexpr();
 			skip(')');

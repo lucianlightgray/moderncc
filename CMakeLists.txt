@@ -5092,6 +5092,23 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/wswitch-case-valid" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30138: a block-scope `static` initialized by a constant-valued
+        # statement expression (`static int s = ({7;});`) was rejected outright;
+        # gcc/clang fold it. Accept it when the stmt-expr's result is a constant
+        # (integer or address); a non-constant stmt-expr still errors.
+        add_test(NAME "diag/static-stmtexpr-const-valid"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/static_stmtexpr_const_valid.c")
+        set_tests_properties("diag/static-stmtexpr-const-valid" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME "diag/static-stmtexpr-nonconst-rejected"
+            COMMAND ${_mcc_exe} -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/static_stmtexpr_nonconst.c"
+                    -o "${CMAKE_BINARY_DIR}/static-stmtexpr-nc.o")
+        set_tests_properties("diag/static-stmtexpr-nonconst-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "initializer element is not constant")
+
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_diag_ok.c")
             add_test(NAME "diag/pragma-diagnostic-suppress"
                 COMMAND ${_mcc_exe} -Wsign-compare -Werror -run
