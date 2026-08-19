@@ -409,6 +409,11 @@
 	#define __builtin_bzero(p, n) __builtin_memset((p), 0, (n))
 # endif
 #endif
+#if defined _WIN32
+	/* The win CRT (msvcrt/ucrt) has no bzero symbol; delegate to memset like
+	 * macOS so __builtin_bzero links (mirrors the T-mac-30171 macOS redirect). */
+	#define __builtin_bzero(p, n) __builtin_memset((p), 0, (n))
+#endif
 	__mcc_float_t __mcc_nansf(const char *);
 	__mcc_double_t __mcc_nans(const char *);
 	__mcc_ldouble_t __mcc_nansl(const char *);
@@ -717,10 +722,10 @@
 	__BUILTIN(int, printf_unlocked, (const char*, ...))
 	__BUILTIN(void, exit, (int))
 	__BUILTIN(void*, memchr, (const void*, int, __SIZE_TYPE__))
-#if defined __APPLE__
-	/* T-mac-30170: macOS libc has no mempcpy symbol, so the __asm__ redirect
-	 * would leave an unresolved reference. Provide it inline (memcpy then
-	 * return dst+n, the GNU semantics). */
+#if defined __APPLE__ || defined _WIN32
+	/* T-mac-30170: macOS libc (and the win msvcrt/ucrt) has no mempcpy symbol,
+	 * so the external redirect would leave an unresolved reference. Provide it
+	 * inline (memcpy then return dst+n, the GNU semantics). */
 	static __inline void *__builtin_mempcpy(void *__d, const void *__s, __SIZE_TYPE__ __n) {
 		__builtin_memcpy(__d, __s, __n);
 		return (char *)__d + __n;
