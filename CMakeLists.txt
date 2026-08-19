@@ -7270,6 +7270,10 @@ if(MCC_BUILD_TESTS)
                 COMMAND jit_selftest_shutdown known-positive)
             set_tests_properties(jit/selftest-shutdown-known-positive PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+            add_test(NAME jit/selftest-shutdown-swap-wide
+                COMMAND jit_selftest_shutdown swap-wide)
+            set_tests_properties(jit/selftest-shutdown-swap-wide PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
 
             add_executable(jit_selftest_patch tests/embed/jit_selftest_patch.c)
             target_link_libraries(jit_selftest_patch PRIVATE libmcc)
@@ -7470,6 +7474,7 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test(jit/selftest-qsbr "${_jitoff_why}")
             mcc_skip_test(jit/selftest-shutdown "${_jitoff_why}")
             mcc_skip_test(jit/selftest-shutdown-known-positive "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-shutdown-swap-wide "${_jitoff_why}")
             mcc_skip_test(jit/selftest-patch "${_jitoff_why}")
             mcc_skip_test(jit/selftest-slice "${_jitoff_why}")
             mcc_skip_test(jit/selftest-sliceextract "${_jitoff_why}")
