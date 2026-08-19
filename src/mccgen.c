@@ -14004,13 +14004,17 @@ tok_next:
 	case TOK_builtin_infl:
 	case TOK_builtin_huge_val:
 	case TOK_builtin_huge_valf:
-	case TOK_builtin_huge_vall: {
+	case TOK_builtin_huge_vall:
+	case TOK_builtin_nanf16:
+	case TOK_builtin_inff16:
+	case TOK_builtin_huge_valf16: {
 		int btok = tok, fbt;
 		unsigned long long bits;
 		CValue cv;
-		int is_nan = (btok == TOK_builtin_nan || btok == TOK_builtin_nanf || btok == TOK_builtin_nanl);
+		int is_nan = (btok == TOK_builtin_nan || btok == TOK_builtin_nanf || btok == TOK_builtin_nanl || btok == TOK_builtin_nanf16);
 		int is_float = (btok == TOK_builtin_nanf || btok == TOK_builtin_inff || btok == TOK_builtin_huge_valf);
 		int is_ld = (btok == TOK_builtin_nanl || btok == TOK_builtin_infl || btok == TOK_builtin_huge_vall);
+		int is_f16 = (btok == TOK_builtin_nanf16 || btok == TOK_builtin_inff16 || btok == TOK_builtin_huge_valf16);
 
 		if (is_nan)
 			{ MCC_TRACE("br\n"); parse_builtin_params(1, "e"); }
@@ -14019,7 +14023,10 @@ tok_next:
 		if (is_nan) { MCC_TRACE("br\n");
 			vtop--;
 		}
-		if (is_float) { MCC_TRACE("br\n");
+		if (is_f16) { MCC_TRACE("br\n");
+			cv.i = is_nan ? 0x7e00 : 0x7c00;
+			fbt = VT_FLOAT16;
+		} else if (is_float) { MCC_TRACE("br\n");
 			union {
 				unsigned u;
 				float f;

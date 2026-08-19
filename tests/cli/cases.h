@@ -537,6 +537,11 @@ static const cli_case_t cli_cases[] = {
 		 "$(grep -F 'command-line' {W}/pp.out | grep -Ec ' 3$')",
 		 "sys=1 usr=0 cmdline=0\n"},
 
+		{"builtin_f16_inf_nan", "cpu=x86_64",
+		 "printf 'int main(void){ _Float16 i=__builtin_inff16(); _Float16 h=__builtin_huge_valf16(); _Float16 n=__builtin_nanf16(\"\"); return ((i==h)&&(i>(_Float16)65000.0f)&&(n!=n))?7:0; }\\n' > {W}/f16b.c && "
+		 "{MCC} -B{B} {W}/f16b.c -o {W}/f16b.exe 2>{W}/f16b.err; {W}/f16b.exe; printf 'r=%s\\n' $?",
+		 "r=7\n"},
+
 		{"preprocess_C_keeps_comments", "",
 		 "printf '#define M 1 /* DIRCMT */\\nint aa; /* BLOCKCMT */ int bb; // LINECMT\\nint cc = M;\\n' > {W}/kc.c && "
 		 "{MCC} -B{B} -E -C {W}/kc.c > {W}/kcC.out 2>{W}/kc.e1 && "
