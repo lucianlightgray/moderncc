@@ -9743,6 +9743,11 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                     "case depends on POSIX device files under /dev")
                 continue()
             endif()
+            if(_n STREQUAL "scalar_storage_order_be" AND MCC_TARGETOS STREQUAL "WIN32")
+                mcc_skip_test(diag.dg-error.${_n}
+                    "no unsupported scalar-float SSO leaf exists on the Windows x64 ABI: long double is 64-bit (== double, swappable) and __float128 is not a target type; the reversed-scalar-leaf refusal is exercised on the SysV x86 (long double) and arm64/riscv64 (__float128) targets")
+                continue()
+            endif()
             add_test(NAME diag.dg-error.${_n} COMMAND "${CMAKE_COMMAND}"
                 "-DMCC=${_mcc_exe}" "-DBDIR=${_bdir}" "-DSRC=${_f}"
                 "-DOUT=${CMAKE_BINARY_DIR}/dgerror_${_n}.o"
