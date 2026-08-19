@@ -5936,7 +5936,11 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 	cstr_printf(cs, "#define __SIZEOF_SIZE_T__ %d\n", MCC_PTR_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_PTRDIFF_T__ %d\n", MCC_PTR_SIZE);
 	cstr_printf(cs, "#define __SIZEOF_WCHAR_T__ %d\n", (int)sizeof(nwchar_t));
+#ifdef MCC_TARGET_PE
+	cstr_printf(cs, "#define __SIZEOF_WINT_T__ 2\n");
+#else
 	cstr_printf(cs, "#define __SIZEOF_WINT_T__ 4\n");
+#endif
 	cstr_printf(cs, "#define __SIZEOF_INT256__ %d\n", MCC_WIDE256_SIZE);
 	/* C23 _BitInt: the widest _BitInt this implementation supports.  Slice 1
 	 * implements N<=64 (single storage integer); slice 2 implements 64<N<=128

@@ -7767,6 +7767,14 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(sizeof-long-double-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
     endif()
 
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/sizeof_wint_t.c")
+        add_test(NAME sizeof-wint-t-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
+            --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
+            --srcs ${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/sizeof_wint_t.c
+            --out ${CMAKE_BINARY_DIR}/sizeof_wint_t${MCC_EXESUF} --emu "${MCC_EMULATOR}")
+        set_tests_properties(sizeof-wint-t-run PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+    endif()
+
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/ld_arith_type.c")
         add_test(NAME ld-arith-type-run COMMAND "$<TARGET_FILE:mccharness>" mccexe
             --mcc ${_mcc_exe} --bdir ${_bdir} --idir ${_idir}
