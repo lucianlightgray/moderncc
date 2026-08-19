@@ -1190,6 +1190,15 @@ ST_FUNC ElfSym *elfsym(Sym *s) { MCC_TRACE("enter\n");
 	return &((ElfSym *)symtab_section->data)[s->c];
 }
 
+static int pragma_weak_has(const char *name) { MCC_TRACE("enter\n");
+	int i;
+	if (!name)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < mcc_state->nb_pragma_weak_syms; i++)
+		{ MCC_TRACE("br\n"); if (0 == strcmp(mcc_state->pragma_weak_syms[i], name)) { MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
 ST_FUNC void update_storage(Sym *sym) { MCC_TRACE("enter\n");
 	ElfSym *esym;
 	int sym_bind, old_sym_bind;
@@ -1205,7 +1214,7 @@ ST_FUNC void update_storage(Sym *sym) { MCC_TRACE("enter\n");
 
 	if (sym->type.t & (VT_STATIC | VT_INLINE))
 		{ MCC_TRACE("br\n"); sym_bind = STB_LOCAL; }
-	else if (sym->a.weak)
+	else if (sym->a.weak || pragma_weak_has(get_tok_str(sym->v, NULL)))
 		{ MCC_TRACE("br\n"); sym_bind = STB_WEAK; }
 	else
 		{ MCC_TRACE("br\n"); sym_bind = STB_GLOBAL; }

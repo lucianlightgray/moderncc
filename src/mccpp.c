@@ -2701,6 +2701,19 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 		pp_debug_tok = t, pp_debug_symv = v;
 	} else if (tok == TOK_once) { MCC_TRACE("br\n");
 		search_cached_include(s1, file->true_filename, 1)->once = 1;
+	} else if (tok == TOK_WEAK1) { MCC_TRACE("br\n");
+		next_nomacro();
+		if (tok >= TOK_IDENT) { MCC_TRACE("br\n");
+			const char *nm = get_tok_str(tok, NULL);
+			int i, dup = 0;
+			for (i = 0; i < s1->nb_pragma_weak_syms; i++)
+				{ MCC_TRACE("br\n"); if (0 == strcmp(s1->pragma_weak_syms[i], nm)) { MCC_TRACE("br\n"); dup = 1; break; } }
+			if (!dup)
+				{ MCC_TRACE("br\n"); dynarray_add(&s1->pragma_weak_syms, &s1->nb_pragma_weak_syms, mcc_strdup(nm)); }
+		}
+		while (tok != TOK_LINEFEED && tok != TOK_EOF)
+			{ MCC_TRACE("br\n"); next_nomacro(); }
+		return 1;
 	} else if (s1->output_type == MCC_OUTPUT_PREPROCESS) { MCC_TRACE("br\n");
 		unget_tok(' ');
 		unget_tok(TOK_PRAGMA);

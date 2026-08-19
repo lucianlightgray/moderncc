@@ -878,6 +878,9 @@ struct MCCState {
 	CachedInclude **cached_includes;
 	int nb_cached_includes;
 
+	char **pragma_weak_syms;
+	int nb_pragma_weak_syms;
+
 	char **embed_paths;
 	int nb_embed_paths;
 
