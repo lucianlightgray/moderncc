@@ -2700,6 +2700,14 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 						{ MCC_TRACE("br\n"); goto pack_set; }
 					next();
 				}
+				if (tok >= TOK_IDENT) { MCC_TRACE("br\n");
+					mcc_warning_c(warn_unknown_pragmas)(
+							"unknown action '%s' for '#pragma pack' - ignored",
+							get_tok_str(tok, &tokc));
+					while (tok != TOK_LINEFEED && tok != TOK_EOF)
+						{ MCC_TRACE("br\n"); next_nomacro(); }
+					return 1;
+				}
 				if (tok != TOK_CINT)
 					{ MCC_TRACE("br\n"); goto pragma_err; }
 				val = tokc.i;
@@ -6155,6 +6163,10 @@ static void tok_print(const int *str, const char *msg, ...) { MCC_TRACE("enter\n
 
 static void pp_line(MCCState *s1, BufferedFile *f, int level) { MCC_TRACE("enter\n");
 	int d = f->line_num - f->line_ref;
+	const char *fn = f->filename;
+
+	if (0 == strcmp(fn, "<command line>"))
+		{ MCC_TRACE("br\n"); fn = "<command-line>"; }
 
 	if (s1->dflag & 4)
 		{ MCC_TRACE("br\n"); return; }
@@ -6165,9 +6177,9 @@ static void pp_line(MCCState *s1, BufferedFile *f, int level) { MCC_TRACE("enter
 		while (d > 0)
 			{ MCC_TRACE("br\n"); fputs("\n", s1->ppfp), --d; }
 	} else if (s1->Pflag == LINE_MACRO_OUTPUT_FORMAT_STD) { MCC_TRACE("br\n");
-		fprintf(s1->ppfp, "#line %d \"%s\"\n", f->line_num, f->filename);
+		fprintf(s1->ppfp, "#line %d \"%s\"\n", f->line_num, fn);
 	} else { MCC_TRACE("br\n");
-		fprintf(s1->ppfp, "# %d \"%s\"%s\n", f->line_num, f->filename,
+		fprintf(s1->ppfp, "# %d \"%s\"%s\n", f->line_num, fn,
 						level > 0
 								? " 1"
 						: level < 0
@@ -6460,7 +6472,7 @@ static void pp_pragma_operator(MCCState *s1, int *ptoken_seen) { MCC_TRACE("ente
 ST_FUNC int mcc_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 	MCC_TRACE("\n");
 	BufferedFile **iptr;
-	int token_seen, spcs, level;
+	int token_seen, spcs, level, cmdline_pending;
 	const char *p;
 	char white[400];
 
@@ -6475,13 +6487,22 @@ ST_FUNC int mcc_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 		return 0;
 	}
 
-	token_seen = TOK_LINEFEED, spcs = 0, level = 0;
+	token_seen = TOK_LINEFEED, spcs = 0, level = 0, cmdline_pending = 0;
 	if (file->prev) { MCC_TRACE("br\n");
 		file->prev->line_num--;
 		pp_line(s1, file->prev, level++);
 		file->prev->line_ref = ++file->prev->line_num;
 	}
-	pp_line(s1, file, level);
+	if (file->prev && s1->Pflag == LINE_MACRO_OUTPUT_FORMAT_GCC &&
+			!(s1->dflag & 4)) { MCC_TRACE("br\n");
+		fprintf(s1->ppfp, "# 0 \"<built-in>\"\n");
+		file->line_num = 0;
+		pp_line(s1, file, 0);
+		file->line_ref = ++file->line_num;
+		cmdline_pending = 1;
+	} else { MCC_TRACE("br\n");
+		pp_line(s1, file, level);
+	}
 
 	for (;;) { MCC_TRACE("br\n");
 		iptr = s1->include_stack_ptr;
@@ -6493,7 +6514,14 @@ ST_FUNC int mcc_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 		if (level) { MCC_TRACE("br\n");
 			if (level > 0)
 				{ MCC_TRACE("br\n"); pp_line(s1, *iptr, 0); }
-			pp_line(s1, file, level);
+			if (level < 0 && cmdline_pending &&
+					s1->include_stack_ptr == s1->include_stack) { MCC_TRACE("br\n");
+				file->line_ref = 0;
+				pp_line(s1, file, 0);
+				cmdline_pending = 0;
+			} else { MCC_TRACE("br\n");
+				pp_line(s1, file, level);
+			}
 		}
 		if (s1->dflag & 7) { MCC_TRACE("br\n");
 			pp_debug_defines(s1);

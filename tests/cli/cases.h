@@ -2255,6 +2255,14 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'frobnicate ignored|OFF_OK|DEFAULT_SILENT' | sort | uniq -c | sed 's/^ *//'",
 		 "1 DEFAULT_SILENT\n1 OFF_OK\n1 frobnicate ignored\n"},
 
+		{"pragma_pack_unknown_action", "",
+		 "printf '#pragma pack(garbage\\nint main(void){return 0;}\\n' > {W}/ppa.c && "
+		 "{ {MCC} -B{B} -I{I} -Wall -c {W}/ppa.c -o /dev/null 2>&1; "
+		 "{MCC} -B{B} -I{I} -Wall -Wno-unknown-pragmas -Werror -c {W}/ppa.c -o /dev/null 2>&1 && echo OFF_OK; "
+		 "{MCC} -B{B} -I{I} -c {W}/ppa.c -o /dev/null 2>&1 && echo DEFAULT_SILENT; } | "
+		 "grep -oE \"unknown action 'garbage' for '#pragma pack' - ignored|OFF_OK|DEFAULT_SILENT\" | sort | uniq -c | sed 's/^ *//'",
+		 "1 DEFAULT_SILENT\n1 OFF_OK\n1 unknown action 'garbage' for '#pragma pack' - ignored\n"},
+
 		{"wimplicit_int_flag", "",
 		 "printf 'foo(void){ return 0; }\\nint main(void){return foo();}\\n' > {W}/ii.c && "
 		 "{ {MCC} -B{B} -I{I} -c {W}/ii.c -o /dev/null 2>&1; "

@@ -7955,6 +7955,21 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(driver/stdin-initial-marker PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT PASS_REGULAR_EXPRESSION "# 0 \"<stdin>\"")
 
+        # T-mac-30227 residual: gcc-matching synthetic preamble markers
+        # # 0 "<built-in>" and # 0 "<command-line>" (hyphen spelling, line 0,
+        # no include-level flag).
+        add_test(NAME driver/stdin-builtin-marker
+            COMMAND sh -c "printf 'int x;\n' | '$<TARGET_FILE:mcc>' -E -")
+        set_tests_properties(driver/stdin-builtin-marker PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT PASS_REGULAR_EXPRESSION "# 0 \"<built-in>\"")
+
+        add_test(NAME driver/stdin-cmdline-marker
+            COMMAND sh -c "printf 'int x;\n' | '$<TARGET_FILE:mcc>' -E -")
+        set_tests_properties(driver/stdin-cmdline-marker PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "# 0 \"<command-line>\""
+            FAIL_REGULAR_EXPRESSION "<command line>\"")
+
         # T-mac-30227 residual regression guard: a named file's real-content
         # marker stays line 1 (# 1 "<name>"), never regressed to # 0.
         add_test(NAME driver/named-content-marker
@@ -7963,6 +7978,16 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         set_tests_properties(driver/named-content-marker PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "# 1 \"[^\"]*emarker_named\\.c\"")
+
+        # T-mac-30227 residual: a named input gets the same gcc-matching
+        # # 0 "<command-line>" preamble as stdin (hyphen spelling, line 0).
+        add_test(NAME driver/named-cmdline-marker
+            COMMAND "$<TARGET_FILE:mcc>" -E
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/emarker_named.c")
+        set_tests_properties(driver/named-cmdline-marker PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "# 0 \"<command-line>\""
+            FAIL_REGULAR_EXPRESSION "<command line>\"")
     endif()
 
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_vla.c")
