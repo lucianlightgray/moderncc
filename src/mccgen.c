@@ -12991,6 +12991,116 @@ static int absbuiltin_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 
 static const struct {
 	const char *name;
+	unsigned char kind;
+} foldstr_tab[] = {
+		{"strlen", 0},   {"__builtin_strlen", 0},
+		{"strcmp", 1},   {"__builtin_strcmp", 1},
+		{"strncmp", 2},  {"__builtin_strncmp", 2},
+		{"memcmp", 3},   {"__builtin_memcmp", 3},
+};
+
+static int foldstr_name_kind(const char *nm) { MCC_TRACE("enter\n");
+	int i;
+	if (!nm)
+		{ MCC_TRACE("br\n"); return -1; }
+	for (i = 0; i < (int)(sizeof foldstr_tab / sizeof *foldstr_tab); i++)
+		{ MCC_TRACE("br\n"); if (!strcmp(nm, foldstr_tab[i].name))
+			{ MCC_TRACE("br\n"); return foldstr_tab[i].kind; } }
+	return -1;
+}
+
+static int foldstr_intarg(SValue *a, uint64_t *out) { MCC_TRACE("enter\n");
+	if ((a->r & (VT_VALMASK | VT_LVAL | VT_SYM)) != VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (is_float(a->type.t) || (a->type.t & VT_BTYPE) == VT_INT128 ||
+			is_bitint_type(&a->type))
+		{ MCC_TRACE("br\n"); return 0; }
+	*out = (uint64_t)a->c.i;
+	return 1;
+}
+
+static int foldstr_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
+	SValue *fsv;
+	Sym *cs;
+	const char *nm, *s0, *s1;
+	int i, kind = -1, need, av0, av1;
+	int64_t res;
+
+	if (!CONST_WANTED || NOEVAL_WANTED)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (mcc_state->nobuiltin || mcc_state->freestanding)
+		{ MCC_TRACE("br\n"); return 0; }
+	fsv = vtop - nb_args;
+	if (!(fsv->r & VT_SYM))
+		{ MCC_TRACE("br\n"); return 0; }
+	cs = fsv->sym;
+	if (!cs || (cs->type.t & VT_BTYPE) != VT_FUNC || (cs->type.t & VT_STATIC))
+		{ MCC_TRACE("br\n"); return 0; }
+	nm = get_tok_str(cs->v, NULL);
+	kind = foldstr_name_kind(nm);
+	if (kind < 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	need = kind == 0 ? 1 : kind == 1 ? 2 : 3;
+	if (nb_args != need)
+		{ MCC_TRACE("br\n"); return 0; }
+
+	s0 = format_str_literal(vtop - nb_args + 1, &av0);
+	if (!s0)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (kind == 0) { MCC_TRACE("br\n");
+		int n = 0;
+		while (n < av0 && s0[n])
+			{ MCC_TRACE("br\n"); n++; }
+		if (n >= av0)
+			{ MCC_TRACE("br\n"); return 0; }
+		res = n;
+	} else { MCC_TRACE("br\n");
+		s1 = format_str_literal(vtop - nb_args + 2, &av1);
+		if (!s1)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (kind == 3) { MCC_TRACE("br\n");
+			uint64_t n;
+			unsigned k;
+			if (!foldstr_intarg(vtop, &n))
+				{ MCC_TRACE("br\n"); return 0; }
+			if (n > (uint64_t)av0 || n > (uint64_t)av1)
+				{ MCC_TRACE("br\n"); return 0; }
+			res = 0;
+			for (k = 0; k < n; k++)
+				{ MCC_TRACE("br\n"); unsigned char c0 = (unsigned char)s0[k], c1 = (unsigned char)s1[k];
+					if (c0 != c1) { MCC_TRACE("br\n"); res = c0 < c1 ? -1 : 1; break; } }
+		} else { MCC_TRACE("br\n");
+			uint64_t lim = (uint64_t)-1;
+			uint64_t k = 0;
+			if (kind == 2 && !foldstr_intarg(vtop, &lim))
+				{ MCC_TRACE("br\n"); return 0; }
+			res = 0;
+			for (;;) { MCC_TRACE("br\n");
+				unsigned char c0, c1;
+				if (kind == 2 && k >= lim)
+					{ MCC_TRACE("br\n"); break; }
+				if ((int64_t)k >= av0 || (int64_t)k >= av1)
+					{ MCC_TRACE("br\n"); return 0; }
+				c0 = (unsigned char)s0[k];
+				c1 = (unsigned char)s1[k];
+				if (c0 != c1)
+					{ MCC_TRACE("br\n"); res = c0 < c1 ? -1 : 1; break; }
+				if (c0 == 0)
+					{ MCC_TRACE("br\n"); break; }
+				k++;
+			}
+		}
+	}
+
+	for (i = 0; i < nb_args; i++)
+		{ MCC_TRACE("br\n"); vpop(); }
+	vpop();
+	vpush64(ftype->type.t, (unsigned long long)res);
+	return 1;
+}
+
+static const struct {
+	const char *name;
 	unsigned char nargs;
 } builtin_libm_tab[] = {
 		{"acos", 1},      {"acosh", 1},  {"asin", 1},      {"asinh", 1},
@@ -14769,6 +14879,12 @@ tok_next:
 			}
 
 			p = NULL;
+			int foldstr_matsave = -1;
+			if (CONST_WANTED && !NOEVAL_WANTED && callee_tok &&
+					foldstr_name_kind(get_tok_str(callee_tok, NULL)) >= 0) { MCC_TRACE("br\n");
+				foldstr_matsave = nocode_wanted;
+				nocode_wanted |= DATA_ONLY_WANTED;
+			}
 			if (tok != ')') { MCC_TRACE("br\n");
 				r = mcc_state->reverse_funcargs;
 				for (;;) { MCC_TRACE("br\n");
@@ -14807,6 +14923,8 @@ tok_next:
 				}
 				vrev(n);
 			}
+			if (foldstr_matsave != -1)
+				{ MCC_TRACE("br\n"); nocode_wanted = foldstr_matsave; }
 			/* T-mac-30111(b): the sequence point is after ALL arguments are
 			 * evaluated, not after each one -- flush once here (reached by both the
 			 * forward and reverse arg paths) so an unsequenced modification ACROSS
@@ -14876,6 +14994,11 @@ tok_next:
 				goto call_folded;
 			}
 			if (absbuiltin_try(s, nb_args)) { MCC_TRACE("br\n");
+				expr_has_effect = 1;
+				wur_call_name = 0;
+				goto call_folded;
+			}
+			if (foldstr_try(s, nb_args)) { MCC_TRACE("br\n");
 				expr_has_effect = 1;
 				wur_call_name = 0;
 				goto call_folded;

@@ -5120,6 +5120,18 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
+        # T-mac-30104: strlen/strcmp/strncmp/memcmp of string literals must
+        # const-fold in ICE contexts (global + local array dims, _Static_assert,
+        # case labels, static const). The program returns 0 iff every folded
+        # value is correct; it fails to compile if the fold is absent.
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/strmem_ice_fold.c")
+            add_test(NAME "diag/strmem-ice-fold"
+                COMMAND ${_mcc_exe} -run
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/strmem_ice_fold.c")
+            set_tests_properties("diag/strmem-ice-fold" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT)
+        endif()
+
         add_test(NAME "cli/no-args-error"
             COMMAND ${_mcc_exe})
         set_tests_properties("cli/no-args-error" PROPERTIES
