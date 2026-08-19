@@ -591,6 +591,17 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'left shift count is negative'; echo END",
 		 "left shift count >= width of type\nleft shift count is negative\nright shift count >= width of type\nleft shift count is negative\nEND\n"},
 
+	{"div_by_zero_warnings", "",
+		 "printf 'int f(void){ return 5/0; }\\nint g(void){ return 5%%0; }\\nint main(void){return 0;}\\n' > {W}/dz.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/dz.c -o {W}/dz.o 2>&1 | grep -oE 'division by zero'; "
+		 "test -f {W}/dz.o && echo COMPILED; "
+		 "{MCC} -B{B} -I{I} -Wno-div-by-zero -c {W}/dz.c -o {W}/dz2.o 2>&1 | grep -oE 'division by zero'; echo NOWARN_DONE; "
+		 "printf 'int q=sizeof(1/0);\\nint main(void){return 0;}\\n' > {W}/dz3.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/dz3.c -o {W}/dz3.o 2>&1 | grep -oE 'division by zero'; echo SIZEOF_DONE; "
+		 "printf 'int a[5/0];\\nint main(void){return 0;}\\n' > {W}/dz4.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/dz4.c -o {W}/dz4.o 2>&1 | grep -oE 'division by zero in constant'; echo CONST_DONE",
+		 "division by zero\ndivision by zero\nCOMPILED\nNOWARN_DONE\nSIZEOF_DONE\ndivision by zero in constant\nCONST_DONE\n"},
+
 	{"c11_keyword_feature_pedantic", "",
 		 "printf '_Alignas(16) int x;\\nint main(void){return 0;}\\n' > {W}/k1.c && "
 		 "{MCC} -B{B} -I{I} -std=c99 -pedantic-errors -c {W}/k1.c -o {W}/k1.o 2>&1 | "

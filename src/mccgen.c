@@ -3735,6 +3735,8 @@ static void gen_opic(int op) { MCC_TRACE("enter\n");
 			if (l2 == 0) { MCC_TRACE("br\n");
 				if (CONST_WANTED && !NOEVAL_WANTED)
 					{ MCC_TRACE("br\n"); mcc_error("division by zero in constant"); }
+				else if (!pp_expr && !gen_opl_depth && !NOEVAL_WANTED)
+					{ MCC_TRACE("br\n"); mcc_warning_c(warn_div_by_zero)("division by zero"); }
 				goto general_case;
 			}
 			switch (op) { MCC_TRACE("br\n");
