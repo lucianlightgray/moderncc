@@ -9,7 +9,7 @@ int main(void) {
 	enum F : unsigned char { X = 200 };
 	if (sizeof(enum F) != 1 || (unsigned)X != 200) fails++;         /* fixed-underlying */
 	enum G : long { Y = -1 };
-	if (sizeof(enum G) != 8 || (long)Y != -1) fails++;             /* signed underlying */
+	if (sizeof(enum G) != sizeof(long) || (long)Y != -1) fails++;  /* signed underlying (sizeof(long): 8 LP64, 4 LLP64) */
 	struct S { enum E b : 2; } s = { B };
 	if (s.b != B) fails++;                                          /* enum bit-field */
 	printf("generic_enum_tag fails=%d\n", fails);

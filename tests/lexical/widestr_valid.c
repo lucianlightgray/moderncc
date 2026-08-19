@@ -1,7 +1,7 @@
 /* Known-positive for T-mac-30147: correctly-signed wide-string inits still
  * work — wchar_t/int[] from L"", char32_t/unsigned[] from U", char16_t/
  * unsigned short[] from u". Returns 0 iff all element values are right. */
-int            wl[] = L"AB";   /* wchar_t = signed int here */
+__WCHAR_TYPE__ wl[] = L"AB";   /* wchar_t element: int (LP64) / unsigned short (PE) */
 unsigned       u3[] = U"AB";   /* char32_t = unsigned int  */
 unsigned short u1[] = u"AB";   /* char16_t = unsigned short*/
 int main(void){
