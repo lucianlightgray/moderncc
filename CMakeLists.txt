@@ -5109,6 +5109,29 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT
             PASS_REGULAR_EXPRESSION "initializer element is not constant")
 
+        # T-mac-30145: a `static`/`constexpr` compound literal must have a
+        # constant initializer (like any static-storage object); mcc accepted a
+        # non-constant one. The happy path (constant init) still compiles + runs.
+        add_test(NAME "diag/static-constexpr-cl-valid"
+            COMMAND ${_mcc_exe} -std=c23 -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/static_constexpr_cl_valid.c")
+        set_tests_properties("diag/static-constexpr-cl-valid" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+        add_test(NAME "diag/static-cl-nonconst-rejected"
+            COMMAND ${_mcc_exe} -std=c23 -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/static_cl_nonconst.c"
+                    -o "${CMAKE_BINARY_DIR}/static-cl-nc.o")
+        set_tests_properties("diag/static-cl-nonconst-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "initializer element is not constant")
+        add_test(NAME "diag/constexpr-cl-nonconst-rejected"
+            COMMAND ${_mcc_exe} -std=c23 -c
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/constexpr_cl_nonconst.c"
+                    -o "${CMAKE_BINARY_DIR}/constexpr-cl-nc.o")
+        set_tests_properties("diag/constexpr-cl-nonconst-rejected" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "initializer element is not constant")
+
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/pragma_diag_ok.c")
             add_test(NAME "diag/pragma-diagnostic-suppress"
                 COMMAND ${_mcc_exe} -Wsign-compare -Werror -run

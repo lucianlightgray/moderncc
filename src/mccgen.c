@@ -13474,6 +13474,8 @@ tok_next:
 					if (local_scope)
 						{ MCC_TRACE("br\n"); mcc_error("initializer element is not constant"); }
 					r = VT_CONST;
+				} else if (type.t & (VT_STATIC | VT_CONSTEXPR)) { MCC_TRACE("br\n");
+					r = VT_CONST;
 				} else
 					{ MCC_TRACE("br\n"); r = VT_LOCAL; }
 				if (!(type.t & VT_ARRAY))
