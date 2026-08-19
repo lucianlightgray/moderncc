@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30252   | 2026-08-19T01:31Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10409   | 2026-08-18T22:44Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50032   | 2026-08-19T01:18Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50033   | 2026-08-19T01:33Z |
 
 ## Contracts — blocking, highest priority
 
@@ -142,6 +142,9 @@
       REF: DETAILS.md#t-mac-30039-constexpr-range | DEPS: —
 
 ## Open — claimable
+- [ ] T-win-50032 [S] Fix: [LOW, UB self-inconsistency — FLEET-WIDE x86_64, not win-only] runtime `__builtin_clz/ctz(0)` disagrees with the const-fold — the inline bitscan `gen_bitscan` (`arch/x86_64/x86_64-gen.c:2645`) emits raw BSF/BSR with NO zero-fixup, so a *runtime* (non-constant, e.g. through a volatile) `__builtin_clz(0)`→31/63 and `ctz(0)`→0, while the const-fold path (`fold_bit_builtin`) returns the bit width (32/64). clz/ctz of 0 is UB, but mcc contradicts itself. Test `builtins/clz-ctz-zero` (regression for T-mac-30110, which only fixed the de-Bruijn *helper* path — not the default-ON inline path selected by `bitscan_inline_on()` mccgen.c:796, which reads env MCC_BITSCAN_INLINE and defaults ON). Reproduces identically on ANY x86_64 (win **and** lin — `gen_bitscan` is target-shared and bitscan-inline defaults on); passes on arm64 (hardware CLZ is defined for 0). Fix: give `gen_bitscan` a zero-fixup (clz(0)→width, ctz(0)→width to match the fold) OR emit LZCNT/TZCNT where available — a shared x86_64 codegen change that will shift the x86_64 `ast/o0-baseline` for any corpus file using runtime clz/ctz, so it needs a coordinated re-bank (the win session cannot run/verify the UNIX-only o0-baseline). Found + root-caused win-x64 2026-08-19.
+      OWNER: — | STATE: OPEN | SHA: 4f8dcfba | TS: 2026-08-19T01:33Z
+      REF: — | DEPS: —
 - [ ] T-mac-30251 [S] Fix: [treegate red] `ci/gate-contract` — 3 orphaned known-positives that no gate-contract row claims: `bitint/scast-signext-known-positive` (T-mac-30063), `fold/int64-float-known-positive` (T-mac-30082), `switch/jumptable-falloff-known-positive` (T-mac-30099). Base cells + known-positives are `if(NOT CMAKE_CROSSCOMPILING)`-gated → absent on cross, so naive rows break `cmake-cross`; fix needs `else() mcc_skip_test` echo-stubs + must-run.txt entries + real intrinsic floors (ratchets maxed). NOT mac-only-verifiable (needs a cmake-cross gate-contract run). Found landing T-mac-30169.
       OWNER: — | STATE: OPEN | SHA: 496be4ef | TS: 2026-08-18T23:20Z
       REF: DETAILS.md#t-mac-30251-gate-contract-orphan-kp | DEPS: —
