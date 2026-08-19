@@ -3422,7 +3422,10 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			if (*optarg == 'c')
 				{ MCC_TRACE("br\n"); x = AFF_TYPE_C; }
 			else if (*optarg == 'a')
-				{ MCC_TRACE("br\n"); x = AFF_TYPE_ASMPP; }
+				/* gcc: "assembler" is assembled directly, "assembler-with-cpp"
+				 * is preprocessed first; mcc matched only the leading 'a' and
+				 * always enabled cpp. */
+				{ MCC_TRACE("br\n"); x = !strcmp(optarg, "assembler") ? AFF_TYPE_ASM : AFF_TYPE_ASMPP; }
 			else if (*optarg == 'b')
 				{ MCC_TRACE("br\n"); x = AFF_TYPE_BIN; }
 			else if (*optarg == 'n')

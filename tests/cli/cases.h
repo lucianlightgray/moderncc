@@ -1183,6 +1183,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/xl.c -o {W}/xl.o -Xlinker -Bsymbolic && echo XLINKER_OK",
 		 "XLINKER_OK\n"},
 
+		{"x_assembler_no_cpp", "",
+		 "printf '#if 0\\nzzz\\n#endif\\n.text\\n.globl af\\naf:\\n\\tret\\n' > {W}/xa.txt && "
+		 "{MCC} -B{B} -I{I} -c -x assembler-with-cpp {W}/xa.txt -o {W}/xa1.o && echo WITHCPP_OK; "
+		 "{MCC} -B{B} -I{I} -c -x assembler {W}/xa.txt -o {W}/xa2.o 2>/dev/null && echo NOCPP_BAD || echo NOCPP_FAILED",
+		 "WITHCPP_OK\nNOCPP_FAILED\n"},
+
 		{"c9911_diag_gaps", "",
 		 "printf 'static int x; int x;\\nint main(void){return x;}\\n' > {W}/cg1.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/cg1.c -o {W}/cg1.o 2>&1 | "
