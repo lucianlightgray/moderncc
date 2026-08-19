@@ -4955,7 +4955,32 @@ redo:
 		if (op_class == CMP_OP && (mcc_state->warn_sign_compare & WARN_ON) && !is_float(combtype.t) && (t1 & VT_UNSIGNED) != (t2 & VT_UNSIGNED)) { MCC_TRACE("br\n");
 			int ac = (vtop[-1].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
 			int bc = (vtop[0].r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST;
-			if (!ac && !bc)
+			int warn;
+			if (ac && bc) { MCC_TRACE("br\n"); warn = 0; }
+			else if (!ac && !bc) { MCC_TRACE("br\n"); warn = 1; }
+			else { MCC_TRACE("br\n");
+				int s_left = !(t1 & VT_UNSIGNED);
+				if (s_left ? ac : bc) { MCC_TRACE("br\n");
+					long long sv = s_left ? vtop[-1].c.i : vtop[0].c.i;
+					warn = sv < 0;
+				} else { MCC_TRACE("br\n");
+					unsigned long long uv = s_left ? (unsigned long long)vtop[0].c.i
+																				 : (unsigned long long)vtop[-1].c.i;
+					int a2, w = type_size(&combtype, &a2);
+					unsigned long long umax = w >= 8 ? ~0ULL : ((1ULL << (w * 8)) - 1);
+					int o = op;
+					if (!s_left) { MCC_TRACE("br\n");
+						if (o == TOK_LT) { MCC_TRACE("br\n"); o = TOK_GT; }
+						else if (o == TOK_GT) { MCC_TRACE("br\n"); o = TOK_LT; }
+						else if (o == TOK_LE) { MCC_TRACE("br\n"); o = TOK_GE; }
+						else if (o == TOK_GE) { MCC_TRACE("br\n"); o = TOK_LE; }
+					}
+					if (o == TOK_EQ || o == TOK_NE) { MCC_TRACE("br\n"); warn = uv > (umax >> 1); }
+					else if (o == TOK_LT || o == TOK_GE) { MCC_TRACE("br\n"); warn = uv != 0; }
+					else { MCC_TRACE("br\n"); warn = uv != umax; }
+				}
+			}
+			if (warn)
 				{ MCC_TRACE("br\n"); mcc_warning_c(warn_sign_compare)(
 						"comparison of integer expressions of different signedness"); }
 		}
