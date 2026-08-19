@@ -462,6 +462,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=100\n"},
 
+		{"asm_comm_lcomm_directives", "",
+		 "printf '.comm sharedbuf, 16, 8\\n.lcomm localbuf, 32, 4\\n' > {W}/cl.s && "
+		 "printf 'extern char sharedbuf[16];\\nint main(void){ sharedbuf[0]=42; sharedbuf[15]=58; return sharedbuf[0]+sharedbuf[15]; }\\n' > {W}/cl.c && "
+		 "{MCC} -B{B} {W}/cl.s {W}/cl.c -o {W}/cl.exe 2>{W}/cl.err; link=$?; "
+		 "{W}/cl.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=100\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

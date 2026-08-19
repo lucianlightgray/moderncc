@@ -662,6 +662,42 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		if (tok == ',')
 			{ MCC_TRACE("br\n"); set_symbol(s1, tok1); }
 		break;
+	case TOK_ASMDIR_comm:
+	case TOK_ASMDIR_lcomm: {
+		Section *prev_sec;
+		Sym *csym;
+		int cname, calign = 1, csize, coffset, is_comm = (tok == TOK_ASMDIR_comm);
+		next();
+		cname = tok;
+		if (tok < TOK_IDENT)
+			{ MCC_TRACE("br\n"); expect("identifier"); }
+		next();
+		if (tok != ',')
+			{ MCC_TRACE("br\n"); expect("','"); }
+		next();
+		csize = asm_int_expr(s1);
+		if (tok == ',') { MCC_TRACE("br\n");
+			next();
+			calign = asm_int_expr(s1);
+		}
+		if (calign < 1)
+			{ MCC_TRACE("br\n"); calign = 1; }
+		prev_sec = cur_text_section;
+		use_section1(s1, find_section(s1, ".bss"));
+		ind = (ind + calign - 1) & ~(calign - 1);
+		if (cur_text_section->sh_addralign < calign)
+			{ MCC_TRACE("br\n"); cur_text_section->sh_addralign = calign; }
+		coffset = ind;
+		csym = asm_new_label1(s1, cname, 0, cur_text_section->sh_num, coffset);
+		if (is_comm) { MCC_TRACE("br\n");
+			csym->type.t &= ~VT_STATIC;
+			update_storage(csym);
+		}
+		elfsym(csym)->st_size = csize;
+		ind += csize;
+		use_section1(s1, prev_sec);
+		break;
+	}
 	case TOK_ASMDIR_globl:
 	case TOK_ASMDIR_global:
 	case TOK_ASMDIR_weak:
