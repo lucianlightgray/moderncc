@@ -5132,6 +5132,33 @@ if(MCC_BUILD_TESTS)
                 FIXTURES_REQUIRED MCC_BUILT)
         endif()
 
+        # T-mac-30219: a command-line / builtin macro redefinition must warn like
+        # gcc/clang (it was silently applied); a plain compile must stay quiet
+        # (the built-in predefs, which self-redefine, must not leak warnings).
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cmdline_redef_probe.c")
+            add_test(NAME "diag/cmdline-macro-redef"
+                COMMAND ${_mcc_exe} -DX=1 -DX=2 -c
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cmdline_redef_probe.c"
+                        -o "${CMAKE_BINARY_DIR}/cmdline-redef.o")
+            set_tests_properties("diag/cmdline-macro-redef" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT
+                PASS_REGULAR_EXPRESSION "X redefined")
+            add_test(NAME "diag/cmdline-predef-redef"
+                COMMAND ${_mcc_exe} -D__STDC__=0 -c
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cmdline_redef_probe.c"
+                        -o "${CMAKE_BINARY_DIR}/cmdline-predef.o")
+            set_tests_properties("diag/cmdline-predef-redef" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT
+                PASS_REGULAR_EXPRESSION "__STDC__ redefined")
+            add_test(NAME "diag/cmdline-no-spurious-redef"
+                COMMAND ${_mcc_exe} -c
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cmdline_redef_probe.c"
+                        -o "${CMAKE_BINARY_DIR}/cmdline-clean.o")
+            set_tests_properties("diag/cmdline-no-spurious-redef" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT
+                FAIL_REGULAR_EXPRESSION "redefined")
+        endif()
+
         add_test(NAME "cli/no-args-error"
             COMMAND ${_mcc_exe})
         set_tests_properties("cli/no-args-error" PROPERTIES

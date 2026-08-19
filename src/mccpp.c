@@ -26,6 +26,12 @@ static int tok_va_opt;
 static int *pp_poison;
 static int pp_npoison;
 
+/* T-mac-30219: set once the <command line> preamble crosses the internal marker
+ * that separates the built-in predefs (suppressed) from the user's -D options
+ * (warnable), so a redefinition in the user region warns like gcc/clang. */
+static int pp_cmdline_user;
+static int is_predef_macro(int v);
+
 static int pp_is_poisoned(int t) { MCC_TRACE("enter\n");
 	int i;
 	for (i = 0; i < pp_npoison; i++)
@@ -1397,6 +1403,24 @@ static int macro_is_equal(const int *a, const int *b) { MCC_TRACE("enter\n");
 	return !(*a || *b);
 }
 
+/* T-mac-30219: emit the "%s redefined" warning, un-suppressing it inside the
+ * <command line> pseudo-buffer's user (-D) region. Real system headers stay
+ * suppressed; the built-in predef region (before the marker) stays suppressed
+ * because pp_cmdline_user is still 0 there. */
+static void warn_macro_redefined(int v) { MCC_TRACE("enter\n");
+	BufferedFile *wf;
+	int saved = -2;
+	for (wf = file; wf && wf->filename[0] == ':'; wf = wf->prev)
+		;
+	if (pp_cmdline_user && wf && wf->system_header && wf->filename[0] == '<') { MCC_TRACE("br\n");
+		saved = wf->system_header;
+		wf->system_header = 0;
+	}
+	mcc_warning("%s redefined", get_tok_str(v, NULL));
+	if (saved != -2)
+		{ MCC_TRACE("br\n"); wf->system_header = saved; }
+}
+
 ST_INLN void define_push(int v, int macro_type, int *str, Sym *first_arg) { MCC_TRACE("enter\n");
 	Sym *s, *o;
 
@@ -1406,8 +1430,8 @@ ST_INLN void define_push(int v, int macro_type, int *str, Sym *first_arg) { MCC_
 	s->next = first_arg;
 	table_ident[v - TOK_IDENT]->sym_define = s;
 
-	if (o && !macro_is_equal(o->d, s->d))
-		{ MCC_TRACE("br\n"); mcc_warning("%s redefined", get_tok_str(v, NULL)); }
+	if (o && !macro_is_equal(o->d, s->d) && !is_predef_macro(v))
+		{ MCC_TRACE("br\n"); warn_macro_redefined(v); }
 }
 
 ST_FUNC void define_undef(Sym *s) { MCC_TRACE("enter\n");
@@ -2464,7 +2488,7 @@ ST_FUNC void parse_define(void) { MCC_TRACE("enter\n");
 	if (v < TOK_IDENT || v == TOK_DEFINED || v == TOK___VA_ARGS__)
 		{ MCC_TRACE("br\n"); mcc_error("invalid macro name '%s'", get_tok_str(tok, &tokc)); }
 	if (is_predef_macro(v))
-		{ MCC_TRACE("br\n"); mcc_warning("%s redefined", get_tok_str(v, NULL)); }
+		{ MCC_TRACE("br\n"); warn_macro_redefined(v); }
 	first = NULL;
 	t = MACRO_OBJ;
 	parse_flags = ((parse_flags & ~PARSE_FLAG_ASM_FILE) | PARSE_FLAG_SPACES);
@@ -2711,6 +2735,15 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 			if (!dup)
 				{ MCC_TRACE("br\n"); dynarray_add(&s1->pragma_weak_syms, &s1->nb_pragma_weak_syms, mcc_strdup(nm)); }
 		}
+		while (tok != TOK_LINEFEED && tok != TOK_EOF)
+			{ MCC_TRACE("br\n"); next_nomacro(); }
+		return 1;
+	} else if (tok >= TOK_IDENT &&
+						 !strcmp(get_tok_str(tok, NULL), "__mcc_cmdline_defs__")) { MCC_TRACE("br\n");
+		/* T-mac-30219: internal marker injected after the built-in predefs; from
+		 * here on the <command line> buffer holds the user's -D options, whose
+		 * redefinitions warn (built-in predefs before it stay suppressed). */
+		pp_cmdline_user = 1;
 		while (tok != TOK_LINEFEED && tok != TOK_EOF)
 			{ MCC_TRACE("br\n"); next_nomacro(); }
 		return 1;
@@ -6047,6 +6080,7 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 	pp_counter = 0;
 	pp_diag_stack_n = 0;
 	pp_debug_tok = pp_debug_symv = 0;
+	pp_cmdline_user = 0;
 	s1->pack_stack[0] = 0;
 	s1->pack_stack_ptr = s1->pack_stack;
 
@@ -6057,6 +6091,7 @@ ST_FUNC void preprocess_start(MCCState *s1, int filetype) { MCC_TRACE("enter\n")
 		CString cstr;
 		cstr_new(&cstr);
 		mcc_predefs(s1, &cstr, is_asm);
+		cstr_cat(&cstr, "#pragma __mcc_cmdline_defs__\n", -1);
 		if (s1->cmdline_defs.size)
 			{ MCC_TRACE("br\n"); cstr_cat(&cstr, s1->cmdline_defs.data, s1->cmdline_defs.size); }
 		if (!is_asm)
