@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-19T23:48Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T22:35Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T23:10Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T23:34Z |
 
 ## Contracts — blocking, highest priority
@@ -56,10 +56,8 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
-- [ ] T-mac-30167 [S] Fix: [MED] `_Alignof`/`__alignof__` of a packed member returns natural align not 1 (`struct __attribute__((packed)) S{char c;int x;}; _Alignof(s.x)`→4, gcc=1). Record struct packed on the type, carry the member effective-align via a hint set at member-access, consume at alignof only when the result is a member lvalue (so s.x+1/&s.x fall back to type align). pragma_pack = residual.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: (30167) | TS: 2026-08-19T23:00Z
-      REF: DETAILS.md#t-mac-30167-alignof-packed | DEPS: —
 
+- SESSION (lin-x64, 2026-08-19T23:10Z): **T-mac-30167 [S] DONE+ARCHIVED** (code 61e35b42 / docs 4f650d77) — `_Alignof` of a `__attribute__((packed))` struct member now returns its reduced alignment (1), not the natural type align. struct packed recorded on the type; member-access sets an effective-align hint (MCCState.gen_member_align); `_Alignof` applies it only when the result is still an lvalue (so p.x+1/&p.x/ternary/comma fall back to type align, matching gcc); sizeof + codegen untouched. o0-neutral (o0-baseline+KP + exec/replay 737 green); oracle-verified vs gcc across 11 cases; TDD diag/alignof-packed-member, anti-vacuous. pragma_pack(N) members = documented residual. Also FIXED a fleet docs/refs red: peer T-mac-30142 DETAILS section lacked its `<a id>` tag (added it). COLLAB: mac fixed both -Wsign-compare edge bugs I flagged (6d622fc8, my combtype-gate suggestion landed). No active lin claims. Tree clean, HEAD pushed.
 
 - SESSION CHECKPOINT (lin-x64, 2026-08-19T22:35Z, /goal=execute INSTRUCTIONS until TODO empty): consolidated tally — **5 [S] DONE+ARCHIVED + 1 ELF feature slice + 1 finding taskified + 1 redundant test-family retired + a fleet-flagged deadlock root-fixed**. Archived: T-win-50032 (clz/ctz(0), RED greened), T-mac-30138 (static stmt-expr const init), T-mac-30145 (static/constexpr CL const init), T-lin-10395 (decimal ull rank), **T-lin-10417 (-fopt-search-threads serial-by-default — root-fixed the deadlock mac FLAGGED, retired the redundant exec-search-threads/* family)**. Slice: T-mac-30158 ctor/dtor PRIORITY (ELF done+verified, Mach-O residual→mac, IN_PROGRESS/TTL-resumable). Minted: T-lin-10416 (stale win32/osx o0 boards). COLLAB: sent mac gcc -Wsign-compare oracle data for their T-mac-30052 residual (offered to take it). **ENV FACT (saved to memory [[lin-box-gcc-15-not-16]]):** this lin box is gcc-15.3.0, NOT gcc-16 — my "gcc-16" labels this session were really gcc-15 (stable-semantics tasks unaffected; matters for warning-heuristic tasks). Remaining lin-verifiable [S] all DEEP/delicate (inspected: 30167 alignof — global-carry over-triggers on `_Alignof(s.x+1)` sub-exprs; 30165 overflow_p — library macros need reimpl as intrinsics; 30197 label-diff — needs data relocations; 30142 — breaking default-c23 change; 30149 — codegen-affecting) or other-platform/GPU/human. No new clean lin claims available. Tree clean, HEAD pushed, only active claim = T-mac-30158 (ELF done, Mach-O for mac).
 
