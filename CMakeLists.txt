@@ -5153,6 +5153,16 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/decimal-ull-rank" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30074: a lone \r (classic-Mac line ending) must terminate a line
+        # so a #define / // comment after it is recognized; \r\n and \n are
+        # unaffected. Generated at runtime (.gitattributes normalizes stored \r).
+        add_test(NAME "diag/cr-line-ending"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/cr_line_ending.sh"
+                    "$<TARGET_FILE:mcc>")
+        set_tests_properties("diag/cr-line-ending" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT
+            PASS_REGULAR_EXPRESSION "OK")
+
         # T-mac-30167: _Alignof of a packed struct member is its effective
         # (reduced) alignment, not the natural type alignment — _Alignof(p.x)==1
         # for a packed p. A derived value (p.x+1, a ternary/comma result) falls

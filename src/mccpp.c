@@ -946,13 +946,13 @@ static uint8_t *parse_line_comment(uint8_t *p) { MCC_TRACE("enter\n");
 		for (;;) { MCC_TRACE("br\n");
 			c = *++p;
 		redo:
-			if (c == '\n' || c == '\\')
+			if (c == '\n' || c == '\r' || c == '\\')
 				{ MCC_TRACE("br\n"); break; }
 			c = *++p;
-			if (c == '\n' || c == '\\')
+			if (c == '\n' || c == '\r' || c == '\\')
 				{ MCC_TRACE("br\n"); break; }
 		}
-		if (c == '\n')
+		if (c == '\n' || c == '\r')
 			{ MCC_TRACE("br\n"); break; }
 		c = handle_bs(&p);
 		if (c == CH_EOF)
@@ -4397,9 +4397,14 @@ redo_no_start:
 		goto redo_no_start;
 	case '\f':
 	case '\v':
-	case '\r':
 		p++;
 		goto redo_no_start;
+	case '\r':
+		p++;
+		if (*p == '\n' || *p == CH_EOB)
+			{ MCC_TRACE("br\n"); goto redo_no_start; }
+		file->line_num++;
+		goto maybe_newline;
 	case '\\':
 		if ((uc = decode_ucn(&p)) >= 0) { MCC_TRACE("br\n");
 			if (ucn_disallowed_initial(uc))
