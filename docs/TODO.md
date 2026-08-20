@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30259   | 2026-08-20T05:30Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30259   | 2026-08-20T05:35Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T07:45Z |
 
@@ -321,7 +321,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-coff-tls | DEPS: —
 - [ ] T-mac-30084 [S] Fix: [MED] Mach-O `-c` ignores `-fcommon` — `macho_output_file` calls `resolve_common_syms` UNCONDITIONALLY before the `MCC_OUTPUT_OBJ` check (`mccmacho.c:2537`), forcing every tentative def to strong `.bss`; ELF (`mccelf.c:3308-3330`, commons resolved only for EXE `:3157`) and COFF (`SHN_COMMON` as SectionNumber=0/Value=size `mccpe.c:2231-2233`) preserve COMMON → two TUs each with `int counter;` link as ELF/COFF but duplicate-symbol as Mach-O `.o`. Fix: gate the call on `file_type!=MCC_OUTPUT_OBJ`.
-      OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 86c665d8 | TS: 2026-08-20T05:35Z
       REF: INVESTIGATIONS.md#r16-macho-common | DEPS: —
 - [ ] T-mac-30085 [S] Fix: [MED] COFF `NumberOfRelocations` truncates at 65535 — `(WORD)relcount[k]` cast (`mccpe.c:2351`) + no `IMAGE_SCN_LNK_NRELOC_OVFL` in `coff_section_characteristics` (`:2072-2095`); a section with >65535 relocs silently wraps (65536→0) → linker applies wrong fixup count. ELF/Mach-O use 32-bit counts. Fix: on overflow write 0xFFFF + set NRELOC_OVFL + true count in a leading synthetic reloc's VirtualAddress. Verify on win-x64.
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
