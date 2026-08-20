@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T04:45Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:30Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T07:30Z |
 
 ## Contracts — blocking, highest priority
@@ -146,9 +146,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-mac-30252 [S] Fix: [MED, cross-target] host-vs-target `long double` constant hi-word — `ast_sv_hi` (`src/mccast.c`, VT_LDOUBLE arm ~`:2735`) keys the wide-constant high word on the HOST `sizeof(long double)`/`LDBL_MANT_DIG`, feeding RIR wide-const storage+dedup (`mccrir.c`). Dead for native Apple/Win arm64 (VT_LDOUBLE never produced there — MCC_USING_DOUBLE_FOR_LDOUBLE). Wrong only when cross-compiling to a VT_LDOUBLE target (binary128 Linux arm64/x86_64, x87-80bit): the target constant's hi bits are dropped. NOT a hi-word patch — the constant lives in host `long double` (64-bit double on arm64-mac, 80-bit on x86-lin), so a binary128 target constant is precision-truncated AT PARSE; the real fix is a soft-float/target-width ld-constant representation. NOT mac-verifiable (ELF targets need qemu; mac has none) + risks cross o0-baselines (x86/riscv keys banked on lin). Best owned by lin (or a soft-float-ld pass). Split from T-mac-30029(d) re-eval 2026-08-19.
       OWNER: — | STATE: OPEN | SHA: 98e61cfe | TS: 2026-08-19T01:59Z
       REF: DETAILS.md#t-mac-30029-close | DEPS: —
-- [ ] T-lin-10400 [S] Build a "% of slices executed on GPU" (device-execution-fraction) metric on the `ast_ladder_gpu_report` dispatches/rungs signal + slicerun/gpuconform funnel — the number T-lin-10398 needs (only lowerability/byte-faithfulness is banked today)
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:35Z
-      REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
 - [ ] T-lin-10402 [S] GPU-coverage strategy 2 [MED risk]: lift the oracle float refusal (mccast.c:18706/18713) guarded on `mcc_gpu_f64()` — the emitter already has f64; unlocks the FP slice category
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
       REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
