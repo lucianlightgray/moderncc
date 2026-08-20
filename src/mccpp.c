@@ -3106,8 +3106,16 @@ redo:
 			{ MCC_TRACE("br\n"); define_undef(s); }
 		next_nomacro();
 		break;
-	case TOK_INCLUDE:
 	case TOK_INCLUDE_NEXT:
+		/* T-mac-30217: gcc and clang warn (by default) when #include_next is
+		 * used in the primary source file -- there is no including header whose
+		 * search-path position it can continue after, so it just restarts from
+		 * the top of the path. The primary source is the one whose parent is
+		 * the command line (or none). */
+		if (!file->prev || 0 == strcmp(file->prev->filename, "<command line>"))
+			{ MCC_TRACE("br\n"); mcc_warning("'#include_next' in primary source file"); }
+		/* falls through to the shared #include handling */
+	case TOK_INCLUDE:
 		parse_include(s1, tok - TOK_INCLUDE, 0, 0);
 		goto the_end;
 	case TOK_IMPORT:

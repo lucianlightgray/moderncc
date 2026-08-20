@@ -574,6 +574,16 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} {W}/spc.c -o {W}/spc.exe && {W}/spc.exe; echo rc=$?",
 		 "rc=4\n"},
 
+		{"include_next_primary_source_warn", "",
+		 "printf '#include_next <stddef.h>\\nint main(void){return 0;}\\n' > {W}/incn.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/incn.c -o {W}/incn.o 2>{W}/incn.e; "
+		 "grep -oE \"'#include_next' in primary source file\" {W}/incn.e; "
+		 "printf '#include_next <stddef.h>\\n' > {W}/inh.h && "
+		 "printf '#include \"inh.h\"\\nint main(void){return 0;}\\n' > {W}/inh_host.c && "
+		 "{MCC} -B{B} -I{I} -I{W} -c {W}/inh_host.c -o {W}/inh_host.o 2>{W}/inh.e; "
+		 "if grep -q 'primary source' {W}/inh.e; then echo HDR_WARNED_BUG; else echo hdr_ok; fi",
+		 "'#include_next' in primary source file\nhdr_ok\n"},
+
 		{"preprocess_C_keeps_comments", "",
 		 "printf '#define M 1 /* DIRCMT */\\nint aa; /* BLOCKCMT */ int bb; // LINECMT\\nint cc = M;\\n' > {W}/kc.c && "
 		 "{MCC} -B{B} -E -C {W}/kc.c > {W}/kcC.out 2>{W}/kc.e1 && "
