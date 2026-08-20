@@ -5330,6 +5330,75 @@ ST_FUNC void gen_cast_s(int t) { MCC_TRACE("enter\n");
 	gen_cast(&(CType){.t = t, .ref = NULL});
 }
 
+#ifdef MCC_HAVE_FLOAT128
+static void f128_shift128(uint64_t v, int sh, uint64_t *hi, uint64_t *lo) { MCC_TRACE("enter\n");
+	if (sh <= 0)
+		{ MCC_TRACE("br\n"); *hi = 0; *lo = v; }
+	else if (sh < 64)
+		{ MCC_TRACE("br\n"); *hi = v >> (64 - sh); *lo = v << sh; }
+	else
+		{ MCC_TRACE("br\n"); *hi = (sh - 64 < 64) ? (v << (sh - 64)) : 0; *lo = 0; }
+}
+static void f128_from_dbits(uint64_t db, uint64_t *plo, uint64_t *phi) { MCC_TRACE("enter\n");
+	uint64_t sign = (db >> 63) & 1;
+	uint32_t exp = (uint32_t)((db >> 52) & 0x7ff);
+	uint64_t mant = db & 0xfffffffffffffULL;
+	uint64_t qexp, qhi, qlo;
+	if (exp == 0x7ff) { MCC_TRACE("br\n");
+		qexp = 0x7fff;
+		if (mant == 0)
+			{ MCC_TRACE("br\n"); qhi = 0; qlo = 0; }
+		else
+			{ MCC_TRACE("br\n"); qhi = mant >> 4; qlo = mant << 60; }
+	} else if (exp == 0) { MCC_TRACE("br\n");
+		if (mant == 0)
+			{ MCC_TRACE("br\n"); qexp = 0; qhi = 0; qlo = 0; }
+		else { MCC_TRACE("br\n");
+			int msb = 51;
+			while (!(mant & (1ULL << msb)))
+				{ MCC_TRACE("br\n"); msb--; }
+			qexp = (uint64_t)(msb + 15309);
+			f128_shift128(mant & ((1ULL << msb) - 1), 112 - msb, &qhi, &qlo);
+		}
+	} else { MCC_TRACE("br\n");
+		qexp = (uint64_t)exp + 15360;
+		qhi = mant >> 4;
+		qlo = mant << 60;
+	}
+	*phi = (sign << 63) | (qexp << 48) | (qhi & 0xffffffffffffULL);
+	*plo = qlo;
+}
+static void f128_from_i64(uint64_t v, int is_signed, uint64_t *plo, uint64_t *phi) { MCC_TRACE("enter\n");
+	uint64_t sign = 0, mag = v, qhi, qlo;
+	int msb;
+	if (is_signed && (int64_t)v < 0)
+		{ MCC_TRACE("br\n"); sign = 1; mag = (uint64_t)(-(int64_t)v); }
+	if (mag == 0)
+		{ MCC_TRACE("br\n"); *plo = 0; *phi = 0; return; }
+	msb = 63;
+	while (!(mag & (1ULL << msb)))
+		{ MCC_TRACE("br\n"); msb--; }
+	f128_shift128(msb ? (mag & ((1ULL << msb) - 1)) : 0, 112 - msb, &qhi, &qlo);
+	*phi = (sign << 63) | ((uint64_t)(msb + 16383) << 48) | (qhi & 0xffffffffffffULL);
+	*plo = qlo;
+}
+static void f128_const_from_sval(SValue *sv, int sbt) { MCC_TRACE("enter\n");
+	int sbt_bt = sbt & VT_BTYPE;
+	uint64_t lo, hi;
+	if (sbt_bt == VT_FLOAT || sbt_bt == VT_DOUBLE || sbt_bt == VT_LDOUBLE) { MCC_TRACE("br\n");
+		union { double d; uint64_t u; } u;
+		u.d = sbt_bt == VT_FLOAT ? (double)sv->c.f
+				: sbt_bt == VT_LDOUBLE ? (double)sv->c.ld
+				: sv->c.d;
+		f128_from_dbits(u.u, &lo, &hi);
+	} else { MCC_TRACE("br\n");
+		f128_from_i64(sv->c.i, !(sbt & VT_UNSIGNED), &lo, &hi);
+	}
+	sv->c.q.lo = lo;
+	sv->c.q.hi = hi;
+}
+#endif
+
 static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 	int sbt, dbt, sf, df, c;
 	rir_hook_convert();
@@ -5497,8 +5566,16 @@ again:
 			   the narrowing (int->byte, double->half) the generic paths already do. */
 			if (sbt_bt == dbt_bt)
 				{ MCC_TRACE("br\n"); goto done; }
-			if (nocode_wanted & DATA_ONLY_WANTED)
-				{ MCC_TRACE("br\n"); mcc_error("'__float128' conversion is not a load-time constant"); }
+			if (nocode_wanted & DATA_ONLY_WANTED) { MCC_TRACE("br\n");
+				if (dbt_bt == VT_FLOAT128) { MCC_TRACE("br\n");
+					fold_const_lval(vtop);
+					if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST) { MCC_TRACE("br\n");
+						f128_const_from_sval(vtop, sbt);
+						goto done;
+					}
+				}
+				mcc_error("'__float128' conversion is not a load-time constant");
+			}
 			if (sbt_bt == VT_FLOAT128) { MCC_TRACE("br\n");
 				int tok, rt;
 				if (dbt_bt == VT_FLOAT)
@@ -17989,6 +18066,12 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 				case VT_LDOUBLE:
 					write_ldouble(ptr, &vtop->c.ld);
 					break;
+#ifdef MCC_HAVE_FLOAT128
+				case VT_FLOAT128:
+					write64le(ptr, val);
+					write64le((char *)ptr + 8, vtop->c.q.hi);
+					break;
+#endif
 #if MCC_HAVE_INT128
 				case VT_INT128:
 					write64le(ptr, val);

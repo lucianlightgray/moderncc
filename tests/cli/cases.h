@@ -5,6 +5,17 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"float128_static_init_const_fold", "cpu=arm64",
+		 "printf '__float128 g=2.5;__float128 z=0.0;__float128 n=-1.5;"
+		 "__float128 big=1234567890123LL;__float128 ql=1.5q;_Float128 h=2.5;"
+		 "__float128 arr[2]={1.0,100.0};"
+		 "int main(void){static __float128 sl=100.0;"
+		 "return ((double)g==2.5&&(double)z==0.0&&(double)n==-1.5"
+		 "&&(double)big==1234567890123.0&&(double)ql==1.5&&(double)h==2.5"
+		 "&&(double)arr[0]==1.0&&(double)arr[1]==100.0&&(double)sl==100.0)?0:1;}\\n' > {W}/f128si.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/f128si.c && echo OK",
+		 "OK\n"},
+
 		{"float128_literal_suffix_q_f128", "cpu=arm64",
 		 "printf 'int main(void){__float128 a=1.5q,b=1.5Q,c=1.5f128,d=1.5F128;"
 		 "__float128 s=1.5q+2.5q;__float128 h=0x1.8p0q;"
