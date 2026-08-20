@@ -319,6 +319,7 @@ struct SymAttr {
 			sentinel_attr : 1,
 			nonnull_all : 1,
 			old_promote : 1,
+			naked : 1,
 			nonnull_mask : 16;
 };
 
@@ -1682,6 +1683,7 @@ ST_DATA int asm_lvalue_cast;
 ST_DATA int global_expr;
 ST_DATA CType func_vt;
 ST_DATA int func_var;
+ST_DATA int func_naked;
 ST_DATA int func_vc;
 ST_DATA int func_ind;
 ST_DATA const char *funcname;

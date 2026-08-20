@@ -1521,6 +1521,8 @@ static void gen_asan_stack_epilog(void) { MCC_TRACE("enter\n");
 ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	int n = 0;
+	if (func_naked)
+		{ MCC_TRACE("br\n"); return; }
 	int i = 0;
 	Sym *sym;
 	CType **t;
@@ -1875,6 +1877,8 @@ ST_FUNC void gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 }
 
 ST_FUNC void gfunc_epilog(void) { MCC_TRACE("enter\n");
+	if (func_naked)
+		{ MCC_TRACE("br\n"); return; }
 	gen_asan_stack_epilog();
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }

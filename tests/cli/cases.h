@@ -762,6 +762,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/csec.c; echo run=$?",
 		 "aot=99\nrun=99\n"},
 
+		{"attr_naked_function", "cpu=arm64,os=Darwin",
+		 "printf '__attribute__((naked)) int addfn(int a,int b){ __asm__(\"add w0, w0, w1\"); __asm__(\"ret\"); }\\nint main(void){return addfn(40,2);}\\n' > {W}/nk.c && "
+		 "{MCC} -B{B} -I{I} {W}/nk.c -o {W}/nk && {W}/nk; echo aot=$?; "
+		 "{MCC} -B{B} -I{I} -run {W}/nk.c; echo run=$?; "
+		 "printf '__attribute__((naked)) int bad(int a){int b=a+1;return b;}\\n' > {W}/nkbad.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/nkbad.c -o {W}/nkbad.o 2>&1 | grep -oE 'naked function must contain only asm statements'; echo done",
+		 "aot=42\nrun=42\nnaked function must contain only asm statements\ndone\n"},
+
 		{"macho_dylib_no_internal_exports", "os=Darwin",
 		 "printf 'int pubfn(void){return 7;}\\n' > {W}/vs.c && "
 		 "{MCC} -B{B} -shared {W}/vs.c -o {W}/vs.dylib 2>{W}/vs.err; src=$?; "

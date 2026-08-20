@@ -1001,6 +1001,8 @@ void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	int addr, reg_param_index, bt, size;
+	if (func_naked)
+		{ MCC_TRACE("br\n"); return; }
 	Sym *sym;
 	CType *type;
 
@@ -1065,6 +1067,8 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 
 void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	int v, start;
+	if (func_naked)
+		{ MCC_TRACE("br\n"); return; }
 
 	func_scratch = (func_scratch + 15) & -16;
 	loc = (loc & -16) - func_scratch;
@@ -2032,6 +2036,8 @@ static void gen_stack_chk_epilog(void) { MCC_TRACE("enter\n");
 void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 	CType *func_type = &func_sym->type;
 	X86_64_Mode mode, ret_mode;
+	if (func_naked)
+		{ MCC_TRACE("br\n"); return; }
 	X86_64_Mode cls[2];
 	int addr, align, size, reg_count;
 	int param_addr = 0, reg_param_index, sse_param_index;
@@ -2217,6 +2223,8 @@ void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 
 void gfunc_epilog(void) { MCC_TRACE("enter\n");
 	int v, saved_ind;
+	if (func_naked)
+		{ MCC_TRACE("br\n"); return; }
 
 	if (mcc_state->do_bounds_check)
 		{ MCC_TRACE("br\n"); gen_bounds_epilog(); }

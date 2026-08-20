@@ -324,6 +324,7 @@ static int auto_type_captured;
 ST_DATA int global_expr;
 ST_DATA CType func_vt;
 ST_DATA int func_var;
+ST_DATA int func_naked;
 ST_DATA int func_vc;
 ST_DATA int func_ind;
 #define func_old (mcc_state->func_old)
@@ -7034,6 +7035,10 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			const char *cn = attr_canon_name(t, cbuf, sizeof cbuf);
 			if (!strcmp(cn, "warn_unused_result")) { MCC_TRACE("br\n");
 				ad->a.warn_unused_result = 1;
+				goto skip_param;
+			}
+			if (!strcmp(cn, "naked")) { MCC_TRACE("br\n");
+				ad->a.naked = 1;
 				goto skip_param;
 			}
 			if (!strcmp(cn, "sentinel")) { MCC_TRACE("br\n");
@@ -16173,6 +16178,8 @@ static void gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 #endif
 
 static void check_func_return(void) { MCC_TRACE("enter\n");
+	if (func_naked)
+		{ MCC_TRACE("br\n"); return; }
 	if (cur_func_noreturn)
 		{ MCC_TRACE("br\n"); mcc_warning("'noreturn' function does return"); }
 	if ((func_vt.t & VT_BTYPE) == VT_VOID)
@@ -16941,6 +16948,9 @@ static void block_nested(int flags) { MCC_TRACE("enter\n");
 again:
 	cst_lm = CST_MARK();
 	t = tok;
+	if (func_naked && t != '{' && t != ';'
+			&& t != TOK_ASM1 && t != TOK_ASM2 && t != TOK_ASM3)
+		{ MCC_TRACE("br\n"); mcc_error("naked function must contain only asm statements"); }
 	if (TOK_HAS_VALUE(t))
 		{ MCC_TRACE("br\n"); goto expr; }
 	stdc_save_fp = mcc_state->stdc_fp_contract;
@@ -19292,6 +19302,7 @@ static void gen_function(Sym *sym, int ctor_prio) {
 			{ MCC_TRACE("br\n"); cur_func_last_param = pa->v & ~SYM_FIELD; }
 	}
 	func_old = sym->type.ref->f.func_type == FUNC_OLD;
+	func_naked = sym->a.naked;
 	cur_func_noreturn = sym->type.ref->f.func_noreturn;
 	cur_func_inline_extern =
 			(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC);
@@ -19369,6 +19380,7 @@ static void gen_function(Sym *sym, int ctor_prio) {
 	funcname = "";
 	func_vt.t = VT_VOID;
 	func_var = 0;
+	func_naked = 0;
 	ind = 0;
 	func_ind = -1;
 	nocode_wanted = DATA_ONLY_WANTED;
