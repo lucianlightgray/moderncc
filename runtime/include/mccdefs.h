@@ -321,6 +321,9 @@
 	#define __LDBL_EPSILON__ __DBL_EPSILON__
 	#define __LDBL_DENORM_MIN__ __DBL_DENORM_MIN__
 #endif
+#if defined __riscv
+	#define __NO_LONG_DOUBLE_MATH 1
+#endif
 	#define __LDBL_HAS_DENORM__ 1
 	#define __LDBL_HAS_INFINITY__ 1
 	#define __LDBL_HAS_QUIET_NAN__ 1
