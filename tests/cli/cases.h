@@ -735,6 +735,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'good=%s bad_rejected=%s\\n' $good $bad",
 		 "good=42 bad_rejected=1\n"},
 
+		{"wa_assembler_passthrough_accepted", "",
+		 "printf 'int main(void){return 42;}\\n' > {W}/wa.c && "
+		 "{MCC} -B{B} -Wa,--noexecstack,-g -c {W}/wa.c -o {W}/wa.o 2>{W}/wa.err; crc=$?; "
+		 "warns=$(grep -c 'unsupported option' {W}/wa.err); "
+		 "{MCC} -B{B} -Wa,--noexecstack {W}/wa.c -o {W}/wa.exe 2>>{W}/wa.err; {W}/wa.exe; run=$?; "
+		 "printf 'compile=%s warns=%s run=%s\\n' $crc $warns $run",
+		 "compile=0 warns=0 run=42\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

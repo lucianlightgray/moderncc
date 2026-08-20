@@ -2202,6 +2202,7 @@ enum {
 	MCC_OPTION_r,
 	MCC_OPTION_Wl,
 	MCC_OPTION_Wp,
+	MCC_OPTION_Wa,
 	MCC_OPTION_Xpreprocessor,
 	MCC_OPTION_Xassembler,
 	MCC_OPTION_Xlinker,
@@ -2335,6 +2336,7 @@ static const MCCOption mcc_options[] = {
 		{"r", MCC_OPTION_r, 0},
 		{"Wl,", MCC_OPTION_Wl, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"Wp,", MCC_OPTION_Wp, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
+		{"Wa,", MCC_OPTION_Wa, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"Xpreprocessor", MCC_OPTION_Xpreprocessor, MCC_OPTION_HAS_ARG},
 		{"Xassembler", MCC_OPTION_Xassembler, MCC_OPTION_HAS_ARG},
 		{"Xlinker", MCC_OPTION_Xlinker, MCC_OPTION_HAS_ARG},
@@ -3356,6 +3358,8 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				{ MCC_TRACE("br\n"); insert_args(s, &argv, &argc, --optind, optarg, ','); }
 			break;
 		case MCC_OPTION_Xassembler:
+			break;
+		case MCC_OPTION_Wa:
 			break;
 		case MCC_OPTION_Xlinker:
 			/* gcc's `-Xlinker arg` passes a single argument to the linker;
