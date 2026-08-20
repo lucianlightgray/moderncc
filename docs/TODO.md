@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T03:35Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T03:50Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T03:08Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T05:40Z |
 
@@ -266,9 +266,6 @@ _Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z
 - [ ] T-mac-30164 [S] Fix: [MED] `#pragma GCC visibility push/pop` unsupported (ELF+Mach-O) — no handler (`mccpp.c:2807`); `#pragma GCC visibility push(hidden)`...`pop` leaves syms DEFAULT on ELF (cross symtab: p_hidden→DEFAULT, should be HIDDEN) and (compounded by T-mac-30157) no effect on Mach-O. `-fvisibility=` command-line IS honored on ELF. Fix: visibility push/pop stack feeding the same a.visibility path the attribute uses. DEP: benefits from T-mac-30157 for Mach-O.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
       REF: INVESTIGATIONS.md#r27-pragma-visibility | DEPS: —
-- [ ] T-mac-30165 [S] Fix: [MED, no-fold; gcc-only oracle] `__builtin_*_overflow_p` don't constant-fold in ICE — `_Static_assert(__builtin_add_overflow_p(INT_MAX,1,(int)0),"")` / `int a[...?5:3]` → mcc `error: constant expected`. gcc folds; clang has no _p builtin (gcc sole oracle). Root: _p implemented as a statement-expression (macro) → never an ICE. Runtime _p correct. Fix: const-foldable form (real builtin or fold hook). GNU manual: _p usable in constant expressions.
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 75fa28a3 | TS: 2026-08-20T03:35Z
-      REF: INVESTIGATIONS.md#r27-overflow-p-ice | DEPS: —
 - [ ] T-mac-30168 [S] Fix: [LOW cluster] diagnostic/cosmetic — (1) no `-Waddress-of-packed-member` (flag itself rejected `unsupported option`; clang -Wall, gcc default warn); (2) `dllexport`/`dllimport` on Mach-O parsed+dropped no warning (both oracles warn); (3) `visibility("protected")` on Mach-O accepted silently (both warn "target does not support protected"); (4) `#pragma region`/`endregion` treated as unknown-pragma (clang/gcc recognize+silent); (5) unhandled `#pragma GCC …` all print identical `#pragma GCC ignored` (first token only) — indistinguishable; (6) redeclaring `__builtin_alloca_with_align` as a prototype fails (`error: ')' expected`) — it's a predefined macro (`mccdefs.h:1193`) not a real builtin; (7) `__builtin_*_overflow` `_Bool*` result (clang also accepts → gcc-only).
       OWNER: — | STATE: OPEN | SHA: d9977f18 | TS: 2026-08-19T02:40Z | RE-OPENED by lin-x64 (§3 TTL): lin sub-item 4 (#pragma region/endregion) DONE (d9977f18). Residual: (2)(3) Mach-O dllexport/visibility warnings (mac-domain) + LOW front-end cosmetics (1 -Waddress-of-packed-member, 5 #pragma-GCC distinguishing, 6 __builtin_alloca_with_align redeclare, 7 __builtin_*_overflow _Bool*). Substantive part mac-domain; front-end bits LOW-value. Resume from d9977f18. REF DETAILS.md#lin-x64-close-and-reopen-2026-08-19
       REF: DETAILS.md#t-mac-30168-pragma-region | DEPS: —
