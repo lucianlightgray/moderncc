@@ -1484,7 +1484,8 @@ __asm__(
 #ifdef __MCC__
 __asm__(
 		"        .int 0x12001c42\n"
-		"        .int 0x35000143\n"
+		"        .int 0x35000163\n"
+		"        .int 0x35000144\n"
 		"        .int 0x39400023\n"
 		"        .int 0x085f7c04\n"
 		"        .int 0x6b23009f\n"
@@ -1508,6 +1509,7 @@ __asm__(
 __asm__(
 		"        and w2, w2, #0xff\n"
 		"        cbnz    w3,  " LP "___atomic_compare_exchange_1_02c\n"
+		"        cbnz    w4,  " LP "___atomic_compare_exchange_1_02c\n"
 		"        ldrb    w3, [x1]\n"
 		"" LP "___atomic_compare_exchange_1_00c:\n"
 		"        ldxrb   w4, [x0]\n"
@@ -1541,7 +1543,8 @@ __asm__(
 #ifdef __MCC__
 __asm__(
 		"        .int 0x12003c42\n"
-		"        .int 0x35000143\n"
+		"        .int 0x35000163\n"
+		"        .int 0x35000144\n"
 		"        .int 0x79400023\n"
 		"        .int 0x485f7c04\n"
 		"        .int 0x6b23209f\n"
@@ -1565,6 +1568,7 @@ __asm__(
 __asm__(
 		"        and w2, w2, #0xffff\n"
 		"        cbnz    w3,  " LP "___atomic_compare_exchange_2_02c\n"
+		"        cbnz    w4,  " LP "___atomic_compare_exchange_2_02c\n"
 		"        ldrh    w3, [x1]\n"
 		"" LP "___atomic_compare_exchange_2_00c:\n"
 		"        ldxrh   w4, [x0]\n"
@@ -1597,7 +1601,8 @@ __asm__(
 		"        .global " STR(_(__atomic_compare_exchange_4)) "\n" TYPE(STR(_(__atomic_compare_exchange_4))) "" STR(_(__atomic_compare_exchange_4)) ":\n");
 #ifdef __MCC__
 __asm__(
-		"        .int 0x35000143\n"
+		"        .int 0x35000163\n"
+		"        .int 0x35000144\n"
 		"        .int 0xb9400023\n"
 		"        .int 0x885f7c04\n"
 		"        .int 0x6b03009f\n"
@@ -1620,6 +1625,7 @@ __asm__(
 #else
 __asm__(
 		"        cbnz    w3,  " LP "___atomic_compare_exchange_4_028\n"
+		"        cbnz    w4,  " LP "___atomic_compare_exchange_4_028\n"
 		"        ldr w3, [x1]\n"
 		"" LP "___atomic_compare_exchange_4_008:\n"
 		"        ldxr    w4, [x0]\n"
@@ -1652,7 +1658,8 @@ __asm__(
 		"        .global " STR(_(__atomic_compare_exchange_8)) "\n" TYPE(STR(_(__atomic_compare_exchange_8))) "" STR(_(__atomic_compare_exchange_8)) ":\n");
 #ifdef __MCC__
 __asm__(
-		"        .int 0x35000143\n"
+		"        .int 0x35000163\n"
+		"        .int 0x35000144\n"
 		"        .int 0xf9400023\n"
 		"        .int 0xc85f7c04\n"
 		"        .int 0xeb03009f\n"
@@ -1675,6 +1682,7 @@ __asm__(
 #else
 __asm__(
 		"        cbnz    w3,  " LP "___atomic_compare_exchange_8_028\n"
+		"        cbnz    w4,  " LP "___atomic_compare_exchange_8_028\n"
 		"        ldr x3, [x1]\n"
 		"" LP "___atomic_compare_exchange_8_008:\n"
 		"        ldxr    x4, [x0]\n"
