@@ -12,6 +12,19 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/f128b.c && echo OK",
 		 "OK\n"},
 
+		{"arm64_ubsan_divrem_int_min_traps", "cpu=arm64",
+		 "printf 'int f(int a,int b){return a/b;}int main(){volatile int x=(-2147483647-1),y=-1;return f(x,y);}\\n' > {W}/dov.c && "
+		 "printf 'int f(int a,int b){return a%%b;}int main(){volatile int x=(-2147483647-1),y=-1;return f(x,y);}\\n' > {W}/rov.c && "
+		 "printf 'long f(long a,long b){return a/b;}int main(){volatile long x=(-9223372036854775807L-1),y=-1;return f(x,y)!=0;}\\n' > {W}/lov.c && "
+		 "printf 'int f(int a,int b){return a/b;}int main(){volatile int x=10,y=3;return f(x,y);}\\n' > {W}/uok.c && "
+		 "printf 'int f(int a,int b){return a/b;}int main(){volatile int x=(-2147483647-1),y=-2;return f(x,y)==1073741824?7:99;}\\n' > {W}/nm.c && "
+		 "{MCC} -B{B} -I{I} -fsanitize=undefined {W}/dov.c -o {W}/dov && {W}/dov ; echo dov=$? ; "
+		 "{MCC} -B{B} -I{I} -fsanitize=undefined {W}/rov.c -o {W}/rov && {W}/rov ; echo rov=$? ; "
+		 "{MCC} -B{B} -I{I} -fsanitize=undefined {W}/lov.c -o {W}/lov && {W}/lov ; echo lov=$? ; "
+		 "{MCC} -B{B} -I{I} -fsanitize=undefined {W}/uok.c -o {W}/uok && {W}/uok ; echo ok=$? ; "
+		 "{MCC} -B{B} -I{I} -fsanitize=undefined {W}/nm.c -o {W}/nm && {W}/nm ; echo nm=$?",
+		 "dov=133\nrov=133\nlov=133\nok=3\nnm=7\n"},
+
 		{"arm64_disasm_fp_families", "cpu=arm64",
 		 "printf '.text\\n.globl _t\\n_t:\\n frintn s0, s1\\n frintp s2, s3\\n frintm s4, s5\\n frintz s6, s7\\n frinta s8, s9\\n frintx s10, s11\\n frinti s12, s13\\n frintz d2, d3\\n fcsel s0, s1, s2, eq\\n fcsel d3, d4, d5, ne\\n fcmpe s2, s3\\n fcmpe s4, #0.0\\n fcmpe d0, d1\\n fcvtns w0, s1\\n fcvtau w6, s7\\n fcvtps w8, s9\\n fcvtms x2, d3\\n fmov s0, #1.0\\n fmov s6, #-0.5\\n fmov d0, #2.0\\n ldr x1, Lp\\n ldr s2, Lp\\n ret\\n .p2align 3\\nLp: .quad 0\\n' > {W}/fpf.s && "
 		 "clang -c {W}/fpf.s -o {W}/fpf.o 2>/dev/null && "

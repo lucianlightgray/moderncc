@@ -2154,6 +2154,16 @@ static void arm64_ubsan_trap_if_zero(uint32_t reg, uint32_t l, int kind) { MCC_T
 	arm64_ubsan_body(kind);
 }
 
+static void arm64_ubsan_divrem_overflow(uint32_t a, uint32_t b, uint32_t l) { MCC_TRACE("enter\n");
+	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
+		{ MCC_TRACE("br\n"); return; }
+	o(0x3100041f | l << 31 | b << 5);
+	o(0x54000001 | ((arm64_ubsan_skip(UBK_DIVREM) + 2u) << 5));
+	o(0x6b0003ff | l << 31 | a << 16);
+	o(0x54000007 | (arm64_ubsan_skip(UBK_DIVREM) << 5));
+	arm64_ubsan_body(UBK_DIVREM);
+}
+
 static int arm64_ubsan_on(void) { MCC_TRACE("enter\n");
 	return mcc_state->do_sanitize_undefined && !nocode_wanted;
 }
@@ -2274,6 +2284,7 @@ static void arm64_gen_opil(int op, uint32_t l) { MCC_TRACE("enter\n");
 	switch (op) { MCC_TRACE("br\n");
 	case '%':
 		arm64_ubsan_trap_if_zero(b, l, UBK_DIVREM);
+		arm64_ubsan_divrem_overflow(a, b, l);
 		o(0x1ac00c00 | l << 31 | 30 | a << 5 | b << 16);
 		o(0x1b008000 | l << 31 | x | (uint32_t)30 << 5 |
 			b << 16 | a << 10);
@@ -2313,6 +2324,7 @@ static void arm64_gen_opil(int op, uint32_t l) { MCC_TRACE("enter\n");
 	case '/':
 	case TOK_PDIV:
 		arm64_ubsan_trap_if_zero(b, l, UBK_DIVREM);
+		arm64_ubsan_divrem_overflow(a, b, l);
 		o(0x1ac00c00 | l << 31 | x | a << 5 | b << 16);
 		break;
 	case '^':
