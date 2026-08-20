@@ -1490,6 +1490,96 @@ static void asm_ldst(MCCState *s1, int token) { MCC_TRACE("enter\n");
 	gen_ldst_imm(base_opcode, rt, rn, offset, size_log2);
 }
 
+static void asm_ldst_exclusive(MCCState *s1, int token) { MCC_TRACE("enter\n");
+	Operand op1, op2, op3;
+	Operand *val, *addr;
+	uint32_t base_word;
+	int store_excl = 0;
+	int fixed_size = -1;
+	int size, rs, rt, rn;
+
+	switch (token) { MCC_TRACE("br\n");
+	case TOK_ASM_stxr: base_word = 0x88007C00U; store_excl = 1; break;
+	case TOK_ASM_stxrb: base_word = 0x88007C00U; store_excl = 1; fixed_size = 0; break;
+	case TOK_ASM_stxrh: base_word = 0x88007C00U; store_excl = 1; fixed_size = 1; break;
+	case TOK_ASM_stlxr: base_word = 0x8800FC00U; store_excl = 1; break;
+	case TOK_ASM_stlxrb: base_word = 0x8800FC00U; store_excl = 1; fixed_size = 0; break;
+	case TOK_ASM_stlxrh: base_word = 0x8800FC00U; store_excl = 1; fixed_size = 1; break;
+	case TOK_ASM_ldxr: base_word = 0x885F7C00U; break;
+	case TOK_ASM_ldxrb: base_word = 0x885F7C00U; fixed_size = 0; break;
+	case TOK_ASM_ldxrh: base_word = 0x885F7C00U; fixed_size = 1; break;
+	case TOK_ASM_ldaxr: base_word = 0x885FFC00U; break;
+	case TOK_ASM_ldaxrb: base_word = 0x885FFC00U; fixed_size = 0; break;
+	case TOK_ASM_ldaxrh: base_word = 0x885FFC00U; fixed_size = 1; break;
+	case TOK_ASM_ldar: base_word = 0x88DFFC00U; break;
+	case TOK_ASM_ldarb: base_word = 0x88DFFC00U; fixed_size = 0; break;
+	case TOK_ASM_ldarh: base_word = 0x88DFFC00U; fixed_size = 1; break;
+	case TOK_ASM_stlr: base_word = 0x889FFC00U; break;
+	case TOK_ASM_stlrb: base_word = 0x889FFC00U; fixed_size = 0; break;
+	case TOK_ASM_stlrh: base_word = 0x889FFC00U; fixed_size = 1; break;
+	default:
+		mcc_error("unsupported exclusive/atomic instruction");
+		return;
+	}
+
+	rs = 0x1F;
+	parse_operand(s1, &op1);
+	if (tok == ',')
+		{ MCC_TRACE("br\n"); next(); }
+	parse_operand(s1, &op2);
+	if (store_excl) { MCC_TRACE("br\n");
+		if (tok == ',')
+			{ MCC_TRACE("br\n"); next(); }
+		parse_operand(s1, &op3);
+		if (!(op1.type & OP_REG) || !(op1.reg_type & REG_W)) { MCC_TRACE("br\n");
+			mcc_error("store-exclusive status must be a w register");
+			return;
+		}
+		rs = op1.reg;
+		val = &op2;
+		addr = &op3;
+	} else { MCC_TRACE("br\n");
+		val = &op1;
+		addr = &op2;
+	}
+
+	if (!(val->type & OP_REG)) { MCC_TRACE("br\n");
+		mcc_error("expected register operand");
+		return;
+	}
+	if (addr->type != OP_ADDR) { MCC_TRACE("br\n");
+		mcc_error("expected [base] address operand");
+		return;
+	}
+	if (addr->addr_mode != ADDR_OFF || addr->reloc_spec != RS_NONE ||
+			addr->e.sym || addr->e.v != 0) { MCC_TRACE("br\n");
+		mcc_error("exclusive/atomic address must be a base register with no offset");
+		return;
+	}
+
+	if (fixed_size == 0) { MCC_TRACE("br\n");
+		size = 0;
+	} else if (fixed_size == 1) { MCC_TRACE("br\n");
+		size = 1;
+	} else if (val->reg_type & REG_X) { MCC_TRACE("br\n");
+		size = 3;
+	} else if (val->reg_type & REG_W) { MCC_TRACE("br\n");
+		size = 2;
+	} else { MCC_TRACE("br\n");
+		mcc_error("exclusive/atomic value register must be w or x");
+		return;
+	}
+	if (fixed_size >= 0 && !(val->reg_type & REG_W)) { MCC_TRACE("br\n");
+		mcc_error("byte/halfword exclusive/atomic value register must be a w register");
+		return;
+	}
+
+	rt = val->reg;
+	rn = addr->reg;
+	emit_instr32(((base_word & 0x3FFFFFFFU) | ((uint32_t)size << 30)) |
+							 ARM64_RM(rs) | ARM64_RN(rn) | ARM64_RT(rt));
+}
+
 static void asm_adrp(MCCState *s1) { MCC_TRACE("enter\n");
 	Operand op1, op2;
 	int rtype;
@@ -1918,6 +2008,27 @@ ST_FUNC void asm_opcode(MCCState *s1, int opcode) { MCC_TRACE("enter\n");
 	case TOK_ASM_dsb:
 	case TOK_ASM_dmb:
 		asm_barrier(s1, opcode);
+		break;
+
+	case TOK_ASM_ldxr:
+	case TOK_ASM_ldxrb:
+	case TOK_ASM_ldxrh:
+	case TOK_ASM_stxr:
+	case TOK_ASM_stxrb:
+	case TOK_ASM_stxrh:
+	case TOK_ASM_ldaxr:
+	case TOK_ASM_ldaxrb:
+	case TOK_ASM_ldaxrh:
+	case TOK_ASM_stlxr:
+	case TOK_ASM_stlxrb:
+	case TOK_ASM_stlxrh:
+	case TOK_ASM_ldar:
+	case TOK_ASM_ldarb:
+	case TOK_ASM_ldarh:
+	case TOK_ASM_stlr:
+	case TOK_ASM_stlrb:
+	case TOK_ASM_stlrh:
+		asm_ldst_exclusive(s1, opcode);
 		break;
 
 	case TOK_ASM_nop:

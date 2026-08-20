@@ -672,6 +672,23 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=42\n"},
 
+		{"asm_ldst_exclusive_atomic", "cpu=arm64",
+		 "printf '%s\\n' '.text' '.globl atomx' 'atomx:' 'sub sp, sp, #16' 'mov x9, sp' "
+		 "'mov x1, #100' 'str x1, [x9]' '1:' 'ldaxr x2, [x9]' 'add x2, x2, #15' "
+		 "'stlxr w3, x2, [x9]' 'cbnz w3, 1b' 'ldar x4, [x9]' 'mov w1, #10' 'str w1, [x9]' "
+		 "'2:' 'ldxr w5, [x9]' 'add w5, w5, #5' 'stxr w6, w5, [x9]' 'cbnz w6, 2b' "
+		 "'ldxr w7, [x9]' 'add x4, x4, x7' 'mov w1, #7' 'stlrb w1, [x9]' 'ldarb w8, [x9]' "
+		 "'add x4, x4, x8' 'mov w1, #9' '3:' 'ldxrb w5, [x9]' 'stxrb w6, w1, [x9]' "
+		 "'cbnz w6, 3b' 'ldxrb w5, [x9]' 'add x4, x4, x5' 'mov w1, #200' 'strh w1, [x9]' "
+		 "'4:' 'ldxrh w5, [x9]' 'add w5, w5, #100' 'stxrh w6, w5, [x9]' 'cbnz w6, 4b' "
+		 "'ldxrh w5, [x9]' 'add x4, x4, x5' 'mov w1, #0x1000' 'stlrh w1, [x9]' "
+		 "'ldarh w8, [x9]' 'add x4, x4, x8' 'mov x0, x4' 'add sp, sp, #16' 'ret' > {W}/ax.s && "
+		 "printf 'extern int atomx(void) __asm__(\"atomx\");\\nint main(void){ return atomx()==4542?42:1; }\\n' > {W}/ax.c && "
+		 "{MCC} -B{B} {W}/ax.s {W}/ax.c -o {W}/ax.exe 2>{W}/ax.err; link=$?; "
+		 "{W}/ax.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=42\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
