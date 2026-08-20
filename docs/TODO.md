@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30263   | 2026-08-20T21:52Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10453   | 2026-08-20T21:20Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-20T21:40Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-20T22:15Z |
 
 ## Contracts — blocking, highest priority
 
@@ -93,9 +93,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-mac-30211 [S] Fix: [MED, rejects-valid] assembler meta/CFI/arch directive families — CFI/ARCH SLICE DONE (99513c5d): `.cfi_*` accept-and-ignore under `!MCC_EH_FRAME`, `.arch`/`.cpu` accept-and-ignore. **MACRO ENGINE SLICE DONE (7a699f0a): `.macro`/`.endm` with positional `\param` substitution** — built on existing infra (PARSE_FLAG_ACCEPT_STRAYS for `\`-tokens + TOK_GET/tok_str_add2 body-walk+splice, NO core-lexer change); invocation hook is a no-op when no macros defined (zero change for existing asm); oracle byte-identical to gas (`add3 10,20,12`->`.long 42`, expr args, `\param` in instructions). o0-neutral; ZERO self-host risk (no repo .s uses .macro). TDD cli/asm_macro_directive. Verified: cli 380/380, exec 8181/8181, asm|preprocess 346/346, gates 18/18. (`.equ`/`.equiv`/`.comm`/`.lcomm` + full `.if` family done in T-mac-30058.) **`.irp`/`.endr` ITERATION SLICE DONE (29ef3d42): `.irp SYM, v1, v2, ...` repeats a body per value substituting `\SYM`** — factored the macro substitution into a shared `asm_macro_subst` helper (both `.macro` + `.irp` use it); oracle byte-identical to gas incl. expression values (`.irp p,5+5,3*4`->11,13). TDD cli/asm_irp_directive; cli 383/383. TTL-resumable. RESIDUAL: **macro token PASTING/concatenation** (`\p\@`, `label\n:` — gas expands textually + pastes; mcc's token-level substitution keeps them separate, so `\@` unique-label counter + prefix-concat are unsupported — needs text-level expansion), `.irpc` (char iteration), `.inst` (arm), `.tlsdesccall` (arm64 TLS).
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 29ef3d42 | TS: 2026-08-20T06:55Z
       REF: DETAILS.md#t-mac-30211-macro-engine | DEPS: —
-- [ ] T-mac-30085 [S] Fix: [MED] COFF `NumberOfRelocations` truncates at 65535 (WORD cast, mccpe.c) + no `IMAGE_SCN_LNK_NRELOC_OVFL` flag — a section with >65535 relocs wraps (69632->4096) so the linker applies the wrong fixup count. CLAIMED win-x64: premise reproduced on win-x64 (69632 `&g` relocs in `.data` -> baseline mcc writes numRelocs=4096, no flag; mcc-link+run gives `69632 0` = relocs past 4096 dropped). Fix: (writer) on relcount>=0xffff write 0xFFFF + set NRELOC_OVFL + a leading synthetic reloc VirtualAddress=count+1; (reader) decode the overflow entry for round-trip. gcc-mingw oracle confirms the encoding (numRelocs=65535, flag set, first VA=69633).
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 86c665d8 | TS: 2026-08-20T21:40Z
-      REF: INVESTIGATIONS.md#r16-coff-reloc-ovfl | DEPS: —
 
 ## Open — claimable
 
