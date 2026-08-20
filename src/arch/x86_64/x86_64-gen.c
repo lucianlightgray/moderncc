@@ -1345,6 +1345,42 @@ void x86_64_vec16_packed_op(SValue *res, SValue *lhs, SValue *rhs, int op, int i
 	ast_pinned_regs &= ~((uint64_t)1 << r2);
 }
 
+void x86_64_vec16_packed_iop(SValue *res, SValue *lhs, SValue *rhs, int op, int esz) { MCC_TRACE("enter\n");
+	int opc, r1, r2;
+
+	switch (op) { MCC_TRACE("br\n");
+	case '&': opc = 0xdb; break;
+	case '|': opc = 0xeb; break;
+	case '^': opc = 0xef; break;
+	case '+':
+		opc = esz == 1 ? 0xfc : esz == 2 ? 0xfd : esz == 8 ? 0xd4 : 0xfe;
+		break;
+	case '-':
+		opc = esz == 1 ? 0xf8 : esz == 2 ? 0xf9 : esz == 8 ? 0xfb : 0xfa;
+		break;
+	default: return;
+	}
+
+	r1 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r1;
+	r2 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r2;
+
+	x86_64_vec16_move(r1, lhs, 0);
+	x86_64_vec16_move(r2, rhs, 0);
+
+	o(0x66);
+	sse_rex(r1, r2);
+	o(0x0f);
+	o(opc);
+	o(0xc0 + REG_VALUE(r1) * 8 + REG_VALUE(r2));
+
+	x86_64_vec16_move(r1, res, 1);
+
+	ast_pinned_regs &= ~((uint64_t)1 << r1);
+	ast_pinned_regs &= ~((uint64_t)1 << r2);
+}
+
 static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *palign, int *reg_count) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	int size, align, ret_t = 0;

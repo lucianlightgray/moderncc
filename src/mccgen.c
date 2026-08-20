@@ -505,6 +505,7 @@ static CType complex_operand_real_type(SValue *v);
 #define MCC_VECTOR_MAX_ELEM 1024
 #ifdef MCC_TARGET_X86_64
 void x86_64_vec16_packed_op(SValue *res, SValue *lhs, SValue *rhs, int op, int is_double);
+void x86_64_vec16_packed_iop(SValue *res, SValue *lhs, SValue *rhs, int op, int esz);
 #endif
 static void gen_vector_op(int op);
 static int vector_nelem(CType *type);
@@ -8524,6 +8525,16 @@ static void gen_vector_op(int op) { MCC_TRACE("enter\n");
 		if ((is_double && n == 2) || (ebt == VT_FLOAT && n == 4)) { MCC_TRACE("br\n");
 			if (op == '+' || op == '-' || op == '*' || op == '/') { MCC_TRACE("br\n");
 				x86_64_vec16_packed_op(&res, &lhs, &rhs, op, is_double);
+				vpushv(&res);
+				return;
+			}
+		}
+		if (ebt == VT_BYTE || ebt == VT_SHORT || ebt == VT_INT ||
+				ebt == VT_LLONG) { MCC_TRACE("br\n");
+			int ial, iesz = type_size(vector_elem_type(&vt), &ial);
+			if (iesz * n == 16 && (op == '+' || op == '-' || op == '&' ||
+														 op == '|' || op == '^')) { MCC_TRACE("br\n");
+				x86_64_vec16_packed_iop(&res, &lhs, &rhs, op, iesz);
 				vpushv(&res);
 				return;
 			}
