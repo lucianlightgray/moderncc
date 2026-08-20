@@ -1,3 +1,4 @@
+#if defined(__SIZEOF_INT128__)
 static signed _BitInt(128) cs128 = -5;
 static signed _BitInt(100) cs100 = -5;
 static unsigned _BitInt(128) cu128 =
@@ -39,3 +40,6 @@ int main(void) {
 
 	return 0;
 }
+#else
+int main(void) { return 0; }
+#endif
