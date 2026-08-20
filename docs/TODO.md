@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T02:40Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10426   | 2026-08-20T02:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T02:11Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T03:00Z |
 
 ## Contracts — blocking, highest priority
@@ -58,10 +58,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
 
-- [ ] T-lin-10419 [S] coop threads: start a worker-thread pool sized to the CPU core count and run the coop coroutines/fibers across it (true M:N), replacing the current single-OS-thread cooperative model (`runtime/include/mcc_coop_threads.h`, T-lin-10001). MUST be the **same pool implementation the JIT and GPU use**, not a second runtime: the JIT already owns a `pthread_t` worker pool (`mccjit_pool_start`, `src/mccjit_embed.c:1551`, `MCCJIT_POOL_MAX=64`, `--jit-threads`) and `--jit-conservative` already co-sizes that pool + the GPU budget to 50% of hardware — factor it into a shared per-core pool + work-queue consumed by JIT jobs, GPU dispatch, and coop fibers alike (likely spins off a [C] shared-pool contract). Needs thread-safe mtx/cnd/tss/once (today single-threaded) + fiber parking; heed the opt-search race lesson (T-lin-10417).
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 31f50f6e | TS: 2026-08-20T01:53Z
-      REF: DETAILS.md#t-lin-10419-coop-mn-pool-unify-jit-gpu | DEPS: T-lin-10001[DONE]
-
 - SESSION WRAP (lin-x64, 2026-08-20T01:06Z): all pushed, tree clean, HEAD on origin/main; no active lin claims. **This session:** (1) **T-lin-10412 [X] DONE** (feat f6676667) — riscv64 coop `<threads.h>` context-switch backend, the last deferred backend of T-lin-10001 [C]. Its "no qemu-user" deferral premise was STALE: `qemu-riscv64` + the lp64d `vendor/gentoo-stage3-riscv64-glibc` sysroot + `cmake-cross/mcc-riscv64` are all present on this box, so the full coop test (mtx/cnd/tss/once/4-worker join) was verified GREEN through the real harness under qemu-riscv64 at -O0/2/3/s. o0-neutral (riscv64-gated); new `c11_threads_coop_riscv64` golden over a stdio-free clone in `tests/misc/` (zero corpus drift). DETAILS#t-lin-10412-riscv64-coop-backend. (2) **Minted T-lin-10418 [S]** (OPEN) — the riscv64 glibc `<stdio.h>` `_Float128` keyword/typedef collision that blocks the general riscv64 exec-conformance tier (surfaced while doing 10412; the coop clone sidesteps it). (3) **Re-OPENed T-mac-30158** (04914a1f) — its Mach-O AOT ctor-priority residual needs native Darwin verify lin can't do; moved to Open for mac (mac ACK'd, fix direction mapped). Env: this box is gcc-15.3.0 not gcc-16 ([[lin-box-gcc-15-not-16]]); FULL SUITES at -j1 (user directive). **Remaining lin-verifiable work is deep-only** (T-mac-30165 overflow_p fold→intrinsics, T-mac-30197 label-diff data-relocations, T-mac-30070 fleet-wide 64-bit sizes, T-mac-30149 constant_p-under-O) or other-platform/GPU/human-gated. NEW for successors: the riscv64 qemu run-tier IS available here (`-DMCC_QEMU_TESTS=ON`, sysroot at `vendor/gentoo-stage3-riscv64-glibc`) — riscv64 codegen is now natively verifiable.
 
 - HANDOFF-BOX-FACTS (lin-x64, kept for successors): FULL SUITES RUN AT `-j1` ON THIS BOX — user directive 2026-08-16 ("limit to -j1, my machine is still running too slowly"), superseding -j8 then -j16 then M-TODO-0005's -j32 (all withdrawn same day; DETAILS.md#lin-x64-full-suite-parallelism-is-j16-superseding-the-j32-convention records the -j16 history). The user is ACTIVELY GAMING on this box (was WoWClassic.exe; now Baldur's Gate 3 bg3.exe ~6 cores + ~6 GB GPU), so a suite must not compete: -j1 caps CPU to one core, and GPU cells (slice/*, gpu/*, cref-oracle) should be gated to run only when WoW is OFF the GPU (else they contend with the game AND risk the T-lin-10359 false-reds). At -j1 there is NO self-contention, so slice/quiesce/cref-oracle load-flakiness (T-lin-10074) largely disappears — the main cost is wall-clock (full -j1 suite ≈ several hours). Independently the better setting here: the -j32 §8 run reported 2 failures and only ONE was genuine (slice/quiesce passes standalone in 0.35s = load-induced T-lin-10074; slice/census reproduced = real, T-lin-10391). After ANY aborted suite, wait for /proc/loadavg < 8 before starting the next — a killed -j32 run holds the 1-min average above 100 and a suite started into that decay measures contention, not the tree. Corpora are host-local symlinks in vendor/ -> ~/Projects/{gcc,llvm-test-suite,llvm-project} and are NOT tracked: if they vanish, six cells silently become skip stubs instead of failing (T-lin-10388). cmake-cross measures 7/7 active o0-baseline keys incl. BOTH *-osx; cmake-debug is the plain native build
@@ -103,6 +99,26 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: INVESTIGATIONS.md#r34-low-cluster | DEPS: —
 
 ## Open — claimable
+
+- [ ] T-lin-10426 [S] coop M:N slice 1 — extract a generic worker-pool from the JIT-specific `mccjit_pool` (`src/mccjit_embed.c:1432`): genericize the resumable-tick job to `{int(*tick)(void*),void*ctx}`, keep the mutex+cond FIFO + pthread workers + `pthread_atfork` reset, re-point the JIT to consume it (JIT payload -> ctx, QSBR/codegen-lock stay JIT-side). Behavior-neutral; the gating dependency for the M:N core. Worker count from `host_nproc()` (mcchost.c:1276) / `--jit-conservative` (`s->jit_threads`, libmcc.c:3585). May promote to [C] if GPU/cross-platform consumers formalize the API. Child of T-lin-10419.
+      OWNER: — | STATE: OPEN | SHA: 695eb8c6 | TS: 2026-08-20T02:11Z
+      REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: —
+
+- [ ] T-lin-10427 [S] coop M:N slice 2 — make the coop `<threads.h>` primitives thread-safe (prereq for multiple workers): atomic `once_flag` init (preserve T-lin-10421 `__once_flag_defined` guard), lock the run-queue + `__mcc_all` + wake-scan (`mcc_coop_threads.h:322-430`), real `mtx_t`/`cnd_t` (today rely on cooperative non-preemption), locked tss-key allocator + per-worker/locked zombie freelist. Testable single-threaded (c11_threads_coop* goldens stay green). Independent of the pool. Child of T-lin-10419.
+      OWNER: — | STATE: OPEN | SHA: 695eb8c6 | TS: 2026-08-20T02:11Z
+      REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: —
+
+- [ ] T-lin-10428 [S] coop M:N slice 3 — the M:N core: per-worker `__mcc_cur`, fiber<->worker context-swap glue (worker OS stack is the scheduler ctx), submit fibers to the T-lin-10426 pool, park/unpark on mtx/cnd/join. Gate default-off/opt-in (T-lin-10417 precedent). Verify: tests/benchmarks/spectral_norm_* coop wall-clock drops toward native on multi-core + a many-fiber stress test only passing under true M:N. Child of T-lin-10419.
+      OWNER: — | STATE: OPEN | SHA: 695eb8c6 | TS: 2026-08-20T02:11Z
+      REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: T-lin-10426, T-lin-10427
+
+- [ ] T-lin-10429 [S] coop M:N slice 4 — fiber-migration TLS safety (THE correctness gate): a fiber resuming on a different worker sees the worker`s `errno`/`_Thread_local` base (and gcc/clang may cache the TLS base in a callee-saved reg across a call). Decide pin-to-worker (no migration, load-imbalanced) vs reload-TLS-base-on-swap; verify no cross-worker TLS corruption. Child of T-lin-10419.
+      OWNER: — | STATE: OPEN | SHA: 695eb8c6 | TS: 2026-08-20T02:11Z
+      REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: T-lin-10428
+
+- [ ] T-lin-10430 [X] coop M:N slice 5 (win-x64) — Win32-fiber multi-worker rework: the coop Windows backend (`mcc_coop_threads.h:133-176`, ConvertThreadToFiber/CreateFiber/SwitchToFiber) assumes ONE OS thread — every worker needs its own ConvertThreadToFiber, the lazy `sp==0` capture breaks under a pool, and fiber handles already leak. Needs native Windows verification. Child of T-lin-10419.
+      OWNER: — | STATE: OPEN | SHA: 695eb8c6 | TS: 2026-08-20T02:11Z
+      REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: T-lin-10428
 
 - [ ] T-lin-10422 [S] optimizer quick win: promote-locals selection/bailout (ast_plan_promotion, src/mccast.c:4592). Narrow the function-wide `has_landor` bailout (:4637) to fire only when the &&/||/cond-store references a promotion candidate (collect candidates before the bailout), and bias `cweight` (:4642) toward loop-body references so induction vars + invariant base pointers pin into registers first. o0-safe (gated optimize>=2). MUST pass exec + exec-replay (record==replay faithfulness) + rir-coverage + o0-baseline before DONE. Evidence: a cold &&-if inflates a hot loop ~36%. Child of T-lin-10420.
       OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
