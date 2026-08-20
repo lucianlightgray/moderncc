@@ -46,7 +46,7 @@ def find_anchors(srcdir):
                 if "nocode_wanted" in lines[j]:
                     a["g_nocode"] = j + 2
                     break
-        if re.match(r"\s*static void gen_function\(Sym \*sym\)", ln):
+        if re.match(r"\s*static void gen_function\(Sym \*sym\b", ln):
             for j in range(i, min(i + 4, len(lines))):
                 if "MCC_TRACE" in lines[j] and "get_tok_str" in lines[j]:
                     a["body"] = j + 1
