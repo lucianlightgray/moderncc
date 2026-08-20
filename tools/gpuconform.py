@@ -342,6 +342,9 @@ def main():
     }
     for k in FUNNEL:
         summary[k.replace("-", "_")] = sum(r.get(k, 0) for r in q)
+    _slcs = summary["slices_total"]
+    summary["device_execution_fraction"] = (
+        100.0 * summary["gpu_slices_total"] / _slcs) if _slcs else 0.0
     for r in classified_out:
         k = r.get("oracle_verdict", "?")
         k = k.split(":")[0] if k != "disagree" else "oracles-disagree"
@@ -360,6 +363,10 @@ def main():
               % (summary["bodies_total"], summary["slices_total"],
                  summary["tuples_total"], summary["gpu_slices_total"],
                  summary["dispatches_total"], summary["with_device_mismatch"]))
+    out.write("gpuconform: device-execution-fraction=%.2f%% "
+              "(%d of %d slices executed on device)\n"
+              % (summary["device_execution_fraction"],
+                 summary["gpu_slices_total"], summary["slices_total"]))
     out.write("gpuconform: progs with-bodies=%d with-slice=%d with-gpu=%d "
               "with-dispatch=%d\n"
               % (summary["with_bodies"], len(withslice), len(withgpu),
