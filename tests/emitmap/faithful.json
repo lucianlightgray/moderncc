@@ -8,12 +8,12 @@
   "unfaithful_pct_embedjit": 2.21
  },
  "arm64|selfhost": {
-  "baked_pct": 40.34,
+  "baked_pct": 39.99,
   "embedjit_gap_pt": 0.03,
   "jit_gap_pt": 0.0,
-  "unfaithful_pct_O1": 2.0,
-  "unfaithful_pct_O1_embedjit": 2.0,
-  "unfaithful_pct_embedjit": 2.03
+  "unfaithful_pct_O1": 2.36,
+  "unfaithful_pct_O1_embedjit": 2.36,
+  "unfaithful_pct_embedjit": 2.39
  },
  "x86_64|full_language.c": {
   "baked_pct": 13.0,
