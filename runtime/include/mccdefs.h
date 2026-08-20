@@ -728,9 +728,31 @@
 	__BUILTIN(int, fputc, (int, void*))
 	__BUILTIN(int, putchar, (int))
 	__BUILTIN(__SIZE_TYPE__, fwrite, (const void*, __SIZE_TYPE__, __SIZE_TYPE__, void*))
+#if defined __APPLE__ || defined _WIN32
+	__BUILTIN(int, vprintf, (const char*, __builtin_va_list))
+	__BUILTIN(int, vfprintf, (void*, const char*, __builtin_va_list))
+	static __inline int __builtin_fputs_unlocked(const char *__s, void *__f) {
+		return __builtin_fputs(__s, __f);
+	}
+	static __inline int __builtin_printf_unlocked(const char *__f, ...) {
+		__builtin_va_list __ap; int __r;
+		__builtin_va_start(__ap, __f);
+		__r = __builtin_vprintf(__f, __ap);
+		__builtin_va_end(__ap);
+		return __r;
+	}
+	static __inline int __builtin_fprintf_unlocked(void *__s, const char *__f, ...) {
+		__builtin_va_list __ap; int __r;
+		__builtin_va_start(__ap, __f);
+		__r = __builtin_vfprintf(__s, __f, __ap);
+		__builtin_va_end(__ap);
+		return __r;
+	}
+#else
 	__BUILTIN(int, fprintf_unlocked, (void*, const char*, ...))
 	__BUILTIN(int, fputs_unlocked, (const char*, void*))
 	__BUILTIN(int, printf_unlocked, (const char*, ...))
+#endif
 	__BUILTIN(void, exit, (int))
 	__BUILTIN(void*, memchr, (const void*, int, __SIZE_TYPE__))
 #if defined __APPLE__ || defined _WIN32

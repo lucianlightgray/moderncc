@@ -1845,6 +1845,10 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/ud.s -o {W}/ud.o 2>&1 | grep -o 'unknown directive' ; echo END",
 		 "unknown directive\nEND\n"},
 
+		{"unlocked_stdio_builtins", "",
+		 "{MCC} -B{B} -I{I} {D}/unlocked_check.c -o {W}/unlocked && {W}/unlocked",
+		 "A1\nB2\nC3\nUNLOCKED_OK\n"},
+
 		{"xlinker_accepted", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/xl.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/xl.c -o {W}/xl.o -Xlinker -Bsymbolic && echo XLINKER_OK",
