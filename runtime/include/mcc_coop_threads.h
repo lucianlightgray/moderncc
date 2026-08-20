@@ -327,6 +327,22 @@ static int __mcc_inited = 0;
 static int __mcc_tss_next = 0;
 static tss_dtor_t __mcc_tss_dtor[__MCC_COOP_MAX_TSS];
 
+#ifdef MCC_COOP_MT
+static volatile int __mcc_sched = 0;
+static void __mcc_lock(void) {
+	while (__atomic_exchange_n(&__mcc_sched, 1, __ATOMIC_ACQUIRE))
+		;
+}
+static void __mcc_unlock(void) {
+	__atomic_store_n(&__mcc_sched, 0, __ATOMIC_RELEASE);
+}
+#define __MCC_LOCK() __mcc_lock()
+#define __MCC_UNLOCK() __mcc_unlock()
+#else
+#define __MCC_LOCK()
+#define __MCC_UNLOCK()
+#endif
+
 static void __mcc_need_init(void) {
 	if (__mcc_inited)
 		return;
@@ -370,12 +386,14 @@ static void __mcc_all_remove(__mcc_fiber *__f) {
 }
 
 static void __mcc_reap(void) {
+	__MCC_LOCK();
 	if (__mcc_zombie) {
 		__mcc_all_remove(__mcc_zombie);
 		free(__mcc_zombie->stack);
 		free(__mcc_zombie);
 		__mcc_zombie = (__mcc_fiber *)0;
 	}
+	__MCC_UNLOCK();
 }
 
 static void __mcc_switch(__mcc_fiber *__next) {
@@ -393,6 +411,7 @@ _Noreturn static void __mcc_deadlock(void) {
 
 static int __mcc_block_on(void *__token, int __timed) {
 	__mcc_fiber *__next;
+	__MCC_LOCK();
 	__mcc_cur->state = __MCC_F_BLOCKED;
 	__mcc_cur->blocked_on = __token;
 	__next = __mcc_ready_pop();
@@ -400,10 +419,13 @@ static int __mcc_block_on(void *__token, int __timed) {
 		if (__timed) {
 			__mcc_cur->state = __MCC_F_RUNNABLE;
 			__mcc_cur->blocked_on = (void *)0;
+			__MCC_UNLOCK();
 			return 0;
 		}
+		__MCC_UNLOCK();
 		__mcc_deadlock();
 	}
+	__MCC_UNLOCK();
 	__mcc_switch(__next);
 	return 1;
 }
@@ -432,10 +454,14 @@ static void __mcc_wake_all(void *__token) {
 static void __mcc_yield(void) {
 	__mcc_fiber *__next;
 	__mcc_need_init();
+	__MCC_LOCK();
 	__next = __mcc_ready_pop();
-	if (!__next)
+	if (!__next) {
+		__MCC_UNLOCK();
 		return;
+	}
 	__mcc_ready_push(__mcc_cur);
+	__MCC_UNLOCK();
 	__mcc_switch(__next);
 }
 
@@ -443,6 +469,7 @@ static void __mcc_fiber_start(void) {
 	__mcc_fiber *__self = __mcc_cur;
 	__mcc_fiber *__next;
 	__self->result = __self->fn(__self->arg);
+	__MCC_LOCK();
 	__self->state = __MCC_F_DONE;
 	__mcc_wake_all(__self);
 	if (__self->detached)
@@ -451,6 +478,7 @@ static void __mcc_fiber_start(void) {
 	if (!__next)
 		__next = &__mcc_main;
 	__mcc_cur = __next;
+	__MCC_UNLOCK();
 	__mcc_ctx_swap(&__self->sp, __next->sp);
 }
 
@@ -471,9 +499,11 @@ static int thrd_create(thrd_t *__thr, thrd_start_t __func, void *__arg) {
 	for (__i = 0; __i < __MCC_COOP_MAX_TSS; __i++)
 		__f->tss[__i] = (void *)0;
 	__f->sp = __mcc_ctx_make(__f->stack, __MCC_COOP_STACK, __mcc_fiber_start);
+	__MCC_LOCK();
 	__f->all_next = __mcc_all;
 	__mcc_all = __f;
 	__mcc_ready_push(__f);
+	__MCC_UNLOCK();
 	*__thr = __f;
 	return thrd_success;
 }
@@ -484,7 +514,9 @@ static int thrd_join(thrd_t __thr, int *__res) {
 		__mcc_block_on(__thr, 0);
 	if (__res)
 		*__res = __thr->result;
+	__MCC_LOCK();
 	__mcc_all_remove(__thr);
+	__MCC_UNLOCK();
 	free(__thr->stack);
 	free(__thr);
 	return thrd_success;
@@ -493,7 +525,9 @@ static int thrd_join(thrd_t __thr, int *__res) {
 static int thrd_detach(thrd_t __thr) {
 	__mcc_need_init();
 	if (__thr->state == __MCC_F_DONE) {
+		__MCC_LOCK();
 		__mcc_all_remove(__thr);
+		__MCC_UNLOCK();
 		free(__thr->stack);
 		free(__thr);
 		return thrd_success;
@@ -531,6 +565,7 @@ _Noreturn static void thrd_exit(int __res) {
 	__mcc_need_init();
 	__self = __mcc_cur;
 	__self->result = __res;
+	__MCC_LOCK();
 	__self->state = __MCC_F_DONE;
 	__mcc_wake_all(__self);
 	if (__self->detached)
@@ -540,22 +575,43 @@ _Noreturn static void thrd_exit(int __res) {
 		__next = &__mcc_main;
 	if (__self == &__mcc_main) {
 		while (__next) {
+			__MCC_UNLOCK();
 			__mcc_switch(__next);
+			__MCC_LOCK();
 			__next = __mcc_ready_pop();
 		}
+		__MCC_UNLOCK();
 		exit(__res);
 	}
 	__mcc_cur = __next;
+	__MCC_UNLOCK();
 	__mcc_ctx_swap(&__self->sp, __next->sp);
 	for (;;)
 		;
 }
 
 static void call_once(once_flag *__flag, void (*__func)(void)) {
+#ifdef MCC_COOP_MT
+	int __st = __atomic_load_n(__flag, __ATOMIC_ACQUIRE);
+	if (__st == 2)
+		return;
+	if (__st == 0) {
+		int __exp = 0;
+		if (__atomic_compare_exchange_n(__flag, &__exp, 1, 0, __ATOMIC_ACQ_REL,
+																		__ATOMIC_ACQUIRE)) {
+			__func();
+			__atomic_store_n(__flag, 2, __ATOMIC_RELEASE);
+			return;
+		}
+	}
+	while (__atomic_load_n(__flag, __ATOMIC_ACQUIRE) != 2)
+		__mcc_yield();
+#else
 	if (*__flag)
 		return;
 	*__flag = 1;
 	__func();
+#endif
 }
 
 static int mtx_init(mtx_t *__m, int __type) {
@@ -568,59 +624,77 @@ static int mtx_init(mtx_t *__m, int __type) {
 
 static int mtx_lock(mtx_t *__m) {
 	__mcc_need_init();
+	__MCC_LOCK();
 	if (__m->locked && (__m->type & mtx_recursive) && __m->owner == __mcc_cur) {
 		__m->rec++;
+		__MCC_UNLOCK();
 		return thrd_success;
 	}
-	while (__m->locked)
+	while (__m->locked) {
+		__MCC_UNLOCK();
 		__mcc_block_on(__m, 0);
+		__MCC_LOCK();
+	}
 	__m->locked = 1;
 	__m->owner = __mcc_cur;
 	__m->rec = 1;
+	__MCC_UNLOCK();
 	return thrd_success;
 }
 
 static int mtx_trylock(mtx_t *__m) {
 	__mcc_need_init();
+	__MCC_LOCK();
 	if (__m->locked) {
 		if ((__m->type & mtx_recursive) && __m->owner == __mcc_cur) {
 			__m->rec++;
+			__MCC_UNLOCK();
 			return thrd_success;
 		}
+		__MCC_UNLOCK();
 		return thrd_busy;
 	}
 	__m->locked = 1;
 	__m->owner = __mcc_cur;
 	__m->rec = 1;
+	__MCC_UNLOCK();
 	return thrd_success;
 }
 
 static int mtx_timedlock(mtx_t *__m, const struct timespec *__ts) {
 	(void)__ts;
 	__mcc_need_init();
+	__MCC_LOCK();
 	if (__m->locked && (__m->type & mtx_recursive) && __m->owner == __mcc_cur) {
 		__m->rec++;
+		__MCC_UNLOCK();
 		return thrd_success;
 	}
 	while (__m->locked) {
+		__MCC_UNLOCK();
 		if (!__mcc_block_on(__m, 1))
 			return thrd_timedout;
+		__MCC_LOCK();
 	}
 	__m->locked = 1;
 	__m->owner = __mcc_cur;
 	__m->rec = 1;
+	__MCC_UNLOCK();
 	return thrd_success;
 }
 
 static int mtx_unlock(mtx_t *__m) {
+	__MCC_LOCK();
 	if ((__m->type & mtx_recursive) && __m->rec > 1) {
 		__m->rec--;
+		__MCC_UNLOCK();
 		return thrd_success;
 	}
 	__m->locked = 0;
 	__m->owner = (__mcc_fiber *)0;
 	__m->rec = 0;
 	__mcc_wake_one(__m);
+	__MCC_UNLOCK();
 	return thrd_success;
 }
 
@@ -634,12 +708,16 @@ static int cnd_init(cnd_t *__c) {
 }
 
 static int cnd_signal(cnd_t *__c) {
+	__MCC_LOCK();
 	__mcc_wake_one(__c);
+	__MCC_UNLOCK();
 	return thrd_success;
 }
 
 static int cnd_broadcast(cnd_t *__c) {
+	__MCC_LOCK();
 	__mcc_wake_all(__c);
+	__MCC_UNLOCK();
 	return thrd_success;
 }
 
@@ -666,11 +744,22 @@ static void cnd_destroy(cnd_t *__c) {
 }
 
 static int tss_create(tss_t *__key, tss_dtor_t __dtor) {
+#ifdef MCC_COOP_MT
+	int __k = __atomic_fetch_add(&__mcc_tss_next, 1, __ATOMIC_ACQ_REL);
+	if (__k >= __MCC_COOP_MAX_TSS) {
+		__atomic_fetch_sub(&__mcc_tss_next, 1, __ATOMIC_ACQ_REL);
+		return thrd_error;
+	}
+	*__key = __k;
+	__mcc_tss_dtor[__k] = __dtor;
+	return thrd_success;
+#else
 	if (__mcc_tss_next >= __MCC_COOP_MAX_TSS)
 		return thrd_error;
 	*__key = __mcc_tss_next++;
 	__mcc_tss_dtor[*__key] = __dtor;
 	return thrd_success;
+#endif
 }
 
 static void *tss_get(tss_t __key) {
