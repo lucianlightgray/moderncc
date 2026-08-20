@@ -18,7 +18,7 @@ MCC="$B/mcc.exe"; [ -x "$MCC" ] || MCC="$B/mcc"
 { echo "== mcc = $MCC =="; "$MCC" -v; "$MCC" -dumpmachine; } > "$OUT/02-mcc-identity.txt" 2>&1 || true
 
 # --- exact ctest cells (the real golden comparison) ---
-( cd "$B" && ctest -R "^exec/float128$|^exec/integer_promotion$" --output-on-failure --timeout 120 ) \
+( cd "$B" && ctest -R "^exec/float128$|^exec/integer_promotion$|^exec/int256$" --output-on-failure --timeout 120 ) \
     > "$OUT/03-ctest.txt" 2>&1 || true
 
 # --- full exec suite sweep (find any other arm64-Windows reds); set WOA_FULL_SWEEP=1 ---
