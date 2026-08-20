@@ -2110,13 +2110,8 @@ ST_FUNC void mcc_debug_line(MCCState *s1) { MCC_TRACE("enter\n");
 		else { MCC_TRACE("br\n");
 			int row_emitted = 0;
 			if (len_pc) { MCC_TRACE("br\n");
-				n = len_pc * DWARF_LINE_RANGE + 0 + DWARF_OPCODE_BASE - DWARF_LINE_BASE;
-				if (n >= DWARF_OPCODE_BASE && n <= 255)
-					{ MCC_TRACE("br\n"); dwarf_line_op(s1, n); row_emitted = 1; }
-				else { MCC_TRACE("br\n");
-					dwarf_line_op(s1, DW_LNS_advance_pc);
-					dwarf_uleb128_op(s1, len_pc);
-				}
+				dwarf_line_op(s1, DW_LNS_advance_pc);
+				dwarf_uleb128_op(s1, len_pc);
 			}
 			if (len_line) { MCC_TRACE("br\n");
 				n = 0 * DWARF_LINE_RANGE + len_line + DWARF_OPCODE_BASE - DWARF_LINE_BASE;

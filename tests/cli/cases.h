@@ -800,6 +800,15 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'compile=%s kr_notproto=%s proto_yes=%s\\n' $rc $krp $prp",
 		 "compile=0 kr_notproto=1 proto_yes=1\n"},
 
+		{"dwarf_line_no_stale_rows", "os=Darwin",
+		 "printf 'int a,b,c;\\nint f(void){\\n#line 40\\n a=5;\\n#line 90\\n b=a+7;\\n"
+		 "#line 140\\n c=b*3;\\n return c;\\n}\\n' > {W}/bl.c && "
+		 "{MCC} -B{B} -g -c {W}/bl.c -o {W}/bl.o 2>{W}/bl.err; rc=$?; "
+		 "dups=$(dwarfdump --debug-line {W}/bl.o 2>/dev/null | grep -E '^0x[0-9a-f]+ ' | "
+		 "awk '{print $1}' | sort | uniq -d | wc -l | tr -d ' '); "
+		 "printf 'compile=%s dupaddrs=%s\\n' $rc $dups",
+		 "compile=0 dupaddrs=0\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
