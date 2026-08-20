@@ -2111,6 +2111,25 @@ int ast_alloc_loc(int size, int align) { MCC_TRACE("enter\n");
 	return loc;
 }
 
+/* T-mac-30246: snapshot/restore the loc-record cursor state (all static to this
+ * TU) so a SIDE-EFFECT-FREE semantic check -- e.g. type-checking a _Generic
+ * NON-selected association -- can be fully rewound and leave zero -O0 bytes and
+ * zero AST/RIR replay footprint. The caller additionally saves `loc`/`anon_sym`/
+ * `nb_temp_local_vars` (its own globals) and gates ast_active/rir_active/
+ * ast_replaying/rir_c2_active off around the check. */
+void ast_locrec_snapshot(int out[4]) { MCC_TRACE("enter\n");
+	out[0] = ast_loc_low;
+	out[1] = ast_locrec_n;
+	out[2] = ast_locrec_i;
+	out[3] = ast_locrec_min;
+}
+void ast_locrec_restore(const int in[4]) { MCC_TRACE("enter\n");
+	ast_loc_low = in[0];
+	ast_locrec_n = in[1];
+	ast_locrec_i = in[2];
+	ast_locrec_min = in[3];
+}
+
 static void ast_locrec_skip(int size, int align) { MCC_TRACE("enter\n");
 	if (ast_replaying && !ir_cap_replaying)
 		{ MCC_TRACE("br\n"); (void)ast_locrec_take(size, align); }

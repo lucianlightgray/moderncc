@@ -14749,7 +14749,57 @@ tok_next:
 					{ MCC_TRACE("br\n"); tok_str_free(str); }
 				skip_or_save_block(&str);
 			} else { MCC_TRACE("br\n");
-				skip_or_save_block(NULL);
+				/* T-mac-30246: parse + type-check the NON-selected association
+				 * so its constraints ARE diagnosed (gcc/clang reject e.g. an
+				 * undeclared id, a call of a non-function, a const assignment,
+				 * or a nested no-match _Generic here); mcc previously only
+				 * brace-matched it. Do it as a SIDE-EFFECT-FREE check: gate the
+				 * AST/RIR recorders + replay off (as rir_verify does around its
+				 * sub-build) and save/restore the frame cursor + anon_sym, so no
+				 * -O0 byte and no AST/RIR replay record moves -- without this the
+				 * dead temporaries would grow the real frame (lin's blocker). */
+				TokenString *chk = NULL;
+				int sv_loc = loc, sv_anon = anon_sym;
+				int sv_ntlv = nb_temp_local_vars, sv_nocode = nocode_wanted;
+				int sv_astact = ast_active, sv_riract = rir_active;
+				int sv_astrepl = ast_replaying, sv_rc2 = rir_c2_active;
+				int sv_vn = (int)(vtop - vstack + 1), sv_lr[4];
+				int sv_tok;
+				CValue sv_tokc;
+				ast_locrec_snapshot(sv_lr);
+				skip_or_save_block(&chk);
+				/* skip_or_save_block leaves tok at the block terminator (','/
+				 * ')'); begin_macro/next below clobber it and end_macro does NOT
+				 * restore it, so snapshot it and put it back after the check to
+				 * reproduce the plain skip_or_save_block(NULL) invariant the
+				 * association loop relies on. */
+				sv_tok = tok;
+				sv_tokc = tokc;
+				begin_macro(chk, 1);
+				next();
+				nocode_wanted = 1;
+				ast_active = 0;
+				rir_active = 0;
+				ast_replaying = 0;
+				rir_c2_active = 0;
+				expr_eq();
+				/* only type-checking: don't validate the block terminator
+				 * (end_macro discards any remainder); expr_eq has already
+				 * diagnosed the association's constraints. */
+				end_macro();
+				tok = sv_tok;
+				tokc = sv_tokc;
+				vtop = vstack + sv_vn - 1;
+				rir_c2_active = sv_rc2;
+				ast_replaying = sv_astrepl;
+				rir_active = sv_riract;
+				ast_active = sv_astact;
+				nocode_wanted = sv_nocode;
+				nb_temp_local_vars = sv_ntlv;
+				anon_sym = sv_anon;
+				loc = sv_loc;
+				ast_locrec_restore(sv_lr);
+				/* chk was begin_macro(,1)'d -> end_macro already freed it */
 			}
 			if (tok == ')')
 				{ MCC_TRACE("br\n"); break; }

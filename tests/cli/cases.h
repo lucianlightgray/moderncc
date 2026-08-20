@@ -604,6 +604,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'default=%s c23=%s gnu23=%s\\n' $dflt $c23 $gnu",
 		 "default=0 c23=1 gnu23=0\n"},
 
+		{"generic_nonselected_semantic_check", "",
+		 "printf 'int main(void){ return _Generic(0, int:0, double: undeclared_xyz); }\\n' > {W}/gu.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/gu.c -o {W}/gu.o 2>{W}/gu.e; undecl=$?; "
+		 "printf 'int f(void){return 0;} int main(void){ return _Generic(0, int: 7, double: f()+f()+f()); }\\n' > {W}/gv.c && "
+		 "{MCC} -B{B} -I{I} {W}/gv.c -o {W}/gv.exe 2>{W}/gv.e && {W}/gv.exe; valid=$?; "
+		 "printf 'undecl=%s valid=%s\\n' $undecl $valid",
+		 "undecl=1 valid=7\n"},
+
 		{"builtin_dwarf_cfa", "",
 		 "printf 'int main(void){ char*c=(char*)__builtin_dwarf_cfa(); char*f=(char*)__builtin_frame_address(0); return (c>=f && c!=0) ? 7 : 0; }\\n' > {W}/cfa.c && "
 		 "{MCC} -B{B} {W}/cfa.c -o {W}/cfa.exe && {W}/cfa.exe; echo val=$?; "
