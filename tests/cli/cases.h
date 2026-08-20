@@ -792,6 +792,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'preprocess=%s notfound=%s compile=%s\\n' $ec $nf $cc",
 		 "preprocess=0 notfound=0 compile=0\n"},
 
+		{"dwarf_prototyped_attribute", "os=Darwin",
+		 "printf 'int kr(a) int a;{return a;}\\nint proto(int a){return a;}\\n' > {W}/dp.c && "
+		 "{MCC} -B{B} -g -c {W}/dp.c -o {W}/dp.o 2>{W}/dp.err; rc=$?; "
+		 "krp=$(dwarfdump {W}/dp.o 2>/dev/null | grep -A6 '\"kr\"' | grep -c 'DW_AT_prototyped.*0x00'); "
+		 "prp=$(dwarfdump {W}/dp.o 2>/dev/null | grep -A6 '\"proto\"' | grep -c 'DW_AT_prototyped.*0x01'); "
+		 "printf 'compile=%s kr_notproto=%s proto_yes=%s\\n' $rc $krp $prp",
+		 "compile=0 kr_notproto=1 proto_yes=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

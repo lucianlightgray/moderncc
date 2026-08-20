@@ -221,6 +221,7 @@ static const unsigned char dwarf_abbrev_init[] = {
 		DW_AT_decl_file, DW_FORM_udata,
 		DW_AT_decl_line, DW_FORM_udata,
 		DW_AT_type, DW_FORM_ref4,
+		DW_AT_prototyped, DW_FORM_flag,
 		DW_AT_low_pc, DW_FORM_addr,
 #if MCC_PTR_SIZE == 4
 		DW_AT_high_pc, DW_FORM_data4,
@@ -235,6 +236,7 @@ static const unsigned char dwarf_abbrev_init[] = {
 		DW_AT_decl_file, DW_FORM_udata,
 		DW_AT_decl_line, DW_FORM_udata,
 		DW_AT_type, DW_FORM_ref4,
+		DW_AT_prototyped, DW_FORM_flag,
 		DW_AT_low_pc, DW_FORM_addr,
 #if MCC_PTR_SIZE == 4
 		DW_AT_high_pc, DW_FORM_data4,
@@ -2985,6 +2987,8 @@ ST_FUNC void mcc_debug_funcend(MCCState *s1, int size) { MCC_TRACE("enter\n");
 		dwarf_uleb128(dwarf_info_section, dwarf_info.line);
 		mcc_debug_check_forw(s1, sym->type.ref, dwarf_info_section->data_offset);
 		dwarf_data4(dwarf_info_section, n_debug_info - dwarf_info.start);
+		dwarf_data1(dwarf_info_section,
+								sym->type.ref->f.func_type != FUNC_OLD ? 1 : 0);
 		dwarf_reloc_addr(dwarf_info_section, section_sym, R_DATA_PTR, func_ind);
 #if MCC_PTR_SIZE == 4
 		dwarf_data4(dwarf_info_section, size);
