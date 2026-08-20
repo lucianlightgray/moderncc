@@ -21,6 +21,16 @@ import argparse, os, re, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ABI_RE = re.compile(r'\b(size|sizeof|align|alignof|maxwidth|sz|off)\b', re.I)
+EXP_RE = re.compile(r'([eE][+-])0*(\d)')
+
+
+def norm(s):
+    """Canonicalize a printed float's exponent so the msvcrt 3-digit form
+    (`e+045`) compares equal to the ucrt/Unix 2-digit form (`e+45`). Only leading
+    zeros of an exponent are stripped, so the value is preserved and a genuine
+    mantissa/magnitude difference still shows; idempotent on 2-digit output, so it
+    is a no-op off Windows."""
+    return EXP_RE.sub(r'\1\2', s)
 
 
 def sections(src):
@@ -39,7 +49,14 @@ def build_run(compiler, src, sect, td, mcc, bdir):
         rc, out, err = run([mcc, "-B", bdir, "-D" + sect, "-run", src])
         return (rc == 0, out if rc == 0 else err[:200])
     exe = os.path.join(td, compiler + "_" + sect)
-    rc, _, err = run([compiler, "-std=c23", "-w", "-D" + sect, src, "-o", exe, "-lm"])
+    if os.name == "nt":
+        exe += ".exe"
+    # libm is a separate archive only on Unix; on Windows the math funcs live in
+    # the CRT and an explicit `-lm` breaks clang's default MSVC target (no m.lib).
+    cmd = [compiler, "-std=c23", "-w", "-D" + sect, src, "-o", exe]
+    if os.name != "nt":
+        cmd.append("-lm")
+    rc, _, err = run(cmd)
     if rc != 0:
         return (False, "build: " + err.strip()[:200])
     rc, out, err = run([exe])
@@ -90,10 +107,10 @@ def main():
                     lc = c[i] if i < len(c) else "<none>"
                     lm = m[i] if i < len(m) else "<none>"
                     is_abi = ABI_RE.search(lg) or ABI_RE.search(lm)
-                    if lg != lc:
+                    if norm(lg) != norm(lc):
                         ref_ambig += 1            # gcc vs clang disagree -> UB/impl-def
                         continue
-                    if lm == lg:
+                    if norm(lm) == norm(lg):
                         value_ok += 1
                         continue
                     if is_abi:
