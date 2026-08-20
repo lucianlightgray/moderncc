@@ -124,9 +124,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: e3350673 | TS: 2026-08-20T18:30Z
       REF: DETAILS.md#t-lin-10420-child-decomposition | DEPS: —
 
-- [ ] T-lin-10448 [S] PACKED double/float vector arith in gen_vector_op (mccgen.c:8462, x86_64) — for double/float non-compare ops fitting one XMM, replace the per-element scalar loop (:8497) with a single packed emit (mulpd/addpd/subpd/divpd) in x86_64-gen.c; operands already stack-materialized, no new reg value class. Deferred: XMM-resident class/rsqrtps/FMA stay T-lin-10425. Verify [VB]+nbody8i mulsd→mulpd+exec-replay. MEDIUM-HIGH. Child of T-lin-10425.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: c18f8e88 | TS: 2026-08-20T19:20Z
-      REF: DETAILS.md#t-lin-10420-child-decomposition | DEPS: —
 
 - [ ] T-lin-10441 [S] optimizer TYPE-COMPLETENESS (do FIRST, before algorithm tuning; per user 2026-08-20): make every optimizer pass handle EVERY VT type — bool/byte/short/int/long/float/double/ldouble/__int128(VT_QLONG/QFLOAT)/__float128/`_BitInt`(bs.bp)/void.func-skip; vector(128/256/512) is T-lin-10425. Audit each `ast_*_run`/strategy for `is_float`/btype/`ast_bad_type` bailouts that drop float/wide/128 programs, extend to all types, keep o0-neutral (passes are O2+), verify exec+exec-replay+o0-baseline + benchmark parity per fix. Child of T-lin-10420.
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 90f28bdc | TS: 2026-08-20T14:35Z
