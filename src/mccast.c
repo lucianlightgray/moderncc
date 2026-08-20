@@ -2321,6 +2321,12 @@ static int ast_reemit_n;
 static int ast_inline_n;
 static void ast_inline_index_reset(void);
 
+static MCC_OPT_TLS unsigned char ast_opt_user_off[MCC_OPT_COUNT];
+
+static int ast_opt_user_disabled(int id) { MCC_TRACE("enter\n");
+	return id >= 0 && id < MCC_OPT_COUNT && ast_opt_user_off[id];
+}
+
 static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 	if (s1->jit_always_gpu)
 		{ MCC_TRACE("br\n"); ast_ladder_gpu_force(); }
@@ -2331,6 +2337,8 @@ static void ast_opt_defaults(MCCState *s1) { MCC_TRACE("enter\n");
 #define MCC_OPT_ROW(id, name, d) dflt[n++] = (d);
 	MCC_OPT_LIST(MCC_OPT_ROW)
 #undef MCC_OPT_ROW
+	for (i = 0; i < MCC_OPT_COUNT; i++)
+		{ MCC_TRACE("br\n"); ast_opt_user_off[i] = (s1->optflag[i] == 0); }
 	for (i = 0; i < MCC_OPT_COUNT; i++) { MCC_TRACE("br\n");
 		int on, d;
 		if (s1->optflag[i] != MCC_OPT_UNSET)
@@ -21527,15 +21535,15 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				int do_sra = sras > 0;
 				int do_bfold = bfolds > 0;
 				int do_ident = idents > 0;
-				int do_narrow = narrows > 0;
-				int do_cprop = cprops > 0;
-				int do_cse = cses > 0;
-				int do_licm = licms > 0;
-				int do_dse = dses > 0;
+				int do_narrow = narrows > 0 && !ast_opt_user_disabled(MCC_OPT_NARROW);
+				int do_cprop = cprops > 0 && !ast_opt_user_disabled(MCC_OPT_TREE_COPY_PROP);
+				int do_cse = cses > 0 && !ast_opt_user_disabled(MCC_OPT_GCSE);
+				int do_licm = licms > 0 && !ast_opt_user_disabled(MCC_OPT_TREE_LOOP_IM);
+				int do_dse = dses > 0 && !ast_opt_user_disabled(MCC_OPT_TREE_DSE);
 				int do_sccp = sccps > 0;
 				int do_jt = jts > 0;
 				int do_bf = bfs > 0;
-				int do_sethi = sethis > 0;
+				int do_sethi = sethis > 0 && !ast_opt_user_disabled(MCC_OPT_SETHI_ULLMAN);
 				int do_tco = tcos > 0;
 				int do_select = selects > 0;
 			int do_unread = unread > 0;
