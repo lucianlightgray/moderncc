@@ -711,6 +711,10 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		}
 		break;
 	}
+	case TOK_ASMDIR_arch:
+	case TOK_ASMDIR_cpu:
+		asm_skip_to_eol();
+		break;
 	case TOK_ASMDIR_byte:
 		size = 1;
 		goto asm_data;
@@ -1487,6 +1491,11 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 				asm_parse_cfi_directive(s1);
 				goto cfi_done;
 			}
+#else
+			if (!strncmp(nm, ".cfi_", 5)) { MCC_TRACE("br\n");
+				asm_skip_to_eol();
+				goto cfi_done;
+			}
 #endif
 			if (!strcmp(nm, ".dc.b"))
 				dc = TOK_ASMDIR_byte;
@@ -1512,9 +1521,7 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 				}
 			}
 		}
-#if MCC_EH_FRAME
 	cfi_done:
-#endif
 		if (tok != ';' && tok != TOK_LINEFEED)
 			{ MCC_TRACE("br\n"); expect("end of line"); }
 		parse_flags &= ~PARSE_FLAG_LINEFEED;

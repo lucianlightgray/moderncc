@@ -639,6 +639,8 @@ DEF_ASMDIR(8byte)
 DEF_ASMDIR(float)
 DEF_ASMDIR(double)
 DEF_ASMDIR(octa)
+DEF_ASMDIR(arch)
+DEF_ASMDIR(cpu)
 #if MCC_PTR_SIZE == 4
 DEF_ASMDIR(code16)
 DEF_ASMDIR(code32)
