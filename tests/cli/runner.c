@@ -60,6 +60,25 @@ static int req_met(const char *req, char *reason, size_t rn) {
 				snprintf(reason, rn, "requires %s target (host: %s)", want, cpu);
 				return 0;
 			}
+		} else if (!strncmp(tok, "cpu!=", 5)) {
+			const char *want = tok + 5;
+			const char *colon = strchr(want, ':');
+			char wbuf[64];
+			size_t wl = colon ? (size_t)(colon - want) : strlen(want);
+			if (wl >= sizeof wbuf)
+				wl = sizeof wbuf - 1;
+			memcpy(wbuf, want, wl);
+			wbuf[wl] = 0;
+			int hit = !strcmp(wbuf, "x86")
+					? (!strcmp(cpu, "i386") || !strcmp(cpu, "x86_64"))
+					: !strcmp(cpu, wbuf);
+			if (hit) {
+				if (colon && colon[1])
+					snprintf(reason, rn, "%s", colon + 1);
+				else
+					snprintf(reason, rn, "not applicable to the %s target", wbuf);
+				return 0;
+			}
 		} else if (!strncmp(tok, "os=", 3)) {
 			if (!os_eq(os, tok + 3)) {
 				snprintf(reason, rn, "requires %s OS (host: %s)", tok + 3, os);
