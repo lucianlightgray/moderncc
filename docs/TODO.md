@@ -106,7 +106,7 @@ _Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z
 ## Open — claimable
 
 - [ ] T-lin-10427 [S] coop M:N slice 2 — make the coop `<threads.h>` primitives thread-safe (prereq for multiple workers): atomic `once_flag` init (preserve T-lin-10421 `__once_flag_defined` guard), lock the run-queue + `__mcc_all` + wake-scan (`mcc_coop_threads.h:322-430`), real `mtx_t`/`cnd_t` (today rely on cooperative non-preemption), locked tss-key allocator + per-worker/locked zombie freelist. Testable single-threaded (c11_threads_coop* goldens stay green). Independent of the pool. Child of T-lin-10419.
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: 695eb8c6 | TS: 2026-08-20T02:50Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 695eb8c6 | TS: 2026-08-20T02:55Z
       REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: —
 
 - [ ] T-lin-10428 [S] coop M:N slice 3 — the M:N core: per-worker `__mcc_cur`, fiber<->worker context-swap glue (worker OS stack is the scheduler ctx), submit fibers to the T-lin-10426 pool, park/unpark on mtx/cnd/join. Gate default-off/opt-in (T-lin-10417 precedent). Verify: tests/benchmarks/spectral_norm_* coop wall-clock drops toward native on multi-core + a many-fiber stress test only passing under true M:N. Child of T-lin-10419.
