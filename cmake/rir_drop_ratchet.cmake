@@ -41,7 +41,7 @@ if(CPU STREQUAL "x86_64")
     set(_arch_extra_inc "-I${SRCDIR}/src/arch/i386")
 endif()
 
-set(ALLOWED_regaddi 4)
+set(ALLOWED_regaddi 6)
 set(_allowed regaddi)
 
 function(rir_drop_report _flags _tag _outvar)

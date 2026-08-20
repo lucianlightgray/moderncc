@@ -208,8 +208,8 @@
 #    device-dispatched subset of the same member pairs). See
 #    docs/DETAILS.md#t-lin-10384-fix-landed-the-member-arm-in-the-ladder-scanner-census-81-to-0-certified.
 
-O0 replay-fallback:len 3
-O1 replay-fallback:len 3
+O0 replay-fallback:len 4
+O1 replay-fallback:len 4
 O13 strat-dark:abs 1
 O13 strat-dark:bf 1
 O13 strat-dark:divmagic 1
@@ -225,9 +225,9 @@ O13 strat-dark:sra 1
 O13 strat-dark:sroa 1
 O13 strat-dark:tco 1
 O2 jit-not-baked:signature 183
-O2 replay-fallback:len 3
-O3 replay-fallback:len 3
-O4 replay-fallback:len 3
+O2 replay-fallback:len 4
+O3 replay-fallback:len 4
+O4 replay-fallback:len 4
 O4 slice-refused:all-undefined 0
 O4 slice-refused:no-static-type 344
 O4 slice-refused:unsupported-op 1
