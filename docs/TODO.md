@@ -151,7 +151,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
       REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
 - [ ] T-lin-10401 [S] GPU-coverage strategy 1 [LOW risk]: route the CPU-only ladder sub-paths (const `n==0`, corner-sweep, observed-tuples) through `ast_ladder_gpu_hook` + relax the `n<1` refusal (mccast.c:18700) — extra dispatches of already-emittable trees
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: — | TS: 2026-08-18T14:35Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:35Z
       REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
 - [ ] T-lin-10402 [S] GPU-coverage strategy 2 [MED risk]: lift the oracle float refusal (mccast.c:18706/18713) guarded on `mcc_gpu_f64()` — the emitter already has f64; unlocks the FP slice category
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
