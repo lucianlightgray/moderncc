@@ -82,7 +82,7 @@
 	MCC_OPT_ROW(NARROW_CLASS2,                 "narrow-class2",                MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(NARROW_CLASS3,                 "narrow-class3",                MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(NARROW_ELIM,                   "narrow-elim",                  MCC_OPTD_LEVEL(4)) \
-	MCC_OPT_ROW(TREE_CCP_ITERATE,              "tree-ccp-iterate",             MCC_OPTD_LEVEL(4)) \
+	MCC_OPT_ROW(TREE_CCP_ITERATE,              "tree-ccp-iterate",             MCC_OPTD_LEVEL(3)) \
 	MCC_OPT_ROW(IDENT_CONV,                    "ident-conv",                   MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(IDENT_SHIFT,                   "ident-shift",                  MCC_OPTD_ALWAYS) \
 	MCC_OPT_ROW(IDENT_ARITH,                   "ident-arith",                  MCC_OPTD_ALWAYS) \
