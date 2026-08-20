@@ -67,8 +67,20 @@ typedef struct {
 	int dummy;
 } cnd_t;
 
+/*
+ * Define glibc's own once_flag guard so that a later <stdlib.h> (which, under
+ * __GLIBC_USE(ISOC23) — mcc's default — pulls bits/types/once_flag.h) does not
+ * re-typedef `once_flag` and collide with the coop definition below. Coop keeps
+ * its own `int once_flag`; the guard just suppresses glibc's struct typedef.
+ * Supported include order is <threads.h> before <stdlib.h> (T-lin-10421).
+ */
+#ifndef __once_flag_defined
+#define __once_flag_defined 1
+#endif
 typedef int once_flag;
+#ifndef ONCE_FLAG_INIT
 #define ONCE_FLAG_INIT 0
+#endif
 #define TSS_DTOR_ITERATIONS 1
 
 /*
