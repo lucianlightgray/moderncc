@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30259   | 2026-08-20T05:40Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30259   | 2026-08-20T05:45Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T07:45Z |
 
@@ -385,7 +385,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z
       REF: INVESTIGATIONS.md#r10-stmt-expr | DEPS: —
 - [ ] T-mac-30055 [S] Investigate: UBSan/security instrumentation (canary+overflow traps ROBUST) — [HIGH] arm64 `-fsanitize=undefined` does NOT trap `INT_MIN/-1` div/rem overflow → silently returns INT_MIN/0, exit 0 (only CBZ-on-divisor, no min/-1 check; `arm64-gen.c:2254-2296`; runtime handler `mccubsan.c:109` unreachable); [MED] x86_64 same gap → raw SIGFPE not the diagnostic, recover impossible (`x86_64-gen.c:2470`); [LOW] `-fstack-protector`/`-strong`/`-all` collapse to instrument-every-fn (`libmcc.c:3142`); [LOW] shift-count check misses in-range-low-bits (`<<0x100000005LL`) + constant OOB shift (`arm64-gen.c:2158`, `x86_64-gen.c:2445`)
-      OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 5c26b0da | TS: 2026-08-20T05:45Z
       REF: INVESTIGATIONS.md#r10-ubsan-divrem | DEPS: —
 - [ ] T-mac-30056 [S] Investigate: preprocessor secondary features — [MED] `#pragma once` dedups by textual path not device+inode (`mccpp.c:2562`, `host_path_normalize` `libmcc.c:783`, no realpath/stat) → same file via a symlink/two -I roots included twice → redefinition errors; [LOW-MED] `__TIMESTAMP__` entirely unimplemented (no token/macro/handler) → bare-identifier passthrough → compile error in string context; [LOW] `#error` keeps comment text verbatim + >1023 truncates + no `#include_next`-in-primary warning. include_next/computed-include/push-pop_macro/__COUNTER__/_Pragma ROBUST
       OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z
