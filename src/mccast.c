@@ -1549,6 +1549,7 @@ static int ast_opt_limit;
 static int ast_opt_total;
 static int ast_inline_node_limit = 64;
 static int ast_graft_budget_max = 2048;
+static int ast_inline_divguard = 1;
 static int ast_cost_env;
 #ifndef MCC_OPT_TLS
 #define MCC_OPT_TLS MCC_THREAD_LOCAL
@@ -2498,6 +2499,10 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	}
 	ast_inline_node_limit = ast_env_int("MCC_AST_INLINE_NODES", 64);
 	ast_graft_budget_max = ast_env_int("MCC_AST_GRAFT", 2048);
+	{
+		const char *dg = getenv("MCC_AST_INLINE_DIVGUARD");
+		ast_inline_divguard = (dg && dg[0]) ? atoi(dg) : 1;
+	}
 	ast_cost_env = mcc_opt(s1, MCC_OPT_DUMP_COST);
 	ast_sethi_env = mcc_opt(s1, MCC_OPT_SETHI_ULLMAN);
 	ast_sethi_leaf_env = mcc_opt(s1, MCC_OPT_SETHI_ULLMAN_LEAF);
@@ -11300,6 +11305,20 @@ static int ast_inline_graft_node(AstArena *a, AstLocal call, struct AstInlineFn 
 	return 1;
 }
 
+static void ast_inline_mark_divfed(AstArena *a, AstLocal nn, unsigned char *fed) { MCC_TRACE("enter\n");
+	for (AstLocal d = 0; d < nn; d++) { MCC_TRACE("br\n");
+		if (ast_kind(a, d) != AST_Binary || ast_nchild(a, d) != 2 || ast_op(a, d) != '/')
+			{ MCC_TRACE("br\n"); continue; }
+		for (AstLocal c = ast_first_child(a, d); c != AST_NONE; c = ast_next_sib(a, c)) { MCC_TRACE("br\n");
+			AstLocal u = c;
+			while (u != AST_NONE && ast_kind(a, u) == AST_Convert)
+				u = ast_first_child(a, u);
+			if (u != AST_NONE && ast_kind(a, u) == AST_Invoke)
+				{ MCC_TRACE("br\n"); fed[u] = 1; }
+		}
+	}
+}
+
 static int ast_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 	if (!ast_inline_pass_env)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -11307,6 +11326,11 @@ static int ast_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 	int grafted = 0;
 	ast_inline_depth = 0;
 	ast_graft_budget = ast_graft_budget_max;
+	unsigned char *divfed = NULL;
+	if (ast_inline_divguard && nn) { MCC_TRACE("br\n");
+		divfed = mcc_mallocz(nn);
+		ast_inline_mark_divfed(a, nn, divfed);
+	}
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		if (ast_kind(a, n) != AST_Invoke)
 			{ MCC_TRACE("br\n"); continue; }
@@ -11317,12 +11341,16 @@ static int ast_inline_run(AstArena *a) { MCC_TRACE("enter\n");
 		struct AstInlineFn *e = ast_inline_find(csym);
 		if (!e || !e->graftable || !ast_inline_pass_simple(e))
 			{ MCC_TRACE("br\n"); continue; }
+		if (divfed && divfed[n] && !is_float(ast_type_t(a, n)))
+			{ MCC_TRACE("br\n"); continue; }
 		if (ast_inline_graft_node(a, n, e)) { MCC_TRACE("br\n");
 			grafted++;
 			MCC_TRACE("inline graft call=%u callee=%s\n", (unsigned)n,
 								get_tok_str(((Sym *)csym)->v, NULL));
 		}
 	}
+	if (divfed)
+		{ MCC_TRACE("br\n"); mcc_free(divfed); }
 	return grafted;
 }
 

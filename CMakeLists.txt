@@ -4400,6 +4400,14 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_BINARY_DIR}/reemit-cfi")
             set_tests_properties("ast/reemit-cfi" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 120)
+
+            add_test(NAME "ast/inline-divguard"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/inline-divguard.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_CURRENT_BINARY_DIR}/inline-divguard")
+            set_tests_properties("ast/inline-divguard" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120)
         else()
             if(MCC_TARGETOS STREQUAL "Darwin")
                 set(_osxhp_why "osx/headers-parse's --min-files floor is measured by the Linux-host mcc parsing runtime/osx/include; a native Darwin mcc reads different type sizes and compiles a smaller corpus subset than that host, so the floor is host-specific and the cell is scoped to the host that banks it")
