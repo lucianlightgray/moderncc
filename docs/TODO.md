@@ -433,7 +433,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 80d55872 | TS: 2026-08-17T23:05Z
       REF: INVESTIGATIONS.md#r6-diagnostics-pedantic | DEPS: —
 - [ ] T-lin-10397 [S] Investigate (follow-up to T-mac-30031): remaining bundled header conformance — `WCHAR_MIN/MAX` hardcoded `INT32` (stdint.h:100; wrong on ARM-unsigned + Win-16-bit; `__WCHAR_MAX__` predefined so fixable via predefine + mccdefs.h:236 Win branch, needs cross verify); ALL C23 `*_WIDTH`/`BOOL_MAX`/`__STDC_VERSION_*_H__` missing from limits.h+stdint.h (mcc does NOT predefine `__*_WIDTH__` — literal/derived); `char8_t`/`mbrtoc8`/`c8rtomb` (uchar.h); `WINT_MAX` PE, `intmax_t` LP64, `FLT_EVAL_METHOD` i386, `threads.h`-on-PE, `stdatomic.h` fences
-      OWNER: — | STATE: OPEN | SHA: 7c8b4231 | TS: 2026-08-17T22:37Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 7c8b4231 | TS: 2026-08-17T22:37Z
       REF: DETAILS.md#t-mac-30031-slice-unreachable-lin-x64 | DEPS: — | NOTE: split from T-mac-30031 (the `unreachable()` = `__builtin_unreachable()` item is DONE there). WCHAR + *_WIDTH additions are per-target (verify via cross mcc-arm64-*/mcc-*-win32); a shell cell like tests/headers/unreachable-c23.sh avoids coverage-corpus re-bank.
 - [ ] T-mac-30030 [S] Investigate: long-double self-host determinism hole — folding uses HOST long double (`mccgen.c:4019`), mcc's own `parse_number` depends on it (`mccpp.c:3379`), `LDOUBLE_WORDS` host-derived; no gate catches a STABLE stage-0→stage-1 divergence, `selftest.c` has no float coverage; self-host face of T-mac-30029
       OWNER: — | STATE: OPEN | SHA: 8b0abb63 | TS: 2026-08-17T20:40Z
