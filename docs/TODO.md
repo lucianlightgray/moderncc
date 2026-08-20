@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T05:10Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T05:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T07:45Z |
 
@@ -231,9 +231,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-mac-30175 [S] Fix: [MED, fold gap] `__builtin_memcmp`/`__builtin_constant_p(__builtin_strlen(...))` don't const-fold in ICE — `int a[__builtin_memcmp("abc","abc",3)==0?1:-1]` / `int a[__builtin_constant_p(__builtin_strlen("hello"))?1:-1]` → mcc `error: constant expression expected`; both oracles fold. Root: libcall-redirect design (`mccdefs.h:657` plain prototypes, nothing in the ICE evaluator). Same root as T-mac-30104 (strlen); memcmp arm + constant_p(strlen) are distinct manifestations. Fix: fold hooks for __builtin_memcmp/strlen over string-literal args (cluster w/ T-mac-30104).
       OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
       REF: INVESTIGATIONS.md#r28-memcmp-fold | DEPS: T-mac-30104
-- [ ] T-mac-30178 [S] Fix: [MED cluster, clean errors] `__fp16`/`_Float32`/`_Float64`/`_Decimal32/64/128` types unsupported (gcc supports) — `__fp16` (ARM storage half; no token; arith promotes to float unlike _Float16), `_Float32`/`_Float64` (C23 interchange, sizeof 4/8; known overlap w/ prior _Float32/64 findings; clang also rejects here), `_Decimal32/64/128` (C23 decimal FP; gcc yes clang no; stabs strings exist `mccdbg.c:43-45` but parser not wired). All CLEAN undeclared/not-supported errors — no crash/miscompile. mcc DOES support _Float16/__bf16/__float128/_Float128 correctly. Fix: wire __fp16/_Float32/_Float64 as aliases (at least); _Decimal* is a larger feature.
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 321d4733 | TS: 2026-08-20T05:10Z
-      REF: INVESTIGATIONS.md#r28-ext-fp-types | DEPS: —
 - [ ] T-mac-30179 [S] Fix: [LOW cluster] efficiency/cosmetic — (1) `__sync_synchronize()` emulated via seq_cst __atomic_fetch_add on a stack volatile int (`mccdefs.h:387-389`) → `bl __atomic_fetch_add_4` not an inline `dmb ish` (correct, just a call+stack access); (2) extended-type inf/nan/huge_val builtins — **_Float16 part DONE (win-x64, 74f9d331): `__builtin_inff16`/`__builtin_huge_valf16`/`__builtin_nanf16` added** (3 DEF_TOKENs + the inf/nan handler routes to a VT_FLOAT16 const cv.i=0x7c00/0x7e00; matches gcc, exec 8483/8483, TDD cli/builtin_f16_inf_nan; DETAILS#t-mac-30179-f16-builtins). RESIDUAL: the `__float128` variants (`__builtin_nanf128`/`__builtin_infq`/`__builtin_huge_valq`) are NOT win-doable — `__float128` errors "not supported on this target" on x86_64 (arm64/riscv64-only) → for a lin/mac session; (3) `__FLT128_MAX__` predef also NOT win-relevant (no __float128 on win); (4) C23 `bool b; b++;` no -Wbool-operation (clang also silent → matches an oracle).
       OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
       REF: INVESTIGATIONS.md#r28-low-cluster | DEPS: —
