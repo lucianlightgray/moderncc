@@ -552,6 +552,16 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'reject=%s body=%s protofirst=%s\\n' $rej $body $pf",
 		 "reject=1 body=7 protofirst=0\n"},
 
+		{"empty_paren_def_vs_prototype", "",
+		 "printf 'int f(int,int); int f(){return 42;} int main(void){return 0;}\\n' > {W}/pf.c && "
+		 "{MCC} -B{B} -c {W}/pf.c -o {W}/pf.o 2>{W}/pf.e; pf=$?; "
+		 "printf 'int g(){return 42;} int g(int,int); int main(void){return 0;}\\n' > {W}/df.c && "
+		 "{MCC} -B{B} -c {W}/df.c -o {W}/df.o 2>{W}/df.e; df=$?; "
+		 "printf 'int h(){return 7;} int main(void){return h(1,2);}\\n' > {W}/ctl.c && "
+		 "{MCC} -B{B} {W}/ctl.c -o {W}/ctl.exe 2>{W}/ctl.e && {W}/ctl.exe; ctl=$?; "
+		 "printf 'protofirst=%s deffirst=%s control=%s\\n' $pf $df $ctl",
+		 "protofirst=1 deffirst=1 control=7\n"},
+
 		{"preprocess_C_keeps_comments", "",
 		 "printf '#define M 1 /* DIRCMT */\\nint aa; /* BLOCKCMT */ int bb; // LINECMT\\nint cc = M;\\n' > {W}/kc.c && "
 		 "{MCC} -B{B} -E -C {W}/kc.c > {W}/kcC.out 2>{W}/kc.e1 && "

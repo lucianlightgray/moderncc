@@ -336,7 +336,13 @@ struct FuncAttr {
 			func_fmt_kind : 2,
 			func_fmt_arg : 4,
 			func_fmt_first : 5,
-			xxxx : 1;
+			func_empty_def : 1;   /* T-mac-30094: this FUNC_OLD came from an
+			                       * empty-`()` DEFINITION (`int f(){}`), which
+			                       * per C 6.7.6.3p14 specifies ZERO parameters
+			                       * (unlike an empty-`()` DECLARATION, which is
+			                       * unspecified/K&R) -- used by
+			                       * is_compatible_func to conflict a 0-param def
+			                       * against a prototype that has parameters. */
 };
 
 typedef struct Sym {

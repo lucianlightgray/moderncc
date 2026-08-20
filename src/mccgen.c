@@ -4425,6 +4425,14 @@ static int is_compatible_func(CType *type1, CType *type2) { MCC_TRACE("enter\n")
 				return 1;
 			}
 			if (!old->next) { MCC_TRACE("br\n");
+				/* T-mac-30094: an empty-`()` DEFINITION specifies ZERO
+				 * parameters (C 6.7.6.3p14), so it is INCOMPATIBLE with a
+				 * prototype that declares any parameters (`int f(int,int);
+				 * int f(){}` and the reverse both conflict -- gcc/clang reject).
+				 * An empty-`()` DECLARATION (`int f();`, func_empty_def unset)
+				 * is unspecified/K&R and stays compatible with any prototype. */
+				if (old->f.func_empty_def && proto->next)
+					{ MCC_TRACE("br\n"); return 0; }
 				for (pp = proto->next; pp; pp = pp->next)
 					{ MCC_TRACE("br\n"); if (type_needs_default_promotion(&pp->type))
 						{ MCC_TRACE("br\n"); mcc_pedantic("prototype parameter type does not "
@@ -19490,6 +19498,15 @@ static int decl(int l) {
 				if (ad.f.func_type == 0)
 					{ MCC_TRACE("br\n"); mcc_error("function definition declared with a typedef'd function type"); }
 				merge_funcattr(&type.ref->f, &ad.f);
+				/* T-mac-30094: an empty-`()` DEFINITION (`int f(){}`) specifies
+				 * ZERO parameters (C 6.7.6.3p14), unlike an empty-`()`
+				 * DECLARATION (`int f();`, unspecified/K&R). Mark it so
+				 * is_compatible_func rejects it against a prototype that has
+				 * parameters, while the call path still leaves it un-prototyped
+				 * (so `int h(){} h(1,2);` -- with no conflicting prototype --
+				 * stays accepted, matching gcc). */
+				if (type.ref->f.func_type == FUNC_OLD && type.ref->next == NULL)
+					{ MCC_TRACE("br\n"); type.ref->f.func_empty_def = 1; }
 				type.t &= ~VT_EXTERN;
 				if ((type.t & VT_INLINE) && !mcc_state->freestanding &&
 						v >= TOK_IDENT && !strcmp(get_tok_str(v, NULL), "main"))
