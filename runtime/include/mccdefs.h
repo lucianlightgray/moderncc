@@ -272,6 +272,7 @@
 	#define __FLT_HAS_DENORM__ 1
 	#define __FLT_HAS_INFINITY__ 1
 	#define __FLT_HAS_QUIET_NAN__ 1
+	#define __FLT_NORM_MAX__ __FLT_MAX__
 
 	#define __FLT16_MANT_DIG__ 11
 	#define __FLT16_DIG__ 3
@@ -302,6 +303,7 @@
 	#define __DBL_HAS_DENORM__ 1
 	#define __DBL_HAS_INFINITY__ 1
 	#define __DBL_HAS_QUIET_NAN__ 1
+	#define __DBL_NORM_MAX__ __DBL_MAX__
 
 #if defined __x86_64__ || defined __i386__
 	#define __LDBL_MANT_DIG__ 64
@@ -313,6 +315,7 @@
 	#define __LDBL_MAX__ 1.18973149535723176502126385303097021e+4932L
 	#define __LDBL_EPSILON__ 1.08420217248550443400745280086994171e-19L
 	#define __LDBL_DENORM_MIN__ 3.64519953188247460252840593361941982e-4951L
+	#define __LDBL_NORM_MAX__ __LDBL_MAX__
 #else
 	#define __LDBL_MANT_DIG__ __DBL_MANT_DIG__
 	#define __LDBL_DIG__ __DBL_DIG__
@@ -323,6 +326,7 @@
 	#define __LDBL_MAX__ __DBL_MAX__
 	#define __LDBL_EPSILON__ __DBL_EPSILON__
 	#define __LDBL_DENORM_MIN__ __DBL_DENORM_MIN__
+	#define __LDBL_NORM_MAX__ __LDBL_MAX__
 #endif
 #if defined __aarch64__ || defined __riscv || (defined __x86_64__ && !defined _WIN32)
 	#define __FLT128_MANT_DIG__ 113

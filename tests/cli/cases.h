@@ -1860,6 +1860,10 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/flt128_predef.c -o {W}/flt128 && {W}/flt128",
 		 "FLT128_OK\n"},
 
+		{"width_predef", "",
+		 "{MCC} -B{B} -I{I} {D}/width_predef.c -o {W}/width && {W}/width",
+		 "WIDTH_OK\n"},
+
 		{"fast_math_predef_and_fp_opts", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/fm.c && "
 		 "{MCC} -B{B} -I{I} -ffast-math -dM -E {W}/fm.c 2>&1 | grep -o '__FAST_MATH__ 1' ; "

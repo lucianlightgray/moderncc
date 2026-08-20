@@ -6155,6 +6155,39 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 #if MCC_HAVE_INT128
 	cstr_printf(cs, "#define __SIZEOF_INT128__ 16\n");
 #endif
+	cstr_printf(cs, "#define __SCHAR_WIDTH__ 8\n");
+	cstr_printf(cs, "#define __SHRT_WIDTH__ 16\n");
+	cstr_printf(cs, "#define __INT_WIDTH__ 32\n");
+	cstr_printf(cs, "#define __LONG_WIDTH__ %d\n", LONG_SIZE * 8);
+	cstr_printf(cs, "#define __LONG_LONG_WIDTH__ 64\n");
+	cstr_printf(cs, "#define __INTMAX_WIDTH__ 64\n");
+	cstr_printf(cs, "#define __WCHAR_WIDTH__ %d\n", (int)sizeof(nwchar_t) * 8);
+	cstr_printf(cs, "#define __SIG_ATOMIC_WIDTH__ 32\n");
+	cstr_printf(cs, "#define __PTRDIFF_WIDTH__ %d\n", MCC_PTR_SIZE * 8);
+	cstr_printf(cs, "#define __SIZE_WIDTH__ %d\n", MCC_PTR_SIZE * 8);
+	cstr_printf(cs, "#define __INTPTR_WIDTH__ %d\n", MCC_PTR_SIZE * 8);
+	cstr_printf(cs, "#define __INT_LEAST8_WIDTH__ 8\n");
+	cstr_printf(cs, "#define __INT_LEAST16_WIDTH__ 16\n");
+	cstr_printf(cs, "#define __INT_LEAST32_WIDTH__ 32\n");
+	cstr_printf(cs, "#define __INT_LEAST64_WIDTH__ 64\n");
+	cstr_printf(cs, "#define __INT_FAST8_WIDTH__ 8\n");
+	cstr_printf(cs, "#define __INT_FAST16_WIDTH__ 32\n");
+	cstr_printf(cs, "#define __INT_FAST32_WIDTH__ 32\n");
+	cstr_printf(cs, "#define __INT_FAST64_WIDTH__ 64\n");
+#ifdef MCC_TARGET_PE
+	cstr_printf(cs, "#define __WINT_WIDTH__ 16\n");
+#else
+	cstr_printf(cs, "#define __WINT_WIDTH__ 32\n");
+#endif
+	if (LONG_SIZE == 8)
+		{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __INTPTR_MAX__ 0x7fffffffffffffffL\n");
+			cstr_printf(cs, "#define __UINTPTR_MAX__ 0xffffffffffffffffUL\n"); }
+	else if (MCC_PTR_SIZE == 8)
+		{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __INTPTR_MAX__ 0x7fffffffffffffffLL\n");
+			cstr_printf(cs, "#define __UINTPTR_MAX__ 0xffffffffffffffffULL\n"); }
+	else
+		{ MCC_TRACE("br\n"); cstr_printf(cs, "#define __INTPTR_MAX__ 0x7fffffffL\n");
+			cstr_printf(cs, "#define __UINTPTR_MAX__ 0xffffffffUL\n"); }
 	if (!is_asm) { MCC_TRACE("br\n");
 		putdef(cs, "__STDC__");
 		if (s1->std_strict_ansi)
