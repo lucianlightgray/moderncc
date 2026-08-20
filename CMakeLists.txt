@@ -5153,6 +5153,16 @@ if(MCC_BUILD_TESTS)
         set_tests_properties("diag/decimal-ull-rank" PROPERTIES
             FIXTURES_REQUIRED MCC_BUILT)
 
+        # T-mac-30167: _Alignof of a packed struct member is its effective
+        # (reduced) alignment, not the natural type alignment — _Alignof(p.x)==1
+        # for a packed p. A derived value (p.x+1, a ternary/comma result) falls
+        # back to the type alignment, and sizeof is unaffected.
+        add_test(NAME "diag/alignof-packed-member"
+            COMMAND ${_mcc_exe} -run
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/alignof_packed_member.c")
+        set_tests_properties("diag/alignof-packed-member" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT)
+
         # T-mac-30158: constructor/destructor priority must order .init_array /
         # .fini_array by ascending priority (unprioritized last), matching gcc,
         # rather than source order. Declaration order is scrambled vs priority so

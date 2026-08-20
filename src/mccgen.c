@@ -7146,6 +7146,7 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	/* Record reverse scalar_storage_order on the struct itself so member access
 	 * can byte-swap each scalar member (T-lin-10010). */
 	type->ref->a.reverse_so = ad->a.reverse_so;
+	type->ref->a.packed = ad->a.packed;
 
 	for (f = type->ref->next; f; f = f->next) { MCC_TRACE("br\n");
 		if (ad->a.reverse_so && !sso_member_supported(&f->type)) { MCC_TRACE("br\n");
@@ -11288,6 +11289,7 @@ static void format_check(int is_scanf, const char *fmt, int favail,
 
 #define sizeof_parsed_type (mcc_state->gen_sizeof_parsed_type)
 #define sizeof_parsed_align (mcc_state->gen_sizeof_parsed_align)
+#define member_align_hint (mcc_state->gen_member_align)
 
 #define MACRO_EVAL_MAX_ARGS 16
 
@@ -13674,6 +13676,7 @@ tok_next:
 		next();
 		sizeof_parsed_type = 0;
 		sizeof_parsed_align = 0;
+		member_align_hint = 0;
 		if (tok == '(')
 			{ MCC_TRACE("br\n"); tok = TOK_SOTYPE; }
 		rir_hook_synth_begin();
@@ -13740,6 +13743,8 @@ tok_next:
 				{ MCC_TRACE("br\n"); s = vtop[1].sym; }
 			if (s && s->a.aligned)
 				{ MCC_TRACE("br\n"); align = 1 << (s->a.aligned - 1); }
+			if (member_align_hint && (vtop[1].r & VT_LVAL))
+				{ MCC_TRACE("br\n"); align = member_align_hint; }
 			if (sizeof_parsed_type && sizeof_parsed_align)
 				{ MCC_TRACE("br\n"); align = 1 << (sizeof_parsed_align - 1); }
 			vpushs(align);
@@ -14796,9 +14801,14 @@ tok_next:
 			 * struct_layout has already refused the non-scalar member shapes. */
 			int base_revso = (vtop->type.t & VT_BTYPE) == VT_STRUCT &&
 					vtop->type.ref && vtop->type.ref->a.reverse_so;
+			int base_packed = (vtop->type.t & VT_BTYPE) == VT_STRUCT &&
+					vtop->type.ref && vtop->type.ref->a.packed;
 			test_lvalue();
 			next();
 			s = find_field(&vtop->type, tok, &cumofs);
+			member_align_hint = s->a.aligned
+					? 1 << (s->a.aligned - 1)
+					: (base_packed ? 1 : 0);
 			gaddrof();
 			vtop->type = char_pointer_type;
 			if (s->vla_dyn_slot) { MCC_TRACE("br\n");
@@ -15528,6 +15538,7 @@ static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 			vtop->r |= VT_NONLVAL;
 		}
 		rir_hook_ternary_end();
+		member_align_hint = 0;
 	}
 }
 
@@ -15610,6 +15621,7 @@ ST_FUNC void gexpr(void) { MCC_TRACE("enter\n");
 			seqp_flush();
 			expr_eq();
 		} while (tok == ',');
+		member_align_hint = 0;
 		CST_OPEN_AT(CST_Comma, cst_m);
 		CST_CLOSE();
 

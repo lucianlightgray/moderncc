@@ -1043,6 +1043,7 @@ struct MCCState {
 
 	int gen_sizeof_parsed_type;
 	int gen_sizeof_parsed_align;
+	int gen_member_align;
 	int gen_complex_re_tok, gen_complex_im_tok;
 	CType gen_complex_type_cache[32];
 	int gen_complex_type_cache_n;
