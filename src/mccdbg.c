@@ -2536,6 +2536,17 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 			dwarf_strp(dwarf_info_section, uns ? (w512 ? "unsigned __int512" : "unsigned __int256")
 																				: (w512 ? "__int512" : "__int256"));
 		}
+	  } else if (t->type.ref && t->type.ref->a.is_complex) { MCC_TRACE("br\n");
+		Sym *cs = t->type.ref;
+		debug_type = mcc_debug_find(s1, cs, 1);
+		if (debug_type == -1) { MCC_TRACE("br\n");
+			int calign, cbytes = type_size(&t->type, &calign);
+			debug_type = mcc_debug_add(s1, cs, 1);
+			dwarf_data1(dwarf_info_section, DWARF_ABBREV_BASE_TYPE);
+			dwarf_uleb128(dwarf_info_section, cbytes);
+			dwarf_data1(dwarf_info_section, DW_ATE_complex_float);
+			dwarf_strp(dwarf_info_section, "complex");
+		}
 	  } else { MCC_TRACE("br\n");
 		t = t->type.ref;
 		debug_type = mcc_debug_find(s1, t, 1);

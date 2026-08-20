@@ -841,6 +841,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'compile=%s atomic=%s verify=%s\\n' $rc $atom $ver",
 		 "compile=0 atomic=1 verify=1\n"},
 
+		{"dwarf_complex_base_type", "os=Darwin",
+		 "printf '_Complex float cf;\\n_Complex double cd;\\nint main(void){return 0;}\\n' > {W}/cx.c && "
+		 "{MCC} -B{B} -g -c {W}/cx.c -o {W}/cx.o 2>{W}/cx.err; rc=$?; "
+		 "cplx=$(dwarfdump {W}/cx.o 2>/dev/null | grep -c 'DW_ATE_complex_float'); "
+		 "ver=$(dwarfdump --verify {W}/cx.o 2>&1 | grep -c 'No errors'); "
+		 "printf 'compile=%s complex=%s verify=%s\\n' $rc $cplx $ver",
+		 "compile=0 complex=2 verify=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
