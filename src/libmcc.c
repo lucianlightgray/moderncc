@@ -2202,6 +2202,7 @@ enum {
 	MCC_OPTION_c,
 	MCC_OPTION_dumpmachine,
 	MCC_OPTION_dumpversion,
+	MCC_OPTION_print_multiarch,
 	MCC_OPTION_d,
 	MCC_OPTION_debug,
 	MCC_OPTION_static,
@@ -2332,6 +2333,7 @@ static const MCCOption mcc_options[] = {
 		{"c", MCC_OPTION_c, 0},
 		{"dumpmachine", MCC_OPTION_dumpmachine, 0},
 		{"dumpversion", MCC_OPTION_dumpversion, 0},
+		{"print-multiarch", MCC_OPTION_print_multiarch, 0},
 		{"debug=", MCC_OPTION_debug, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"-debug=", MCC_OPTION_debug, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"d", MCC_OPTION_d, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
@@ -3462,6 +3464,9 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 
 		case MCC_OPTION_dumpmachine:
 			printf("%s\n", dumpmachine_str);
+			exit(0);
+		case MCC_OPTION_print_multiarch:
+			printf("\n");
 			exit(0);
 		case MCC_OPTION_dumpversion:
 			/* Report the emulated GCC version (matches the __GNUC__* predefines),

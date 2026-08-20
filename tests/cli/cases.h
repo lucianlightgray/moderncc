@@ -809,6 +809,12 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'compile=%s dupaddrs=%s\\n' $rc $dups",
 		 "compile=0 dupaddrs=0\n"},
 
+		{"print_multiarch_empty", "",
+		 "{MCC} -B{B} -print-multiarch > {W}/pm.out 2>{W}/pm.err; rc=$?; "
+		 "bytes=$(wc -c < {W}/pm.out | tr -d ' '); "
+		 "printf 'rc=%s bytes=%s\\n' $rc $bytes",
+		 "rc=0 bytes=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
