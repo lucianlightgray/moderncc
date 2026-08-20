@@ -1724,6 +1724,11 @@ static int triecmp(const void *_a, const void *_b, void *arg) { MCC_TRACE("enter
 	return strcmp(a->name, b->name);
 }
 
+static int macho_export_excluded(const char *name) { MCC_TRACE("enter\n");
+	return !strcmp(name, "__mh_execute_header") || !strcmp(name, "_etext") ||
+				 !strcmp(name, "_edata") || !strcmp(name, "_end");
+}
+
 static void export_trie(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 	int size, offset = 0, save_offset;
 	uint8_t *ptr;
@@ -1740,7 +1745,8 @@ static void export_trie(MCCState *s1, struct macho *mo) { MCC_TRACE("enter\n");
 
 		if (sym->st_shndx != SHN_UNDEF && sym->st_shndx < SHN_LORESERVE &&
 				(ELFW(ST_BIND)(sym->st_info) == STB_GLOBAL ||
-				 ELFW(ST_BIND)(sym->st_info) == STB_WEAK)) { MCC_TRACE("br\n");
+				 ELFW(ST_BIND)(sym->st_info) == STB_WEAK) &&
+				!macho_export_excluded(name)) { MCC_TRACE("br\n");
 			int flag = EXPORT_SYMBOL_FLAGS_KIND_REGULAR;
 			addr_t addr =
 					sym->st_value + s1->sections[sym->st_shndx]->sh_addr - vm_addr;

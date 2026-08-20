@@ -756,6 +756,15 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'bundle=%s isbundle=%s idcmd=%s dlrun=%s\\n' $brc $ftb $idc $drc",
 		 "bundle=0 isbundle=1 idcmd=0 dlrun=42\n"},
 
+		{"macho_dylib_no_internal_exports", "os=Darwin",
+		 "printf 'int pubfn(void){return 7;}\\n' > {W}/vs.c && "
+		 "{MCC} -B{B} -shared {W}/vs.c -o {W}/vs.dylib 2>{W}/vs.err; src=$?; "
+		 "exp=$(dyld_info -exports {W}/vs.dylib 2>/dev/null); "
+		 "pub=$(printf '%s' \"$exp\" | grep -c _pubfn); "
+		 "intern=$(printf '%s' \"$exp\" | grep -cE '_edata|_etext|_end|__mh_execute_header'); "
+		 "printf 'shared=%s pub=%s internal=%s\\n' $src $pub $intern",
+		 "shared=0 pub=1 internal=0\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
