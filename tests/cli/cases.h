@@ -90,6 +90,18 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/ovp.c && echo OK",
 		 "OK\n"},
 
+		{"builtin_constant_p_foldstr", "",
+		 "printf 'int a1[__builtin_constant_p(__builtin_strlen(\"hello\"))?1:-1];\\n"
+		 "int a2[__builtin_constant_p(__builtin_memcmp(\"abc\",\"abc\",3))?1:-1];\\n"
+		 "int a3[__builtin_constant_p(__builtin_strcmp(\"a\",\"b\"))?1:-1];\\n"
+		 "int a4[__builtin_constant_p((1,7))?-1:1];\\n"
+		 "int main(void){volatile int x=5;char *p=\"xy\";\\n"
+		 "return (__builtin_constant_p(__builtin_strlen(\"hi\"))"
+		 "&&!__builtin_constant_p((1,7))&&!__builtin_constant_p(x)"
+		 "&&!__builtin_constant_p(__builtin_strlen(p)))?0:1;}\\n' > {W}/bcp.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/bcp.c && echo OK",
+		 "OK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"

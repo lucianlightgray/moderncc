@@ -317,6 +317,7 @@ static int tag_redef_parse;
 #define CONST_WANTED (nocode_wanted & CONST_WANTED_MASK)
 
 static int vm_type_probe;
+static int constant_p_depth;
 static int auto_type_allowed;
 static CType *auto_type_capture;
 static int auto_type_captured;
@@ -14040,7 +14041,14 @@ tok_next:
 		rir_hook_builtin_complex_end();
 	} break;
 	case TOK_builtin_constant_p:
-		parse_builtin_params(1, "e");
+		next();
+		skip('(');
+		constant_p_depth++;
+		nocode_wanted += CONST_WANTED_BIT;
+		expr_eq();
+		nocode_wanted -= CONST_WANTED_BIT;
+		constant_p_depth--;
+		skip(')');
 		n = 1;
 		if ((vtop->r & (VT_VALMASK | VT_LVAL)) != VT_CONST || ((vtop->r & VT_SYM) && vtop->sym->a.addrtaken))
 			{ MCC_TRACE("br\n"); n = 0; }
@@ -16058,7 +16066,7 @@ ST_FUNC void gexpr(void) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); vtop->r |= VT_NONLVAL; }
 		}
 
-		if ((vtop->r & VT_VALMASK) == VT_CONST && nocode_wanted && !CONST_WANTED)
+		if ((vtop->r & VT_VALMASK) == VT_CONST && nocode_wanted && (!CONST_WANTED || constant_p_depth))
 			{ MCC_TRACE("br\n"); if (vtop->type.t != VT_VOID && (vtop->type.t & VT_BTYPE) != VT_STRUCT)
 				{ MCC_TRACE("br\n"); gv(MCC_RC_TYPE(vtop->type.t)); } }
 	}
