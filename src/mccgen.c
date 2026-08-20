@@ -13423,6 +13423,21 @@ static int gen_negf_const_ref(void) { MCC_TRACE("enter\n");
 	return 1;
 }
 
+__attribute__((noinline)) static void unary_warn_static_in_inline(Sym *s) { MCC_TRACE("enter\n");
+	char pbuf[256];
+	snprintf(pbuf, sizeof pbuf,
+					 "'%s' has internal linkage but is referenced in an "
+					 "inline function with external linkage",
+					 get_tok_str(s->v, NULL));
+	mcc_pedantic(pbuf);
+}
+
+__attribute__((noinline)) static void unary_generic_no_match(CType *ct) { MCC_TRACE("enter\n");
+	char buf[60];
+	type_to_str(buf, sizeof buf, ct, NULL);
+	mcc_error("type '%s' does not match any association", buf);
+}
+
 static void unary_nested(void) { MCC_TRACE("enter\n");
 	int n, t, align, size, r;
 	CType type;
@@ -15017,9 +15032,7 @@ tok_next:
 				{ MCC_TRACE("br\n"); break; }
 		}
 		if (!str) { MCC_TRACE("br\n");
-			char buf[60];
-			type_to_str(buf, sizeof buf, &controlling_type, NULL);
-			mcc_error("type '%s' does not match any association", buf);
+			unary_generic_no_match(&controlling_type);
 		}
 		mcc_free(assoc_types);
 		begin_macro(str, 1);
@@ -15094,14 +15107,8 @@ tok_next:
 						"'%s' is deprecated", get_tok_str(s->v, NULL)); }
 
 		if (cur_func_inline_extern &&
-				(s->type.t & (VT_BTYPE | VT_STATIC | VT_INLINE)) == (VT_FUNC | VT_STATIC)) { MCC_TRACE("br\n");
-			char pbuf[256];
-			snprintf(pbuf, sizeof pbuf,
-							 "'%s' has internal linkage but is referenced in an "
-							 "inline function with external linkage",
-							 get_tok_str(s->v, NULL));
-			mcc_pedantic(pbuf);
-		}
+				(s->type.t & (VT_BTYPE | VT_STATIC | VT_INLINE)) == (VT_FUNC | VT_STATIC))
+			{ MCC_TRACE("br\n"); unary_warn_static_in_inline(s); }
 
 		r = s->r;
 		if ((r & VT_VALMASK) < VT_CONST)
