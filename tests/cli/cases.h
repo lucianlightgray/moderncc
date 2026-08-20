@@ -689,6 +689,17 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=42\n"},
 
+		{"asm_constraint_o_p_X", "cpu=arm64",
+		 "printf 'int gv = 99;\\nint main(void){ int x=7, ry, rp, rx; "
+		 "__asm__(\"ldr %%w0, %%1\" : \"=r\"(ry) : \"o\"(x)); "
+		 "__asm__(\"ldr %%w0, [%%1]\" : \"=r\"(rp) : \"p\"(&gv)); "
+		 "__asm__(\"mov %%w0, %%w1\" : \"=r\"(rx) : \"X\"(13)); "
+		 "return (ry==7 && rp==99 && rx==13) ? 42 : 1; }\\n' > {W}/cpx.c && "
+		 "{MCC} -B{B} {W}/cpx.c -o {W}/cpx.exe 2>{W}/cpx.err; link=$?; "
+		 "{W}/cpx.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=42\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

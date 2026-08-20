@@ -2224,6 +2224,7 @@ static void parse_asm_operands(ASMOperand *operands, int *nb_operands_ptr,
 						!strchr(op->constraint, 'm')
 #ifdef MCC_TARGET_ARM64
 						&& !strchr(op->constraint, 'Q') && !strstr(op->constraint, "Ump")
+						&& !strchr(op->constraint, 'o')
 #endif
 				) { MCC_TRACE("br\n");
 					gv(MCC_RC_INT);

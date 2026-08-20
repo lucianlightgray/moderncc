@@ -768,6 +768,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 		case '&':
 			continue;
 		case 'r':
+		case 'p':
 			pr = 1;
 			break;
 		case 'w':
@@ -777,6 +778,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 			pr = 3;
 			break;
 		case 'm':
+		case 'o':
 		case 'Q':
 			pr = 4;
 			break;
@@ -806,6 +808,7 @@ static inline int constraint_priority(const char *str) { MCC_TRACE("enter\n");
 			pr = 7;
 			break;
 		case 'g':
+		case 'X':
 			pr = 8;
 			break;
 		default:
@@ -2300,11 +2303,14 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			reg_mask = REG_IN_MASK | REG_OUT_MASK;
 			goto try_next;
 		case 'r':
+		case 'p':
 			for (reg = 0; reg < 31; reg++) { MCC_TRACE("br\n");
 				if (arm64_int_reg_is_allocatable(reg) && !is_reg_allocated(reg))
 					{ MCC_TRACE("br\n"); goto reg_found; }
 			}
 			goto try_next;
+		case 'X':
+			break;
 		case 'w':
 		case 'f':
 			for (reg = ARM64_FREG_BASE; reg <= ARM64_FREG_LAST; reg++) { MCC_TRACE("br\n");
@@ -2320,8 +2326,9 @@ ST_FUNC void asm_compute_constraints(ASMOperand *operands,
 			}
 			goto try_next;
 		case 'm':
+		case 'o':
 		case 'g':
-			if (j < nb_outputs || c == 'm') { MCC_TRACE("br\n");
+			if (j < nb_outputs || c == 'm' || c == 'o') { MCC_TRACE("br\n");
 				if (!arm64_prepare_memory_operand(op, regs_allocated))
 					{ MCC_TRACE("br\n"); goto try_next; }
 			}
