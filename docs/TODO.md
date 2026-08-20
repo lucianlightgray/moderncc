@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30261   | 2026-08-20T18:38Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10449   | 2026-08-20T19:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10449   | 2026-08-20T19:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50041   | 2026-08-20T18:37Z |
 
 ## Contracts — blocking, highest priority
@@ -117,7 +117,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 
 
 - [ ] T-lin-10446 [S] INVESTIGATE the -O4 nbody2 regression (146 vs 143 @ -O3) — root-cause which LEVEL(4) row regresses it; gates T-lin-10447 (any LEVEL4→3 promote inherits it). Pure investigation. Child of T-lin-10424.
-      OWNER: — | STATE: OPEN | SHA: e3350673 | TS: 2026-08-20T18:30Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: c18f8e88 | TS: 2026-08-20T19:20Z
       REF: DETAILS.md#t-lin-10420-child-decomposition | DEPS: —
 
 - [ ] T-lin-10447 [S] per-pass LEVEL(4)→LEVEL(3) MEASURE-THEN-PROMOTE — one mccopt.h row-flip per sub-slice (reassoc:102/dse:92/gcse:94/pre:132/licm:129), land ONLY if a kernel improves + gates green else negative-measure+revert. licm carries the int128 temp-width hazard. Lever=edit the row (-fno inert, T-lin-10443). MEDIUM (licm med-high). DEPS T-lin-10446. Child of T-lin-10424.
@@ -125,7 +125,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       REF: DETAILS.md#t-lin-10420-child-decomposition | DEPS: —
 
 - [ ] T-lin-10448 [S] PACKED double/float vector arith in gen_vector_op (mccgen.c:8462, x86_64) — for double/float non-compare ops fitting one XMM, replace the per-element scalar loop (:8497) with a single packed emit (mulpd/addpd/subpd/divpd) in x86_64-gen.c; operands already stack-materialized, no new reg value class. Deferred: XMM-resident class/rsqrtps/FMA stay T-lin-10425. Verify [VB]+nbody8i mulsd→mulpd+exec-replay. MEDIUM-HIGH. Child of T-lin-10425.
-      OWNER: — | STATE: OPEN | SHA: e3350673 | TS: 2026-08-20T18:30Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: c18f8e88 | TS: 2026-08-20T19:20Z
       REF: DETAILS.md#t-lin-10420-child-decomposition | DEPS: —
 
 - [ ] T-lin-10441 [S] optimizer TYPE-COMPLETENESS (do FIRST, before algorithm tuning; per user 2026-08-20): make every optimizer pass handle EVERY VT type — bool/byte/short/int/long/float/double/ldouble/__int128(VT_QLONG/QFLOAT)/__float128/`_BitInt`(bs.bp)/void.func-skip; vector(128/256/512) is T-lin-10425. Audit each `ast_*_run`/strategy for `is_float`/btype/`ast_bad_type` bailouts that drop float/wide/128 programs, extend to all types, keep o0-neutral (passes are O2+), verify exec+exec-replay+o0-baseline + benchmark parity per fix. Child of T-lin-10420.
