@@ -1849,6 +1849,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/unlocked_check.c -o {W}/unlocked && {W}/unlocked",
 		 "A1\nB2\nC3\nUNLOCKED_OK\n"},
 
+		{"nodiscard_c23_warns", "",
+		 "printf '[[nodiscard]] int f(void);\\nvoid g(void){ f(); }\\n' > {W}/nd.c && "
+		 "printf '__attribute__((warn_unused_result)) int w(void);\\nvoid v(void){ w(); }\\n' > {W}/wr.c && "
+		 "{MCC} -B{B} -I{I} -std=c23 -Wall -c {W}/nd.c -o {W}/nd.o 2>&1 | grep -o \"attribute 'nodiscard'\" ; "
+		 "{MCC} -B{B} -I{I} -Wall -c {W}/wr.c -o {W}/wr.o 2>&1 | grep -o \"attribute 'warn_unused_result'\" ; echo END",
+		 "attribute 'nodiscard'\nattribute 'warn_unused_result'\nEND\n"},
+
 		{"flt128_predef", "",
 		 "{MCC} -B{B} -I{I} {D}/flt128_predef.c -o {W}/flt128 && {W}/flt128",
 		 "FLT128_OK\n"},

@@ -6683,6 +6683,7 @@ static int attr_ignore_silently(int t) { MCC_TRACE("enter\n");
 }
 
 static int wur_call_name;
+static int wur_is_nodiscard;
 
 static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 	int n;
@@ -6907,6 +6908,8 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			goto skip_param;
 		case TOK_NODISCARD1:
 		case TOK_NODISCARD2:
+			ad->a.warn_unused_result = 1;
+			ad->a.nodiscard = 1;
 			goto skip_param;
 		case TOK_CONST1:
 		case TOK_CONST2:
@@ -15469,6 +15472,7 @@ tok_next:
 				int pmsg, perr;
 				callee_tok = vtop->sym->v;
 				ca.warn_unused_result |= vtop->sym->a.warn_unused_result;
+				ca.nodiscard |= vtop->sym->a.nodiscard;
 				ca.sentinel_attr |= vtop->sym->a.sentinel_attr;
 				ca.nonnull_all |= vtop->sym->a.nonnull_all;
 				ca.nonnull_mask |= vtop->sym->a.nonnull_mask;
@@ -15654,6 +15658,7 @@ tok_next:
 			expr_has_effect = 1;
 			wur_call_name = (ca.warn_unused_result && callee_tok &&
 					(s->type.t & VT_BTYPE) != VT_VOID) ? callee_tok : 0;
+			wur_is_nodiscard = wur_call_name ? ca.nodiscard : 0;
 
 			if (ret_nregs < 0) { MCC_TRACE("br\n");
 				vsetc(&ret.type, ret.r, &ret.c);
@@ -17742,9 +17747,9 @@ again:
 					gexpr();
 					if ((mcc_state->warn_unused_result & WARN_ON) && wur_call_name)
 						{ MCC_TRACE("br\n"); mcc_warning_c(warn_unused_result)(
-								"ignoring return value of '%s' declared with attribute "
-								"'warn_unused_result'",
-								get_tok_str(wur_call_name, NULL)); }
+								"ignoring return value of '%s' declared with attribute '%s'",
+								get_tok_str(wur_call_name, NULL),
+								wur_is_nodiscard ? "nodiscard" : "warn_unused_result"); }
 					if ((mcc_state->warn_unused_value & WARN_ON) && !expr_has_effect && !(vtop->type.t & VT_VOLATILE))
 						{ MCC_TRACE("br\n"); mcc_warning_c(warn_unused_value)(
 								"value computed is not used"); }

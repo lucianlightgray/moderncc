@@ -320,6 +320,7 @@ struct SymAttr {
 			nonnull_all : 1,
 			old_promote : 1,
 			naked : 1,
+			nodiscard : 1,
 			nonnull_mask : 16;
 };
 
