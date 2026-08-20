@@ -815,6 +815,15 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'rc=%s bytes=%s\\n' $rc $bytes",
 		 "rc=0 bytes=1\n"},
 
+		{"dwarf_const_volatile_qualifiers", "os=Darwin",
+		 "printf 'const int *a;\\nvolatile int v;\\nint main(void){return a?v:0;}\\n' > {W}/cv.c && "
+		 "{MCC} -B{B} -g -c {W}/cv.c -o {W}/cv.o 2>{W}/cv.err; rc=$?; "
+		 "ct=$(dwarfdump {W}/cv.o 2>/dev/null | grep -c 'DW_TAG_const_type'); "
+		 "vt=$(dwarfdump {W}/cv.o 2>/dev/null | grep -c 'DW_TAG_volatile_type'); "
+		 "ver=$(dwarfdump --verify {W}/cv.o 2>&1 | grep -c 'No errors'); "
+		 "printf 'compile=%s const=%s volatile=%s verify=%s\\n' $rc $ct $vt $ver",
+		 "compile=0 const=1 volatile=1 verify=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

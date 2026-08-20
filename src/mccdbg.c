@@ -94,6 +94,8 @@ static const struct
 #define DWARF_ABBREV_SUBROUTINE_TYPE 24
 #define DWARF_ABBREV_SUBROUTINE_EMPTY_TYPE 25
 #define DWARF_ABBREV_FORMAL_PARAMETER2 26
+#define DWARF_ABBREV_CONST_TYPE 27
+#define DWARF_ABBREV_VOLATILE_TYPE 28
 
 static const unsigned char dwarf_abbrev_init[] = {
 		DWARF_ABBREV_COMPILE_UNIT, DW_TAG_compile_unit, 1,
@@ -270,6 +272,12 @@ static const unsigned char dwarf_abbrev_init[] = {
 		DW_AT_type, DW_FORM_ref4,
 		0, 0,
 		DWARF_ABBREV_FORMAL_PARAMETER2, DW_TAG_formal_parameter, 0,
+		DW_AT_type, DW_FORM_ref4,
+		0, 0,
+		DWARF_ABBREV_CONST_TYPE, DW_TAG_const_type, 0,
+		DW_AT_type, DW_FORM_ref4,
+		0, 0,
+		DWARF_ABBREV_VOLATILE_TYPE, DW_TAG_volatile_type, 0,
 		DW_AT_type, DW_FORM_ref4,
 		0, 0,
 		0};
@@ -2665,6 +2673,25 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 	e = NULL;
 	t = s;
 	for (;;) { MCC_TRACE("br\n");
+		int qi;
+		for (qi = 0; qi < 2; qi++) { MCC_TRACE("br\n");
+			int qbit = qi == 0 ? VT_CONSTANT : VT_VOLATILE;
+			if (!(t->type.t & qbit))
+				{ MCC_TRACE("br\n"); continue; }
+			i = dwarf_info_section->data_offset;
+			if (retval == debug_type)
+				{ MCC_TRACE("br\n"); retval = i; }
+			dwarf_data1(dwarf_info_section,
+									qi == 0 ? DWARF_ABBREV_CONST_TYPE : DWARF_ABBREV_VOLATILE_TYPE);
+			if (last_pos != -1) { MCC_TRACE("br\n");
+				mcc_debug_check_forw(s1, e, last_pos);
+				write32le(dwarf_info_section->data + last_pos,
+									i - dwarf_info.start);
+			}
+			last_pos = dwarf_info_section->data_offset;
+			e = t;
+			dwarf_data4(dwarf_info_section, 0);
+		}
 		type = remove_type_info(t->type.t);
 		if (type == VT_PTR) { MCC_TRACE("br\n");
 			i = dwarf_info_section->data_offset;
