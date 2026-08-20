@@ -147,7 +147,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 98e61cfe | TS: 2026-08-19T01:59Z
       REF: DETAILS.md#t-mac-30029-close | DEPS: —
 - [ ] T-lin-10400 [S] Build a "% of slices executed on GPU" (device-execution-fraction) metric on the `ast_ladder_gpu_report` dispatches/rungs signal + slicerun/gpuconform funnel — the number T-lin-10398 needs (only lowerability/byte-faithfulness is banked today)
-      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-18T14:35Z
       REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
 - [ ] T-lin-10402 [S] GPU-coverage strategy 2 [MED risk]: lift the oracle float refusal (mccast.c:18706/18713) guarded on `mcc_gpu_f64()` — the emitter already has f64; unlocks the FP slice category
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
