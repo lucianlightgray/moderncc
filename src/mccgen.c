@@ -9520,6 +9520,10 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		basic_type2:
 			u = type1.t;
 			type->ref = type1.ref;
+			if (is_bitint_type(&type1) || IS_BITINT(type1.t)) { MCC_TRACE("br\n");
+				type->bp = type1.bp;
+				type->bs = type1.bs;
+			}
 			goto basic_type1;
 		case TOK_STRUCT:
 			struct_decl(&type1, VT_STRUCT, NULL);

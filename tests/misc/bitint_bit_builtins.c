@@ -68,5 +68,11 @@ int main(void) {
 	if (__builtin_bitprecisionof(u) != 32) return 17;
 	if (__builtin_bitprecisionof(ull) != 64) return 18;
 
+	if (__builtin_bitprecisionof((__typeof__(a))0) != 40) return 50;
+	if (__builtin_bitprecisionof((__typeof__(b))0) != 100) return 51;
+	if (__builtin_bitprecisionof((__typeof__(c))0) != 33) return 52;
+	if (__builtin_bitprecisionof((__typeof__(d))0) != 128) return 53;
+	{ __typeof__(b) tq = b; if (__builtin_bitprecisionof(tq) != 100) return 54; }
+
 	return 0;
 }
