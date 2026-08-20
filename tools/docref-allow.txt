@@ -8,3 +8,4 @@
 # A stale citation is not one of these.  Fix it instead.
 
 src/wide256_slice.h  # (b) removed by wideint-unify (T-lin-10004 slice-4, dcba0d5f): its __int256 slice was folded into src/wideint_slice.h. The sole citation, docs/DETAILS.md:4392, is a struck-through/retracted historical note (its own text: "FALSE since 81a81f1b") naming the since-deleted file; docs/DETAILS.md is merge=union so the line is not edited in place.
+tests/ast/cprop-typecov.sh  # (a) T-lin-10451 (float/double constant-propagation, OPEN) proposes to write this new typecov script "(pattern=licm-typecov)" as part of its DoD; cited docs/TODO.md:128. Auto-fails (and must be removed) once the task lands the file.
