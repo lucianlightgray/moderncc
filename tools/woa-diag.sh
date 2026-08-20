@@ -72,6 +72,14 @@ if [ -x "$OUT/f128probe.exe" ]; then
   echo "probe run rc=$?" >> "$OUT/31-f128probe-run.txt"
 fi
 
+# --- int256 probe: negative-double -> __int256 (T-win-50025) ---
+"$MCC" $RT "$S/tools/woa-int256-probe.c" -o "$OUT/i256probe.exe" > "$OUT/32-i256probe-compile.txt" 2>&1
+echo "probe compile rc=$?" >> "$OUT/32-i256probe-compile.txt"
+if [ -x "$OUT/i256probe.exe" ]; then
+  "$OUT/i256probe.exe" > "$OUT/33-i256probe-run.txt" 2>&1
+  echo "probe run rc=$?" >> "$OUT/33-i256probe-run.txt"
+fi
+
 # the committed goldens for reference
 grep -nE '"(float128|integer_promotion)"' "$S/tests/exec/goldens.h" > "$OUT/04-goldens.txt" 2>&1 || true
 

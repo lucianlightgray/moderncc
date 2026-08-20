@@ -51,6 +51,8 @@ jobs:
           echo "===== integer_promotion clang run ====="; cat diag-out/integer_promotion-21-clang-run.txt 2>/dev/null || true
           echo "===== float128 PROBE (per-check values) ====="; cat diag-out/31-f128probe-run.txt 2>/dev/null || true
           echo "===== float128 probe compile ====="; tail -5 diag-out/30-f128probe-compile.txt 2>/dev/null || true
+          echo "===== int256 PROBE (neg-double conv) ====="; cat diag-out/33-i256probe-run.txt 2>/dev/null || true
+          echo "===== int256 probe compile ====="; tail -5 diag-out/32-i256probe-compile.txt 2>/dev/null || true
       - uses: actions/upload-artifact@v7
         if: always()
         with:
