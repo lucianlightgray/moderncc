@@ -54,6 +54,7 @@ jobs:
           echo "===== int256 PROBE (neg-double conv) ====="; cat diag-out/33-i256probe-run.txt 2>/dev/null || true
           echo "===== int256 probe compile ====="; tail -5 diag-out/32-i256probe-compile.txt 2>/dev/null || true
           echo "===== int256 repro at -O0/-O1/-O2 ====="; cat diag-out/35-i256probe-optlevels.txt 2>/dev/null || true
+          echo "===== int256 test w/ -O0 runtime (dneg/negtrunc, want nonzero) ====="; cat diag-out/36-int256-O0rt.txt 2>/dev/null || echo "(no output)"
       - uses: actions/upload-artifact@v7
         if: always()
         with:

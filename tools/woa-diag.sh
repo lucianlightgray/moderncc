@@ -85,6 +85,14 @@ fi
 if [ -n "$DIS" ] && [ -f "$OUT/i256probe.o" ]; then
   "$DIS" -d "$OUT/i256probe.o" > "$OUT/34-i256probe-disasm.txt" 2>&1 || true
 fi
+# workaround test: does building the REAL int256.c at -O0 (strong-def, wins over
+# libmccrt's optimized member) fix exec/int256's dneg/negtrunc?
+"$MCC" $RT -O0 -c "$S/runtime/lib/int256.c" -o "$OUT/int256-O0.o" 2>/dev/null || true
+"$MCC" $RT "$S/tests/exec/types/int256.c" "$OUT/int256-O0.o" -o "$OUT/int256test-O0.exe" 2>/dev/null || true
+if [ -x "$OUT/int256test-O0.exe" ]; then
+  "$OUT/int256test-O0.exe" 2>&1 | grep -E '^dneg|^negtrunc' > "$OUT/36-int256-O0rt.txt" 2>&1 || true
+fi
+
 # disasm the REAL runtime int256.c (__mcc_i256_from_f64 + w256_from_double_mag)
 # does the int256 neg-conv repro break under optimization? (runtime is built -O2)
 for opt in -O0 -O1 -O2; do
