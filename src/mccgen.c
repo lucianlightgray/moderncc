@@ -9455,6 +9455,12 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_FP16:
 			u = VT_FLOAT16;
 			goto basic_type;
+		case TOK_FLOAT32:
+			u = VT_FLOAT;
+			goto basic_type;
+		case TOK_FLOAT64:
+			u = VT_DOUBLE;
+			goto basic_type;
 		case TOK_BFLOAT16:
 			u = VT_BF16;
 			goto basic_type;
@@ -16746,6 +16752,8 @@ static int tok_starts_declspec(void) { MCC_TRACE("enter\n");
 	case TOK_DOUBLE:
 	case TOK_FLOAT16:
 	case TOK_FP16:
+	case TOK_FLOAT32:
+	case TOK_FLOAT64:
 	case TOK_BFLOAT16:
 	case TOK_FLOAT128:
 	case TOK_FLOAT128X:
