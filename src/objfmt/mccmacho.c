@@ -2640,18 +2640,11 @@ ST_FUNC void mcc_add_macos_sdkpath(MCCState *s) { MCC_TRACE("enter\n");
 	if (sdk) { MCC_TRACE("br\n");
 		cstr_printf(&path, "%s/usr/lib", sdk);
 		mcc_add_library_path(s, (char *)path.data);
-		cstr_reset(&path);
-		cstr_printf(&path, "%s/System/Library/Frameworks", sdk);
-		mcc_add_framework_path(s, (char *)path.data);
 	} else { MCC_TRACE("br\n");
 		mcc_add_library_path(s,
 												 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/lib"
 												 ":"
 												 "/Applications/Xcode.app/Developer/SDKs/MacOSX.sdk/usr/lib");
-		mcc_add_framework_path(s,
-													 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks"
-													 ":"
-													 "/Applications/Xcode.app/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks");
 	}
 	cstr_free(&path);
 }
@@ -2670,6 +2663,22 @@ ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s) { MCC_TRACE("enter\n");
 														"/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include"
 														":"
 														"/Applications/Xcode.app/Developer/SDKs/MacOSX.sdk/usr/include");
+	}
+	cstr_free(&path);
+}
+
+ST_FUNC void mcc_add_macos_frameworkpath(MCCState *s) { MCC_TRACE("enter\n");
+	const char *sdk = host_macos_sdk_root();
+	CString path;
+	cstr_new(&path);
+	if (sdk) { MCC_TRACE("br\n");
+		cstr_printf(&path, "%s/System/Library/Frameworks", sdk);
+		mcc_add_framework_path(s, (char *)path.data);
+	} else { MCC_TRACE("br\n");
+		mcc_add_framework_path(s,
+													 "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks"
+													 ":"
+													 "/Applications/Xcode.app/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks");
 	}
 	cstr_free(&path);
 }

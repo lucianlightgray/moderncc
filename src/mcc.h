@@ -2177,6 +2177,7 @@ ST_FUNC int macho_object_type(int fd, unsigned long file_offset);
 ST_FUNC int macho_load_object_file(MCCState *s1, int fd, unsigned long file_offset);
 #if defined MCC_TARGET_IS_HOST || MCC_HOST_DARWIN
 ST_FUNC void mcc_add_macos_sdkincludepath(MCCState *s);
+ST_FUNC void mcc_add_macos_frameworkpath(MCCState *s);
 #endif
 #ifdef MCC_TARGET_IS_HOST
 ST_FUNC void mcc_add_macos_sdkpath(MCCState *s);

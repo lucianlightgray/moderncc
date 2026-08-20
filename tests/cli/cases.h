@@ -784,6 +784,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'out=%s\\n' \"$(tr '\\n' ',' < {W}/rr.out)\"",
 		 "out=a2,late,a1,dtor,\n"},
 
+		{"macho_framework_header_search_for_c_e", "os=Darwin",
+		 "printf '#include <CoreFoundation/CFBase.h>\\nint main(void){return 0;}\\n' > {W}/fwt.c && "
+		 "{MCC} -B{B} -E {W}/fwt.c > /dev/null 2>{W}/fwt.err; ec=$?; "
+		 "nf=$(grep -c 'not found' {W}/fwt.err); "
+		 "{MCC} -B{B} -c {W}/fwt.c -o {W}/fwt.o 2>>{W}/fwt.err; cc=$?; "
+		 "printf 'preprocess=%s notfound=%s compile=%s\\n' $ec $nf $cc",
+		 "preprocess=0 notfound=0 compile=0\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
