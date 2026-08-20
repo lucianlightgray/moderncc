@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T03:00Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T02:14Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T03:45Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T04:05Z |
 
 ## Contracts — blocking, highest priority
 
@@ -101,6 +101,9 @@
 - [ ] T-mac-30223 [S] Fix: [LOW cluster] driver/diagnostic-quality — sub-item (2) DONE (1278bd93): `#error`/`#warning` message no longer truncated at 1023 chars (`preprocess()` TOK_ERROR/TOK_WARNING now accumulates into a dynamic CString, was fixed `char buf[1024]`) — matches gcc+clang which emit the full message; o0-neutral (byte-identical ≤1023 chars); TDD cli/preprocess_long_warning_not_truncated. TTL-resumable. RESIDUAL: (1) `-fstack-protector` promoted to `-all` (errs safe, borderline); (3) caret column at EOL not directive; (4) `-g -S` no `.loc`; (5) `-p` hard-errors (borderline).
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1278bd93 | TS: 2026-08-19T17:05Z
       REF: INVESTIGATIONS.md#r34-low-cluster | DEPS: —
+- [ ] T-mac-30210 [S] Fix: [MED, rejects-valid] standard data directives missing — add GNU-as data directives with correct widths (integer slice this turn: `.hword`/`.value`/`.2byte`=2B, `.4byte`=4B, `.8byte`/`.xword`=8B). Digit-leading forms need a dispatcher remap (lexer routes `.4byte` to PPNUM). RESIDUAL: `.octa`(16B), `.float`/`.double`(IEEE bits), `.dc.b/.w/.l`.
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 8f22703e | TS: 2026-08-20T04:05Z
+      REF: INVESTIGATIONS.md#r33-data-dirs | DEPS: —
 
 ## Open — claimable
 
@@ -212,9 +215,6 @@
       REF: DETAILS.md#t-mac-30232-no-args-exit | DEPS: —
       OWNER: — | STATE: OPEN | SHA: 9717e3cd | TS: 2026-08-18T19:45Z
       REF: INVESTIGATIONS.md#r34-profiling | DEPS: —
-- [ ] T-mac-30210 [S] Fix: [MED, rejects-valid] standard data directives missing (route to the arm64 INSTRUCTION parser → "ARM64 instruction '.X' not implemented") — `.hword`/`.xword`/`.2byte`/`.4byte`/`.8byte`/`.octa`/`.value`/`.zero`/`.float`/`.double`/`.dc.b` absent from the token table (`mcctok.h:575-619`). Critically `.zero` (gcc/clang aarch64 padding form) + `.hword`/`.xword`/`.4byte`/`.8byte` (pervasive in output + reloc tables) → mcc can't reassemble typical aarch64 .s. (.skip/.space/.fill exist.) Fix: add these as data directives with correct widths.
-      OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
-      REF: INVESTIGATIONS.md#r33-data-dirs | DEPS: —
 - [ ] T-mac-30211 [S] Fix: [MED, rejects-valid] assembler meta/CFI/arch directive families absent — `.macro`/`.endm`(+altmacro/purgem/exitm), the `.if`/`.else`/`.elseif`/`.endif`/`.ifdef`/`.ifndef`/`.ifeq`/`.ifne`/`.ifb`/`.ifc` family, `.irp`/`.irpc`, `.equ`/`.equiv`, `.comm`/`.lcomm` (all "not implemented"). `.cfi_*` gated off on Darwin — a full CFI parser EXISTS (`mccasm.c:957-1101`) behind MCC_EH_FRAME (off, `mcc.h:2145-2151`) → `.cfi_startproc` errors (nearly every compiler-gen aarch64 fn has `.cfi_*`). `.arch`/`.cpu`/`.inst`/`.tlsdesccall` also missing. (.set/sym=expr work.) Fix: add .macro/.if/.equ/.comm families; enable CFI parser or accept-and-ignore .cfi_*/.arch.
       OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
       REF: INVESTIGATIONS.md#r33-meta-dirs | DEPS: —
