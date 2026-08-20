@@ -31,6 +31,13 @@ int main(void) {
 	__builtin_memcpy(&nb, &nx, 8);
 	printf("neg(-1e30) bits=%016llx (1e30 ~ 0x46293e5939a08cea)\n", nb);
 
+	/* replicate __mcc_i256_from_f64's negative path step by step */
+	printf("vx<0.0 = %d want 1\n", vx < 0.0);
+	{ double nvx = -vx; u64 nn; __builtin_memcpy(&nn, &nvx, 8);
+	  printf("(-vx) bits=%016llx want 46293e5939a08cea\n", nn); }
+	p256("(i256)(-vx)", (__int256)(-vx));   /* positive magnitude conv, want +1e30 */
+	printf("abitest(p,-vx,9)=%d want 9\n", abitest(&x, -vx, 9));
+
 	p256("const-neg", (__int256)-1e30);     /* compile-time constant */
 	p256("var-neg", (__int256)vx);          /* runtime: __mcc_i256_from_f64 */
 	p256("var-x", (__int256)x);             /* x=-1e30 (maybe folded) */

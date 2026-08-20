@@ -21,8 +21,10 @@ MCC="$B/mcc.exe"; [ -x "$MCC" ] || MCC="$B/mcc"
 ( cd "$B" && ctest -R "^exec/float128$|^exec/integer_promotion$" --output-on-failure --timeout 120 ) \
     > "$OUT/03-ctest.txt" 2>&1 || true
 
-# --- full exec suite sweep (find any other arm64-Windows reds) ---
+# --- full exec suite sweep (find any other arm64-Windows reds); set WOA_FULL_SWEEP=1 ---
+if [ -n "$WOA_FULL_SWEEP" ]; then
 ( cd "$B" && ctest -R "^exec/" --output-on-failure --timeout 120 -j4 ) > "$OUT/05-exec-suite.txt" 2>&1 || true
+fi
 {
   grep -E '% tests passed|tests failed out of' "$OUT/05-exec-suite.txt" || true
   echo "--- FAILED cells ---"
