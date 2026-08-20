@@ -708,6 +708,8 @@ ST_FUNC const char *get_tok_str(int v, CValue *cv) { MCC_TRACE("enter\n");
 		return strcpy(p, "<float>");
 	case TOK_CFLOAT16:
 		return strcpy(p, "<_Float16>");
+	case TOK_CFLOAT128:
+		return strcpy(p, "<__float128>");
 	case TOK_CDOUBLE:
 		return strcpy(p, "<double>");
 	case TOK_CLDOUBLE:
@@ -1261,6 +1263,7 @@ static void tok_str_add2(TokenString *s, int t, CValue *cv) { MCC_TRACE("enter\n
 		len += nb_words;
 	} break;
 	case TOK_CDOUBLE:
+	case TOK_CFLOAT128:
 	case TOK_CLLONG:
 	case TOK_CULLONG:
 #if LONG_SIZE == 8
@@ -1349,6 +1352,7 @@ static inline void tok_get(int *t, const int **pp, CValue *cv) { MCC_TRACE("ente
 		p += (cv->str.size + sizeof(int) - 1) / sizeof(int);
 		break;
 	case TOK_CDOUBLE:
+	case TOK_CFLOAT128:
 	case TOK_CLLONG:
 	case TOK_CULLONG:
 #if LONG_SIZE == 8
@@ -2352,7 +2356,7 @@ static int expr_preprocess(MCCState *s1) { MCC_TRACE("enter\n");
 		} else if (tok < TOK_IDENT) { MCC_TRACE("br\n");
 			if (tok == TOK_LINEFEED || tok == TOK_EOF)
 				{ MCC_TRACE("br\n"); break; }
-			if ((tok >= TOK_STR && tok <= TOK_CLDOUBLE) || tok == TOK_CFLOAT16)
+			if ((tok >= TOK_STR && tok <= TOK_CLDOUBLE) || tok == TOK_CFLOAT16 || tok == TOK_CFLOAT128)
 				{ MCC_TRACE("br\n"); mcc_error("invalid constant in preprocessor expression"); }
 		} else if (tok == TOK_DEFINED) { MCC_TRACE("br\n");
 			parse_flags &= ~PARSE_FLAG_PREPROCESS;
@@ -3898,6 +3902,17 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				ch = *p++;
 				tok = TOK_CFLOAT16;
 				tokc.i = f32_to_f16_bits(f16_round(d));
+#ifdef MCC_HAVE_FLOAT128
+			} else if (t == 'F' && p[0] == '1' && p[1] == '2' && p[2] == '8') { MCC_TRACE("br\n");
+				p += 3;
+				ch = *p++;
+				tok = TOK_CFLOAT128;
+				tokc.d = (double)d;
+			} else if (t == 'Q') { MCC_TRACE("br\n");
+				ch = *p++;
+				tok = TOK_CFLOAT128;
+				tokc.d = (double)d;
+#endif
 			} else if (t == 'F') { MCC_TRACE("br\n");
 				ch = *p++;
 				tok = TOK_CFLOAT;
@@ -3956,6 +3971,17 @@ static void parse_number(const char *p) { MCC_TRACE("enter\n");
 				ch = *p++;
 				tok = TOK_CFLOAT16;
 				tokc.i = f32_to_f16_bits(f16_round(strtold(token_buf, NULL)));
+#ifdef MCC_HAVE_FLOAT128
+			} else if (t == 'F' && p[0] == '1' && p[1] == '2' && p[2] == '8') { MCC_TRACE("br\n");
+				p += 3;
+				ch = *p++;
+				tok = TOK_CFLOAT128;
+				tokc.d = strtod(token_buf, NULL);
+			} else if (t == 'Q') { MCC_TRACE("br\n");
+				ch = *p++;
+				tok = TOK_CFLOAT128;
+				tokc.d = strtod(token_buf, NULL);
+#endif
 			} else if (t == 'F') { MCC_TRACE("br\n");
 				ch = *p++;
 				tok = TOK_CFLOAT;

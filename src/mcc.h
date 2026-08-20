@@ -1392,8 +1392,9 @@ struct filespec {
 #define TOK_CUINT256 0xd8
 #define TOK_CBITINT 0xd9
 #define TOK_CUBITINT 0xda
+#define TOK_CFLOAT128 0xdb
 
-#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_CUBITINT)
+#define TOK_HAS_VALUE(t) (t >= TOK_CCHAR && t <= TOK_CFLOAT128)
 
 #define TOK_EOF (-1)
 #define TOK_LINEFEED 10

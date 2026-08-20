@@ -13430,6 +13430,17 @@ tok_next:
 	case TOK_CFLOAT16:
 		t = VT_FLOAT16;
 		goto push_tokc;
+#ifdef MCC_HAVE_FLOAT128
+	case TOK_CFLOAT128:
+		type.ref = NULL;
+		type.t = VT_DOUBLE;
+		vsetc(&type, VT_CONST, &tokc);
+		type.t = VT_FLOAT128;
+		gen_cast(&type);
+		next();
+		CST_PRIMARY();
+		break;
+#endif
 	case TOK_CDOUBLE:
 		t = VT_DOUBLE;
 		goto push_tokc;

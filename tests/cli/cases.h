@@ -5,6 +5,14 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"float128_literal_suffix_q_f128", "cpu=arm64",
+		 "printf 'int main(void){__float128 a=1.5q,b=1.5Q,c=1.5f128,d=1.5F128;"
+		 "__float128 s=1.5q+2.5q;__float128 h=0x1.8p0q;"
+		 "return ((double)a==1.5&&(double)b==1.5&&(double)c==1.5&&(double)d==1.5"
+		 "&&(double)s==4.0&&(double)h==1.5)?0:1;}\\n' > {W}/q128.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/q128.c && echo OK",
+		 "OK\n"},
+
 		{"builtin_overflow_p_ice_fold", "",
 		 "printf 'int a1[__builtin_add_overflow_p(2147483647,1,(int)0)==1?1:-1];\\n"
 		 "int a2[__builtin_add_overflow_p(1,1,(int)0)==0?1:-1];\\n"
