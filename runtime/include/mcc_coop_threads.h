@@ -327,7 +327,36 @@ static int __mcc_inited = 0;
 static int __mcc_tss_next = 0;
 static tss_dtor_t __mcc_tss_dtor[__MCC_COOP_MAX_TSS];
 
-#ifdef MCC_COOP_MT
+#if defined(MCC_COOP_MN) && !defined(MCC_COOP_MT)
+#define MCC_COOP_MT 1
+#endif
+
+#ifdef MCC_COOP_MN
+#include <pthread.h>
+#include <unistd.h>
+
+#define __MCC_MN_MAX_WORKERS 256
+
+typedef struct __mcc_worker {
+	pthread_t th;
+	void *sched_sp;
+	__mcc_fiber *cur;
+	int is_main;
+} __mcc_worker;
+
+static pthread_mutex_t __mcc_mn_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t __mcc_mn_work = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t __mcc_mn_done = PTHREAD_COND_INITIALIZER;
+static __mcc_worker __mcc_mn_workers[__MCC_MN_MAX_WORKERS];
+static int __mcc_mn_nworkers = 0;
+static int __mcc_mn_started = 0;
+static int __mcc_mn_quit = 0;
+static _Thread_local __mcc_worker *__mcc_self = (__mcc_worker *)0;
+
+#define __MCC_LOCK() pthread_mutex_lock(&__mcc_mn_lock)
+#define __MCC_UNLOCK() pthread_mutex_unlock(&__mcc_mn_lock)
+
+#elif defined(MCC_COOP_MT)
 static volatile int __mcc_sched = 0;
 static void __mcc_lock(void) {
 	while (__atomic_exchange_n(&__mcc_sched, 1, __ATOMIC_ACQUIRE))
@@ -343,6 +372,7 @@ static void __mcc_unlock(void) {
 #define __MCC_UNLOCK()
 #endif
 
+#ifndef MCC_COOP_MN
 static void __mcc_need_init(void) {
 	if (__mcc_inited)
 		return;
@@ -352,6 +382,7 @@ static void __mcc_need_init(void) {
 	__mcc_all = &__mcc_main;
 	__mcc_cur = &__mcc_main;
 }
+#endif
 
 static void __mcc_ready_push(__mcc_fiber *__f) {
 	__f->state = __MCC_F_RUNNABLE;
@@ -395,6 +426,67 @@ static void __mcc_reap(void) {
 	}
 	__MCC_UNLOCK();
 }
+
+#ifdef MCC_COOP_MN
+static void *__mcc_mn_worker_main(void *__arg) {
+	__mcc_worker *__w = (__mcc_worker *)__arg;
+	__mcc_self = __w;
+	pthread_mutex_lock(&__mcc_mn_lock);
+	for (;;) {
+		__mcc_fiber *__f = __mcc_ready_pop();
+		if (__f) {
+			__w->cur = __f;
+			pthread_mutex_unlock(&__mcc_mn_lock);
+			__mcc_ctx_swap(&__w->sched_sp, __f->sp);
+			pthread_mutex_lock(&__mcc_mn_lock);
+			__w->cur = (__mcc_fiber *)0;
+			continue;
+		}
+		if (__mcc_mn_quit) {
+			pthread_mutex_unlock(&__mcc_mn_lock);
+			return (void *)0;
+		}
+		pthread_cond_wait(&__mcc_mn_work, &__mcc_mn_lock);
+	}
+}
+
+static void __mcc_need_init(void) {
+	int __i, __n;
+	pthread_mutex_lock(&__mcc_mn_lock);
+	if (__mcc_mn_started) {
+		pthread_mutex_unlock(&__mcc_mn_lock);
+		return;
+	}
+	__mcc_mn_started = 1;
+	__mcc_inited = 1;
+	__n = (int)sysconf(_SC_NPROCESSORS_ONLN);
+	if (__n < 1)
+		__n = 1;
+	if (__n > __MCC_MN_MAX_WORKERS)
+		__n = __MCC_MN_MAX_WORKERS;
+	for (__i = 0; __i < __n; __i++) {
+		__mcc_mn_workers[__i].cur = (__mcc_fiber *)0;
+		__mcc_mn_workers[__i].sched_sp = (void *)0;
+		__mcc_mn_workers[__i].is_main = 0;
+		if (pthread_create(&__mcc_mn_workers[__i].th, (void *)0,
+											 __mcc_mn_worker_main, &__mcc_mn_workers[__i]) != 0)
+			break;
+		__mcc_mn_nworkers++;
+	}
+	pthread_mutex_unlock(&__mcc_mn_lock);
+}
+
+static void __mcc_fiber_start(void) {
+	__mcc_worker *__w = __mcc_self;
+	__mcc_fiber *__self = __w->cur;
+	__self->result = __self->fn(__self->arg);
+	pthread_mutex_lock(&__mcc_mn_lock);
+	__self->state = __MCC_F_DONE;
+	pthread_cond_broadcast(&__mcc_mn_done);
+	pthread_mutex_unlock(&__mcc_mn_lock);
+	__mcc_ctx_swap(&__self->sp, __w->sched_sp);
+}
+#endif
 
 static void __mcc_switch(__mcc_fiber *__next) {
 	__mcc_fiber *__cur = __mcc_cur;
@@ -465,6 +557,7 @@ static void __mcc_yield(void) {
 	__mcc_switch(__next);
 }
 
+#ifndef MCC_COOP_MN
 static void __mcc_fiber_start(void) {
 	__mcc_fiber *__self = __mcc_cur;
 	__mcc_fiber *__next;
@@ -521,6 +614,48 @@ static int thrd_join(thrd_t __thr, int *__res) {
 	free(__thr);
 	return thrd_success;
 }
+#else
+static int thrd_create(thrd_t *__thr, thrd_start_t __func, void *__arg) {
+	__mcc_fiber *__f;
+	int __i;
+	__mcc_need_init();
+	__f = (__mcc_fiber *)calloc(1, sizeof *__f);
+	if (!__f)
+		return thrd_nomem;
+	__f->stack = malloc(__MCC_COOP_STACK);
+	if (!__f->stack) {
+		free(__f);
+		return thrd_nomem;
+	}
+	__f->fn = __func;
+	__f->arg = __arg;
+	for (__i = 0; __i < __MCC_COOP_MAX_TSS; __i++)
+		__f->tss[__i] = (void *)0;
+	__f->sp = __mcc_ctx_make(__f->stack, __MCC_COOP_STACK, __mcc_fiber_start);
+	pthread_mutex_lock(&__mcc_mn_lock);
+	__f->all_next = __mcc_all;
+	__mcc_all = __f;
+	__mcc_ready_push(__f);
+	pthread_cond_signal(&__mcc_mn_work);
+	pthread_mutex_unlock(&__mcc_mn_lock);
+	*__thr = __f;
+	return thrd_success;
+}
+
+static int thrd_join(thrd_t __thr, int *__res) {
+	__mcc_need_init();
+	pthread_mutex_lock(&__mcc_mn_lock);
+	while (__thr->state != __MCC_F_DONE)
+		pthread_cond_wait(&__mcc_mn_done, &__mcc_mn_lock);
+	if (__res)
+		*__res = __thr->result;
+	__mcc_all_remove(__thr);
+	pthread_mutex_unlock(&__mcc_mn_lock);
+	free(__thr->stack);
+	free(__thr);
+	return thrd_success;
+}
+#endif
 
 static int thrd_detach(thrd_t __thr) {
 	__mcc_need_init();
