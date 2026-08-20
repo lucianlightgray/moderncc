@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T04:10Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T04:15Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T03:08Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T05:55Z |
 
@@ -251,7 +251,7 @@ _Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z
       OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
       REF: INVESTIGATIONS.md#r28-memcmp-fold | DEPS: T-mac-30104
 - [ ] T-mac-30176 [S] Fix: [MED, rejects-valid] static/global `__float128`/`_Float128` initializer rejected — `__float128 g=2.5;` (also _Float128, static locals) → mcc `error: '__float128' conversion is not a load-time constant` (`mccgen.c:5369-5370` DATA_ONLY_WANTED guard); gcc accepts (clang lacks the type). Quad otherwise fully works (BSS globals, arrays, members, local arith via __multf3/__divtf3). Only compile-time const-fold into a static init missing (evaluator can't run the tf-libcall). Fix: fold a __float128 constant initializer at compile time (host quad / soft-float) into the data section.
-      OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 321d4733 | TS: 2026-08-20T04:15Z
       REF: INVESTIGATIONS.md#r28-f128-static | DEPS: —
 - [ ] T-mac-30178 [S] Fix: [MED cluster, clean errors] `__fp16`/`_Float32`/`_Float64`/`_Decimal32/64/128` types unsupported (gcc supports) — `__fp16` (ARM storage half; no token; arith promotes to float unlike _Float16), `_Float32`/`_Float64` (C23 interchange, sizeof 4/8; known overlap w/ prior _Float32/64 findings; clang also rejects here), `_Decimal32/64/128` (C23 decimal FP; gcc yes clang no; stabs strings exist `mccdbg.c:43-45` but parser not wired). All CLEAN undeclared/not-supported errors — no crash/miscompile. mcc DOES support _Float16/__bf16/__float128/_Float128 correctly. Fix: wire __fp16/_Float32/_Float64 as aliases (at least); _Decimal* is a larger feature.
       OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
