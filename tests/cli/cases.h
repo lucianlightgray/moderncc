@@ -5,6 +5,16 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"builtin_overflow_p_ice_fold", "",
+		 "printf 'int a1[__builtin_add_overflow_p(2147483647,1,(int)0)==1?1:-1];\\n"
+		 "int a2[__builtin_add_overflow_p(1,1,(int)0)==0?1:-1];\\n"
+		 "int a3[__builtin_mul_overflow_p(65536,65536,(int)0)==1?1:-1];\\n"
+		 "int a6[__builtin_add_overflow_p(255,1,(unsigned char)0)==1?1:-1];\\n"
+		 "int main(void){volatile int x=2147483647,y=1;"
+		 "return __builtin_add_overflow_p(x,y,(int)0)==1?0:1;}\\n' > {W}/ovp.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/ovp.c && echo OK",
+		 "OK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"

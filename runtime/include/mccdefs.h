@@ -1072,12 +1072,23 @@
 	#define __builtin_add_overflow(a, b, res) __mcc_ov_gen(0, add, (a), (b), (res))
 	#define __builtin_sub_overflow(a, b, res) __mcc_ov_gen(1, sub, (a), (b), (res))
 	#define __builtin_mul_overflow(a, b, res) __mcc_ov_gen(2, mul, (a), (b), (res))
-	#define __builtin_add_overflow_p(a, b, c) \
-	({ __typeof__(c) __mcc_ovp_r; __builtin_add_overflow((a), (b), &__mcc_ovp_r); })
-	#define __builtin_sub_overflow_p(a, b, c) \
-	({ __typeof__(c) __mcc_ovp_r; __builtin_sub_overflow((a), (b), &__mcc_ovp_r); })
-	#define __builtin_mul_overflow_p(a, b, c) \
-	({ __typeof__(c) __mcc_ovp_r; __builtin_mul_overflow((a), (b), &__mcc_ovp_r); })
+	#define __mcc_ovp_rt(code, a, b, c) (				\
+	__mcc_ov_is_wide((a)) || __mcc_ov_is_wide((b))			\
+	|| __mcc_ov_is_wide((c))					\
+	? __mcc_ov_calc_w((code), __mcc_ov_neg(a), __mcc_ov_mag_w(a),	\
+	__mcc_ov_neg(b), __mcc_ov_mag_w(b), __mcc_ov_tmax_w((c)),	\
+	__mcc_ov_tsig((c)), &(__mcc_ov_wide_t){0})			\
+	: __mcc_ov_calc((code), __mcc_ov_neg(a), __mcc_ov_mag(a),	\
+	__mcc_ov_neg(b), __mcc_ov_mag(b), __mcc_ov_tmax((c)),		\
+	__mcc_ov_tsig((c)), &(__mcc_ullong_t){0}))
+	#define __mcc_ovp_ice(code, a, b, c) __builtin_choose_expr(	\
+	__builtin_constant_p(a) && __builtin_constant_p(b)		\
+	&& sizeof(a) <= 8 && sizeof(b) <= 8 && sizeof(c) <= 8,		\
+	__mcc_overflow_p_const((code), (a), (b), (c)),			\
+	__mcc_ovp_rt((code), (a), (b), (c)))
+	#define __builtin_add_overflow_p(a, b, c) __mcc_ovp_ice(0, (a), (b), (c))
+	#define __builtin_sub_overflow_p(a, b, c) __mcc_ovp_ice(1, (a), (b), (c))
+	#define __builtin_mul_overflow_p(a, b, c) __mcc_ovp_ice(2, (a), (b), (c))
 	#define __builtin_assoc_barrier(x) (x)
 
 	/* NO __atomic_thread_fence / __atomic_signal_fence here. Both are already

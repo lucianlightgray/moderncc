@@ -13874,6 +13874,102 @@ tok_next:
 		vtop--;
 		vpushi(n);
 		break;
+	case TOK_mcc_overflow_p_const: {
+		int code, na, nb, neg, tsig, W, aok, bok, ov, al, wide;
+		uint64_t alo, ahi, blo, bhi, ma, mb, tmax, m;
+		CType dt;
+		next();
+		skip('(');
+		code = expr_const();
+		skip(',');
+		expr_eq();
+		aok = (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) == VT_CONST
+					&& !is_float(vtop->type.t) && !IS_NULLPTR(vtop->type.t);
+		alo = vtop->c.i;
+		if ((vtop->type.t & VT_BTYPE) == VT_INT128 || is_bitint_type(&vtop->type))
+			{ MCC_TRACE("br\n"); ahi = vtop->c.q.hi; }
+		else if (vtop->type.t & VT_UNSIGNED)
+			{ MCC_TRACE("br\n"); ahi = 0; }
+		else
+			{ MCC_TRACE("br\n"); ahi = (uint64_t)((int64_t)alo >> 63); }
+		vpop();
+		skip(',');
+		expr_eq();
+		bok = (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) == VT_CONST
+					&& !is_float(vtop->type.t) && !IS_NULLPTR(vtop->type.t);
+		blo = vtop->c.i;
+		if ((vtop->type.t & VT_BTYPE) == VT_INT128 || is_bitint_type(&vtop->type))
+			{ MCC_TRACE("br\n"); bhi = vtop->c.q.hi; }
+		else if (vtop->type.t & VT_UNSIGNED)
+			{ MCC_TRACE("br\n"); bhi = 0; }
+		else
+			{ MCC_TRACE("br\n"); bhi = (uint64_t)((int64_t)blo >> 63); }
+		vpop();
+		skip(',');
+		nocode_wanted++;
+		expr_eq();
+		dt = vtop->type;
+		vpop();
+		nocode_wanted--;
+		skip(')');
+		ov = 0;
+		if (aok && bok && (ahi == 0 || ahi == ~(uint64_t)0)
+				&& (bhi == 0 || bhi == ~(uint64_t)0)) { MCC_TRACE("br\n");
+			if (is_bitint_type(&dt))
+				{ MCC_TRACE("br\n"); W = bitint_prec(&dt); tsig = !bitint_is_unsigned(&dt); }
+			else if ((dt.t & VT_BTYPE) == VT_BOOL)
+				{ MCC_TRACE("br\n"); W = 1; tsig = 0; }
+			else
+				{ MCC_TRACE("br\n"); W = type_size(&dt, &al) * 8; tsig = !(dt.t & VT_UNSIGNED); }
+			if (ahi == 0)
+				{ MCC_TRACE("br\n"); na = 0; ma = alo; }
+			else
+				{ MCC_TRACE("br\n"); na = 1; ma = (uint64_t)0 - alo; }
+			if (bhi == 0)
+				{ MCC_TRACE("br\n"); nb = 0; mb = blo; }
+			else
+				{ MCC_TRACE("br\n"); nb = 1; mb = (uint64_t)0 - blo; }
+			if (tsig)
+				{ MCC_TRACE("br\n"); tmax = W >= 64 ? (uint64_t)0x7fffffffffffffffULL : (((uint64_t)1 << (W - 1)) - 1); }
+			else
+				{ MCC_TRACE("br\n"); tmax = W >= 64 ? ~(uint64_t)0 : (((uint64_t)1 << W) - 1); }
+			neg = 0;
+			wide = 0;
+			if (code == 1)
+				{ MCC_TRACE("br\n"); nb = mb ? !nb : 0; }
+			if (code == 2) { MCC_TRACE("br\n");
+				uint64_t p0 = (ma & 0xffffffffu) * (mb & 0xffffffffu);
+				uint64_t p1 = (ma >> 32) * (mb & 0xffffffffu);
+				uint64_t p2 = (ma & 0xffffffffu) * (mb >> 32);
+				uint64_t p3 = (ma >> 32) * (mb >> 32);
+				uint64_t mid = (p0 >> 32) + (p1 & 0xffffffffu) + (p2 & 0xffffffffu);
+				neg = (ma && mb) ? (na ^ nb) : 0;
+				m = (p0 & 0xffffffffu) | (mid << 32);
+				wide = (p3 + (p1 >> 32) + (p2 >> 32) + (mid >> 32)) != 0;
+			} else if (na == nb) { MCC_TRACE("br\n");
+				neg = na;
+				m = ma + mb;
+				wide = m < ma;
+			} else if (ma >= mb) { MCC_TRACE("br\n");
+				neg = na;
+				m = ma - mb;
+			} else { MCC_TRACE("br\n");
+				neg = nb;
+				m = mb - ma;
+			}
+			if (!m && !wide)
+				{ MCC_TRACE("br\n"); neg = 0; }
+			if (wide)
+				{ MCC_TRACE("br\n"); ov = 1; }
+			else if (!neg)
+				{ MCC_TRACE("br\n"); ov = m > tmax; }
+			else if (!tsig)
+				{ MCC_TRACE("br\n"); ov = 1; }
+			else
+				{ MCC_TRACE("br\n"); ov = m > tmax + 1; }
+		}
+		vpushi(ov);
+	} break;
 	case TOK_builtin_unreachable:
 		parse_builtin_params(0, "");
 		type.t = VT_VOID;
