@@ -18,6 +18,31 @@ static int __attribute__((noinline)) abitest(void *p, double d, int flag) {
 	return flag;
 }
 
+typedef unsigned long long L;
+static void repro_mag(L r[4], double x) {
+	int i;
+	for (i = 0; i < 4; i++) r[i] = 0;
+	if (x >= 1.0) r[0] = 1;          /* nonzero magnitude marker */
+}
+static void repro_neg(L r[4], const L a[4]) {
+	L z[4] = {0, 0, 0, 0}, borrow = 0;
+	int i;
+	for (i = 0; i < 4; i++) {
+		L d = z[i] - a[i], b1 = z[i] < a[i], t = d - borrow, b2 = d < borrow;
+		r[i] = t;
+		borrow = b1 | b2;
+	}
+}
+static void __attribute__((noinline)) repro_fromf(L r[4], double x, int u) {
+	if (x < 0.0) {
+		if (u) { int i; for (i = 0; i < 4; i++) r[i] = 0; return; }
+		repro_mag(r, -x);
+		repro_neg(r, r);
+		return;
+	}
+	repro_mag(r, x);
+}
+
 int main(void) {
 	double x = -1e30;
 	volatile double vx = -1e30;
@@ -37,6 +62,14 @@ int main(void) {
 	  printf("(-vx) bits=%016llx want 46293e5939a08cea\n", nn); }
 	p256("(i256)(-vx)", (__int256)(-vx));   /* positive magnitude conv, want +1e30 */
 	printf("abitest(p,-vx,9)=%d want 9\n", abitest(&x, -vx, 9));
+
+	/* self-contained minimal repro of __mcc_i256_from_f64's negative branch */
+	{
+		unsigned long long out[4];
+		repro_fromf(out, vx, 0);   /* want all-ffff (=-1) if the branch works */
+		printf("repro fromf(-1e30,0) = %016llx%016llx%016llx%016llx  want all-f\n",
+		       out[3], out[2], out[1], out[0]);
+	}
 
 	p256("const-neg", (__int256)-1e30);     /* compile-time constant */
 	p256("var-neg", (__int256)vx);          /* runtime: __mcc_i256_from_f64 */

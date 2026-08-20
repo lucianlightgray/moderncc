@@ -81,6 +81,10 @@ if [ -x "$OUT/i256probe.exe" ]; then
   "$OUT/i256probe.exe" > "$OUT/33-i256probe-run.txt" 2>&1
   echo "probe run rc=$?" >> "$OUT/33-i256probe-run.txt"
 fi
+"$MCC" $RT -c "$S/tools/woa-int256-probe.c" -o "$OUT/i256probe.o" 2>/dev/null || true
+if [ -n "$DIS" ] && [ -f "$OUT/i256probe.o" ]; then
+  "$DIS" -d "$OUT/i256probe.o" > "$OUT/34-i256probe-disasm.txt" 2>&1 || true
+fi
 
 # the committed goldens for reference
 grep -nE '"(float128|integer_promotion)"' "$S/tests/exec/goldens.h" > "$OUT/04-goldens.txt" 2>&1 || true
