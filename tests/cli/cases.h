@@ -102,6 +102,20 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/bcp.c && echo OK",
 		 "OK\n"},
 
+		{"attr_error_warning_poison", "",
+		 "printf '__attribute__((error(\"do not call\"))) void foo(void); void u(void){foo();}\\n' > {W}/pe.c && "
+		 "printf '__attribute__((warning(\"legacy api\"))) int bar(void); int bar(void){return 3;} int main(void){return bar()-3;}\\n' > {W}/pw.c && "
+		 "printf 'extern void g(void) __attribute__((__error__(\"glibc form\"))); void u(void){g();}\\n' > {W}/pg.c && "
+		 "printf '__attribute__((error(\"no\"))) void foo(void); void(*p)(void)=foo; void u(void){if(0)foo();}\\n' > {W}/pn.c && "
+		 "{ {MCC} -B{B} -I{I} -c {W}/pe.c -o {W}/pe.o 2>&1 | grep -o 'declared with attribute error: do not call' ; "
+		 "{MCC} -B{B} -I{I} -run {W}/pw.c 2>&1 | grep -o 'declared with attribute warning: legacy api' ; "
+		 "{MCC} -B{B} -I{I} -c {W}/pg.c -o {W}/pg.o 2>&1 | grep -o 'attribute error: glibc form' ; "
+		 "{MCC} -B{B} -I{I} -c {W}/pn.c -o {W}/pn.o 2>/dev/null && echo NOFIRE_OK ; }",
+		 "declared with attribute error: do not call\n"
+		 "declared with attribute warning: legacy api\n"
+		 "attribute error: glibc form\n"
+		 "NOFIRE_OK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"

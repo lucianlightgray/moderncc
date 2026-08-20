@@ -510,6 +510,8 @@ typedef struct AttributeDef {
 	char auto_seen;
 	char ext_seen;
 	int ctor_prio;
+	int poison_msg;
+	char poison_is_error;
 } AttributeDef;
 
 typedef struct InlineFunc {

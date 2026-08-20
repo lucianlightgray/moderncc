@@ -1982,8 +1982,49 @@ static void move_ref_to_global(Sym *s) { MCC_TRACE("enter\n");
 	}
 }
 
+struct poison_ent {
+	int v, msg_tok;
+	char is_error;
+};
+static struct poison_ent *poison_tab;
+static int poison_n, poison_cap;
+
+static void poison_record(int v, int msg_tok, int is_error) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < poison_n; i++) { MCC_TRACE("br\n");
+		if (poison_tab[i].v == v) { MCC_TRACE("br\n");
+			poison_tab[i].msg_tok = msg_tok;
+			poison_tab[i].is_error = (char)is_error;
+			return;
+		}
+	}
+	if (poison_n == poison_cap) { MCC_TRACE("br\n");
+		poison_cap = poison_cap ? poison_cap * 2 : 8;
+		poison_tab = mcc_realloc(poison_tab, poison_cap * sizeof *poison_tab);
+	}
+	poison_tab[poison_n].v = v;
+	poison_tab[poison_n].msg_tok = msg_tok;
+	poison_tab[poison_n].is_error = (char)is_error;
+	poison_n++;
+}
+
+static int poison_find(int v, int *msg_tok, int *is_error) { MCC_TRACE("enter\n");
+	int i;
+	for (i = 0; i < poison_n; i++) { MCC_TRACE("br\n");
+		if (poison_tab[i].v == v) { MCC_TRACE("br\n");
+			*msg_tok = poison_tab[i].msg_tok;
+			*is_error = poison_tab[i].is_error;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static Sym *external_sym(int v, CType *type, int r, AttributeDef *ad) { MCC_TRACE("enter\n");
 	Sym *s;
+
+	if (ad->poison_msg)
+		{ MCC_TRACE("br\n"); poison_record(v, ad->poison_msg, ad->poison_is_error); }
 
 	s = sym_find(v);
 	while (s && s->sym_scope)
@@ -6698,6 +6739,22 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			skip('(');
 			astr = parse_mult_str("alias(\"target\")")->data;
 			ad->alias_target = tok_alloc_const(astr);
+			skip(')');
+			break;
+		case TOK_ERROR:
+		case TOK___ERROR__:
+			skip('(');
+			astr = parse_mult_str("error(\"message\")")->data;
+			ad->poison_msg = tok_alloc_const(astr);
+			ad->poison_is_error = 1;
+			skip(')');
+			break;
+		case TOK_WARNING:
+		case TOK___WARNING__:
+			skip('(');
+			astr = parse_mult_str("warning(\"message\")")->data;
+			ad->poison_msg = tok_alloc_const(astr);
+			ad->poison_is_error = 0;
 			skip(')');
 			break;
 		case TOK_WEAKREF1:
@@ -15394,11 +15451,20 @@ tok_next:
 			s = vtop->type.ref;
 			ca = s->a;
 			if ((vtop->r & VT_SYM) && vtop->sym) { MCC_TRACE("br\n");
+				int pmsg, perr;
 				callee_tok = vtop->sym->v;
 				ca.warn_unused_result |= vtop->sym->a.warn_unused_result;
 				ca.sentinel_attr |= vtop->sym->a.sentinel_attr;
 				ca.nonnull_all |= vtop->sym->a.nonnull_all;
 				ca.nonnull_mask |= vtop->sym->a.nonnull_mask;
+				if (!nocode_wanted && poison_find(vtop->sym->v, &pmsg, &perr)) { MCC_TRACE("br\n");
+					if (perr)
+						{ MCC_TRACE("br\n"); mcc_error("call to '%s' declared with attribute error: %s",
+											get_tok_str(callee_tok, NULL), get_tok_str(pmsg, NULL)); }
+					else
+						{ MCC_TRACE("br\n"); mcc_warning("call to '%s' declared with attribute warning: %s",
+											get_tok_str(callee_tok, NULL), get_tok_str(pmsg, NULL)); }
+				}
 			}
 			if (((s->type.t & VT_BTYPE) == VT_STRUCT || IS_ENUM(s->type.t)) && s->type.ref->c < 0) { MCC_TRACE("br\n");
 				if ((vtop->r & VT_SYM) && vtop->sym)
