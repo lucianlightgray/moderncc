@@ -1218,6 +1218,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/dq.c -o {W}/dq.o 2>/dev/null && echo DEFAULT_OK; echo END",
 		 "duplicate 'const' declaration specifier\nduplicate 'volatile' declaration specifier\nC99_ALLOWED\nDEFAULT_OK\nEND\n"},
 
+		{"duplicate_qualifier_wall_c99", "",
+		 "printf 'const const int x=1;\\nvolatile volatile int y;\\nint main(void){return x-1;}\\n' > {W}/dqw.c && "
+		 "{MCC} -B{B} -I{I} -Wall -c {W}/dqw.c -o {W}/dqw.o 2>&1 | grep -oE \"duplicate '(const|volatile)' declaration specifier\"; "
+		 "{MCC} -B{B} -I{I} -c {W}/dqw.c -o {W}/dqw.o 2>&1 | grep -oE 'duplicate'; echo END",
+		 "duplicate 'const' declaration specifier\nduplicate 'volatile' declaration specifier\nEND\n"},
+
 		{"tentative_array_pedantic", "",
 		 "printf 'int a[];\\nint main(void){a[0]=5;return a[0]-5;}\\n' > {W}/ta.c && "
 		 "{MCC} -B{B} -I{I} -std=c99 -pedantic -c {W}/ta.c -o {W}/ta.o 2>&1 | "
