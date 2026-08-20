@@ -1218,6 +1218,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/ta.c -o {W}/ta.o 2>/dev/null && echo DEFAULT_OK; echo END",
 		 "tentative array definition assumed to have one element\nNO_ESCALATE_OK\nDEFAULT_OK\nEND\n"},
 
+		{"tentative_array_warn_at_decl_line", "",
+		 "printf 'int x;\\nint y;\\nint arr[];\\nint main(void){return arr[0];}\\n' > {W}/tal.c && "
+		 "{MCC} -B{B} -I{I} -Wall -c {W}/tal.c -o {W}/tal.o 2>&1 | grep -oE 'tal.c:[0-9]+: warning: array .arr. assumed to have one element'; echo END",
+		 "tal.c:3: warning: array 'arr' assumed to have one element\nEND\n"},
+
 		{"builtin_source_location", "",
 		 "printf 'int main(void){ int l=__builtin_LINE(); const char *f=__builtin_FILE();"
 		 " const char *fn=__builtin_FUNCTION(); long e=__builtin_expect_with_probability(l,0,0.9);"

@@ -1140,8 +1140,8 @@ static void finalize_tentative_arrays(void) { MCC_TRACE("enter\n");
 		esym = elfsym(sym);
 		if (esym && esym->st_shndx != SHN_UNDEF)
 			{ MCC_TRACE("br\n"); continue; }
-		mcc_warning_c(warn_all)("array '%s' assumed to have one element",
-														get_tok_str(sym->v, NULL));
+		mcc_warning_c(warn_all)("%i:array '%s' assumed to have one element",
+														sym->vla_inner_id, get_tok_str(sym->v, NULL));
 		sym->type.ref->c = 1;
 		sym->type.t &= ~VT_EXTERN;
 		size = type_size(&sym->type, &align);
@@ -20137,6 +20137,7 @@ static int decl(int l) {
 							{ MCC_TRACE("br\n"); sym->a.tentative_incomplete = 1; }
 						if (was_tentative_flex && sym) { MCC_TRACE("br\n");
 							sym->a.tentative_array = 1;
+							sym->vla_inner_id = file->line_num;
 							if (mcc_state->warn_pedantic)
 								{ MCC_TRACE("br\n"); mcc_warning("tentative array definition assumed to "
 													"have one element"); }
