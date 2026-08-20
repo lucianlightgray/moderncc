@@ -128,7 +128,7 @@
 	MCC_OPT_ROW(CALL_WINDOW,                   "call-window",                  MCC_OPTD_LEVEL(4)) \
 	MCC_OPT_ROW(TREE_LOOP_IM,                  "tree-loop-im",                 MCC_OPTD_LEVEL(4)) \
 	MCC_OPT_ROW(IVOPTS,                        "ivopts",                       MCC_OPTD_SPECIAL) \
-	MCC_OPT_ROW(IVOPTS_PTR,                    "ivopts-ptr",                   MCC_OPTD_DEV(MCC_OPTD_LEVEL(6))) \
+	MCC_OPT_ROW(IVOPTS_PTR,                    "ivopts-ptr",                   MCC_OPTD_LEVEL(3)) \
 	MCC_OPT_ROW(TREE_PRE,                      "tree-pre",                     MCC_OPTD_LEVEL(4)) \
 	MCC_OPT_ROW(DUMP_LOOPNEST,                 "dump-loopnest",                MCC_OPTD_OFF) \
 	MCC_OPT_ROW(DUMP_LOOPDEP,                  "dump-loopdep",                 MCC_OPTD_OFF) \
