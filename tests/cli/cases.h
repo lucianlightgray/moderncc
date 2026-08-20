@@ -2396,7 +2396,12 @@ static const cli_case_t cli_cases[] = {
 
 		{"wsign_compare_constant_operand", "",
 		 "printf 'int f(int i,unsigned u){int r=0;\\n r+=(i<5U);\\n r+=(u==-1);\\n return r;}\\n' > {W}/sc_bad.c && "
-		 "printf 'int g(int i,unsigned u){int r=0;\\n r+=(i<0U);\\n r+=(u==5);\\n r+=(i>=0U);\\n r+=(u==-1L);\\n return r;}\\n' > {W}/sc_ok.c && "
+		 /* -1LL (not -1L): a *wider* signed constant is value-preserving vs
+		  * unsigned int on BOTH LP64 and LLP64. On win (LLP64) `long` is 32-bit,
+		  * so `u==-1L` is a genuine same-rank signed/unsigned mismatch that
+		  * gcc-16 AND mcc correctly warn on -- `-1LL` keeps this "wider signed
+		  * type" clean case portable across ABIs. */
+		 "printf 'int g(int i,unsigned u){int r=0;\\n r+=(i<0U);\\n r+=(u==5);\\n r+=(i>=0U);\\n r+=(u==-1LL);\\n return r;}\\n' > {W}/sc_ok.c && "
 		 "{ {MCC} -B{B} -I{I} -Wsign-compare -c {W}/sc_bad.c -o /dev/null 2>&1; "
 		 "{MCC} -B{B} -I{I} -Wsign-compare -Werror -c {W}/sc_ok.c -o /dev/null 2>&1 && echo CLEAN_OK; "
 		 "{MCC} -B{B} -I{I} -c {W}/sc_bad.c -o /dev/null 2>&1 && echo SILENT_DEFAULT; } | "
