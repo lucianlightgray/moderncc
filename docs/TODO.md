@@ -120,9 +120,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
       REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
 
-- [ ] T-lin-10444 [S] promote-locals cweight loop-body RANKING bias — cweight[] is declared (mccast.c:4679) but never written; populate it so loop-body refs (IVs/invariant base ptrs) rank first for the callee-saved budget. Pure priority reorder among already-admitted scalar locals — NO bailout/CFG/legality change → cannot miscompile. Verify o0-baseline+exec+exec-replay + fewer (%rbp) in nbody2/nsieve hot loop, 0 exec delta. Child of T-lin-10422 (SAFE half).
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: e3350673 | TS: 2026-08-20T18:30Z
-      REF: DETAILS.md#t-lin-10420-child-decomposition | DEPS: —
 
 - [ ] T-lin-10445 [S] IVOPTS POINTER strength-reduction un-gate — `ast_ivsr_ptr_run` (mccast.c:13853, base+i*stride→ptr+=stride, the nbody bodies+i*56 shape) is DEV+LEVEL(6)-gated (mccopt.h:131); drop DEV → LEVEL(2)/(3). Bounded one-loop-shape existing strategy. Verify [VB] incl exec-replay+rir-coverage + nbody imul→add + selfhost-jit. MEDIUM. Child of T-lin-10423.
       OWNER: — | STATE: OPEN | SHA: e3350673 | TS: 2026-08-20T18:30Z
