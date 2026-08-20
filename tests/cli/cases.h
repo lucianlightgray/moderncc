@@ -714,6 +714,17 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=42\n"},
 
+		{"pragma_weak_alias_form", "os=Darwin",
+		 "printf 'int impl_a(void){ return 40; }\\n#pragma weak alias_a = impl_a\\n"
+		 "extern int alias_a(void);\\nint impl_b(void){ return 100; }\\n"
+		 "#pragma weak alias_b = impl_b\\n"
+		 "int main(void){ extern int alias_b(void); "
+		 "return (alias_a()==40 && alias_b()==100) ? 42 : 1; }\\n' > {W}/pw.c && "
+		 "{MCC} -B{B} {W}/pw.c -o {W}/pw.exe 2>{W}/pw.err; link=$?; "
+		 "{W}/pw.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=42\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

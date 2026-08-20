@@ -19386,11 +19386,15 @@ static void gen_inline_functions(MCCState *s) {
 static void resolve_alias_fixups(MCCState *s) {
 	for (int i = 0; i < s->nb_alias_fixups; i++) { MCC_TRACE("br\n");
 		AliasFixup *af = s->alias_fixups[i];
-		ElfSym *esym = elfsym(sym_find(af->target_v));
+		Sym *tsym = sym_find(af->target_v);
+		ElfSym *esym = elfsym(tsym);
 		if (!esym || esym->st_shndx == SHN_UNDEF)
 			{ MCC_TRACE("br\n"); mcc_error("undefined alias target '%s'",
 								get_tok_str(af->target_v, NULL)); }
-		put_extern_sym2(sym_find(af->alias_v), esym->st_shndx,
+		Sym *asym = sym_find(af->alias_v);
+		if (!asym)
+			{ MCC_TRACE("br\n"); asym = external_global_sym(af->alias_v, &tsym->type); }
+		put_extern_sym2(asym, esym->st_shndx,
 										esym->st_value, esym->st_size, 1);
 	}
 	dynarray_reset(&s->alias_fixups, &s->nb_alias_fixups);

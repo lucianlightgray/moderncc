@@ -2732,12 +2732,23 @@ static int pragma_parse(MCCState *s1) { MCC_TRACE("enter\n");
 	} else if (tok == TOK_WEAK1) { MCC_TRACE("br\n");
 		next_nomacro();
 		if (tok >= TOK_IDENT) { MCC_TRACE("br\n");
+			int alias_tok = tok;
 			const char *nm = get_tok_str(tok, NULL);
 			int i, dup = 0;
 			for (i = 0; i < s1->nb_pragma_weak_syms; i++)
 				{ MCC_TRACE("br\n"); if (0 == strcmp(s1->pragma_weak_syms[i], nm)) { MCC_TRACE("br\n"); dup = 1; break; } }
 			if (!dup)
 				{ MCC_TRACE("br\n"); dynarray_add(&s1->pragma_weak_syms, &s1->nb_pragma_weak_syms, mcc_strdup(nm)); }
+			next_nomacro();
+			if (tok == '=') { MCC_TRACE("br\n");
+				next_nomacro();
+				if (tok >= TOK_IDENT) { MCC_TRACE("br\n");
+					AliasFixup *af = mcc_malloc(sizeof *af);
+					af->alias_v = alias_tok;
+					af->target_v = tok;
+					dynarray_add(&s1->alias_fixups, &s1->nb_alias_fixups, af);
+				}
+			}
 		}
 		while (tok != TOK_LINEFEED && tok != TOK_EOF)
 			{ MCC_TRACE("br\n"); next_nomacro(); }
