@@ -57,8 +57,8 @@ int fflush(void *);
 
 void exit(int code) {
 	rt_frame f;
-	run_dtors();
 	__run_on_exit(code);
+	run_dtors();
 	fflush(0);
 	f.fp = 0;
 	f.ip = exit;
@@ -71,8 +71,8 @@ int _runmain(int argc, char **argv, char **envp) {
 	int ret;
 	run_ctors(argc, argv, envp);
 	ret = main(argc, argv, envp);
-	run_dtors();
 	__run_on_exit(ret);
+	run_dtors();
 	fflush(0);
 	return ret;
 }
