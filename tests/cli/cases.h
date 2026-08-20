@@ -418,6 +418,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/abp.c && echo OK",
 		 "OK\n"},
 
+		{"line_macro_near_intmax", "",
+		 "printf '#line 2147483647\\nlong a=__LINE__;\\nlong b=__LINE__;\\nlong c=__LINE__;\\n"
+		 "int main(void){return (a==2147483647L&&b==2147483648L&&c==2147483649L)?0:1;}\\n' > {W}/ln.c && "
+		 "{MCC} -B{B} -I{I} -w -run {W}/ln.c && echo OK",
+		 "OK\n"},
+
 		{"std_last_wins_trigraphs", "",
 		 "printf 'char *s = \"x?" "?=y\";\\n' > {W}/tg.c && "
 		 "printf 'c99=%s gnu=%s\\n' "

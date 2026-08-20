@@ -19,7 +19,7 @@ ST_DATA int tok_ident;
 ST_DATA TokenSym **table_ident;
 ST_DATA int pp_expr;
 
-static int tok_line_num;
+static int64_t tok_line_num;
 static struct BufferedFile *tok_line_file;
 static int tok_va_opt;
 
@@ -5559,8 +5559,8 @@ static int macro_subst_tok(
 					else if (t == TOK___LINE__) { MCC_TRACE("br\n");
 						CValue lcv;
 						char lbuf[32];
-						snprintf(lbuf, sizeof(lbuf), "%d",
-												 tok_line_file == file ? tok_line_num : file->line_num);
+						snprintf(lbuf, sizeof(lbuf), "%lld",
+												 (long long)(tok_line_file == file ? tok_line_num : file->line_num));
 						lcv.str.size = strlen(lbuf) + 1;
 						lcv.str.data = lbuf;
 						tok_str_add2_spc(&str, TOK_PPNUM, &lcv);
@@ -5622,7 +5622,12 @@ static int macro_subst_tok(
 		CValue cval;
 		char buf[32], *cstrval = buf;
 
-		if (v == TOK___LINE__ || v == TOK___COUNTER__ || v == TOK___INCLUDE_LEVEL__) { MCC_TRACE("br\n");
+		if (v == TOK___LINE__) { MCC_TRACE("br\n");
+			long long ln = tok_line_file == file ? tok_line_num : file->line_num;
+			snprintf(buf, sizeof(buf), "%lld", ln);
+			t = TOK_PPNUM;
+			goto add_cstr1;
+		} else if (v == TOK___COUNTER__ || v == TOK___INCLUDE_LEVEL__) { MCC_TRACE("br\n");
 			t = v == TOK___LINE__	 ? (tok_line_file == file ? tok_line_num
 																				 : file->line_num)
 					: v == TOK___COUNTER__ ? pp_counter++

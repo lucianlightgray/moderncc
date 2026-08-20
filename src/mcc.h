@@ -458,8 +458,8 @@ typedef struct BufferedFile {
 	uint8_t *buf_end;
 	int fd;
 	struct BufferedFile *prev;
-	int line_num;
-	int line_ref;
+	int64_t line_num;
+	int64_t line_ref;
 	unsigned long cst_base;
 	int ifndef_macro;
 	int ifndef_macro_saved;
@@ -481,8 +481,8 @@ typedef struct TokenString {
 	int len;
 	int need_spc;
 	int allocated_len;
-	int last_line_num;
-	int save_line_num;
+	int64_t last_line_num;
+	int64_t save_line_num;
 	struct TokenString *prev;
 	const int *prev_ptr;
 	char alloc;

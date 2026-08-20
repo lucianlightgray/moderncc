@@ -1,10 +1,10 @@
 {
- "accepted": 164,
+ "accepted": 165,
  "accepted_with_s": 108,
  "literal_fmt_sites": {
   "fprintf": 427,
   "printf": 458,
-  "snprintf": 186,
+  "snprintf": 187,
   "sprintf": 2
  },
  "max_accepted_cost": 16184,
@@ -22,7 +22,7 @@
   "mccircap.c": 2,
   "mccjit_embed.c": 488,
   "mccjit_intent.c": 2,
-  "mccpp.c": 67,
+  "mccpp.c": 68,
   "mccrir.c": 68,
   "mccrt.c": 0,
   "mccrun.c": 8,
@@ -36,7 +36,7 @@
  "sites": {
   "fprintf": 431,
   "printf": 460,
-  "snprintf": 195,
+  "snprintf": 196,
   "sprintf": 2,
   "vfprintf": 2,
   "vsnprintf": 4
@@ -46,8 +46,8 @@
   "blocked-on-pointer": 122,
   "float-out-of-scope": 1,
   "literal-only": 9,
-  "tranche1": 54
+  "tranche1": 55
  },
- "snprintf_specifiers_total": 299,
+ "snprintf_specifiers_total": 300,
  "tus": 17
 }
