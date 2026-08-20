@@ -597,6 +597,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=123\n"},
 
+		{"asm_macro_directive", "",
+		 "printf '%s\\n' '.macro pair a, b' '.long \\a' '.long \\b' '.endm' '.data' '.globl blob' 'blob:' 'pair 0x1111, 0x2222' 'pair 3+4, 5*6' > {W}/mc.s && "
+		 "printf '#include <string.h>\\nextern unsigned char blob[] __asm__(\"blob\");\\nint main(void){ unsigned int a,b,c,d; memcpy(&a,blob+0,4); memcpy(&b,blob+4,4); memcpy(&c,blob+8,4); memcpy(&d,blob+12,4); return (a==0x1111&&b==0x2222&&c==7&&d==30)?42:1; }\\n' > {W}/mc.c && "
+		 "{MCC} -B{B} {W}/mc.s {W}/mc.c -o {W}/mc.exe 2>{W}/mc.err; link=$?; "
+		 "{W}/mc.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=42\n"},
+
 		{"asm_data_directives_widths", "",
 		 "printf '.data\\n.globl base\\nbase:\\n.hword 0x1234\\n.value 0x5678\\n.2byte 0xABCD\\n.4byte 0xDEADBEEF\\n.8byte 0x1122334455667788\\n.xword 0x99AABBCCDDEEFF11\\n.float 1.5\\n.double 2.5\\n.octa 0x0102030405060708090A0B0C0D0E0F10\\n.dc.b 0x77\\n.dc.w 0x8899\\n.dc.l 0xCAFEBABE\\n.globl endp\\nendp:\\n' > {W}/dd.s && "
 		 "printf '#include <string.h>\\nextern unsigned char base[] __asm__(\"base\");\\nextern unsigned char endp[] __asm__(\"endp\");\\nint main(void){ unsigned short h,v,t,w2; unsigned int f,l; unsigned long long e,x; float ff; double dd; memcpy(&h,base+0,2); memcpy(&v,base+2,2); memcpy(&t,base+4,2); memcpy(&f,base+6,4); memcpy(&e,base+10,8); memcpy(&x,base+18,8); memcpy(&ff,base+26,4); memcpy(&dd,base+30,8); memcpy(&w2,base+55,2); memcpy(&l,base+57,4); if((endp-base)!=61) return 100; if(h!=0x1234) return 101; if(v!=0x5678) return 102; if(t!=0xabcd) return 103; if(f!=0xdeadbeefU) return 104; if(e!=0x1122334455667788ULL) return 105; if(x!=0x99aabbccddeeff11ULL) return 106; if(ff!=1.5f) return 107; if(dd!=2.5) return 108; if(base[38]!=0x10||base[45]!=0x09||base[53]!=0x01) return 109; if(base[54]!=0x77) return 110; if(w2!=0x8899) return 111; if(l!=0xcafebabeU) return 112; return 42; }\\n' > {W}/dd.c && "
