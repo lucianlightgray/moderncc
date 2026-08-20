@@ -1406,6 +1406,45 @@ void x86_64_vec16_packed_fcmp(SValue *res, SValue *op1, SValue *op2, int imm, in
 	ast_pinned_regs &= ~((uint64_t)1 << r2);
 }
 
+void x86_64_vec16_packed_icmp(SValue *res, SValue *op1, SValue *op2, int opc, int negate) { MCC_TRACE("enter\n");
+	int r1, r2, r3;
+
+	r1 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r1;
+	r2 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r2;
+
+	x86_64_vec16_move(r1, op1, 0);
+	x86_64_vec16_move(r2, op2, 0);
+
+	o(0x66);
+	sse_rex(r1, r2);
+	o(0x0f);
+	o(opc);
+	o(0xc0 + REG_VALUE(r1) * 8 + REG_VALUE(r2));
+
+	if (negate) { MCC_TRACE("br\n");
+		r3 = get_reg(MCC_RC_FLOAT);
+		ast_pinned_regs |= (uint64_t)1 << r3;
+		o(0x66);
+		sse_rex(r3, r3);
+		o(0x0f);
+		o(0x76);
+		o(0xc0 + REG_VALUE(r3) * 8 + REG_VALUE(r3));
+		o(0x66);
+		sse_rex(r1, r3);
+		o(0x0f);
+		o(0xef);
+		o(0xc0 + REG_VALUE(r1) * 8 + REG_VALUE(r3));
+		ast_pinned_regs &= ~((uint64_t)1 << r3);
+	}
+
+	x86_64_vec16_move(r1, res, 1);
+
+	ast_pinned_regs &= ~((uint64_t)1 << r1);
+	ast_pinned_regs &= ~((uint64_t)1 << r2);
+}
+
 static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *palign, int *reg_count) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	int size, align, ret_t = 0;

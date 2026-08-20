@@ -507,6 +507,7 @@ static CType complex_operand_real_type(SValue *v);
 void x86_64_vec16_packed_op(SValue *res, SValue *lhs, SValue *rhs, int op, int is_double);
 void x86_64_vec16_packed_iop(SValue *res, SValue *lhs, SValue *rhs, int op, int esz);
 void x86_64_vec16_packed_fcmp(SValue *res, SValue *op1, SValue *op2, int imm, int is_double);
+void x86_64_vec16_packed_icmp(SValue *res, SValue *op1, SValue *op2, int opc, int negate);
 #endif
 static void gen_vector_op(int op);
 static int vector_nelem(CType *type);
@@ -8536,6 +8537,27 @@ static void gen_vector_op(int op) { MCC_TRACE("enter\n");
 			if (imm >= 0) { MCC_TRACE("br\n");
 				x86_64_vec16_packed_fcmp(&res, swap ? &rhs : &lhs,
 																 swap ? &lhs : &rhs, imm, is_double);
+				vpushv(&res);
+				return;
+			}
+		}
+		if (ebt == VT_BYTE || ebt == VT_SHORT || ebt == VT_INT) { MCC_TRACE("br\n");
+			int cal, cesz = type_size(vector_elem_type(&vt), &cal);
+			int eqop = cesz == 1 ? 0x74 : cesz == 2 ? 0x75 : 0x76;
+			int gtop = cesz == 1 ? 0x64 : cesz == 2 ? 0x65 : 0x66;
+			int uns = vector_elem_type(&vt)->t & VT_UNSIGNED;
+			int opc = -1, swap = 0, neg = 0;
+			switch (op) { MCC_TRACE("br\n");
+			case TOK_EQ: opc = eqop; break;
+			case TOK_NE: opc = eqop; neg = 1; break;
+			case TOK_GT: if (!uns) { MCC_TRACE("br\n"); opc = gtop; } break;
+			case TOK_LT: if (!uns) { MCC_TRACE("br\n"); opc = gtop; swap = 1; } break;
+			case TOK_LE: if (!uns) { MCC_TRACE("br\n"); opc = gtop; neg = 1; } break;
+			case TOK_GE: if (!uns) { MCC_TRACE("br\n"); opc = gtop; swap = 1; neg = 1; } break;
+			}
+			if (opc >= 0 && cesz * n == 16) { MCC_TRACE("br\n");
+				x86_64_vec16_packed_icmp(&res, swap ? &rhs : &lhs,
+																 swap ? &lhs : &rhs, opc, neg);
 				vpushv(&res);
 				return;
 			}
