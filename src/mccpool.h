@@ -1,7 +1,9 @@
 #ifndef MCC_POOL_H
 #define MCC_POOL_H
 
+#if !MCC_HOST_WIN32
 #include <pthread.h>
+#endif
 #include "mcctask.h"
 
 #define MCC_POOL_MAX 64
