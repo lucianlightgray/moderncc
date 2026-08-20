@@ -1345,18 +1345,50 @@
 
 	#define __mcc_gprec(x) (__builtin_bitprecisionof(x))
 	#define __mcc_gsel(_1, _2, __mcc_gn, ...) __mcc_gn
-	#define __mcc_clzg1(x) __mcc_gclzp((__mcc_gu_t)(x), __mcc_gprec(x))
+	#define __mcc_gwide(x) (__mcc_gprec(x) > __MCC_GBITS && __mcc_gprec(x) <= 256)
+	#define __mcc_wpop(x) (__extension__ ({ \
+	_Pragma("GCC diagnostic push") \
+	_Pragma("GCC diagnostic ignored \"-Wshift-count-overflow\"") \
+	_Pragma("GCC diagnostic ignored \"-Wshift-count-negative\"") \
+	__typeof__(x) __wt = (x); int __wr = 0; \
+	while (__wt) { __wr += __mcc_gpop((__mcc_gu_t)__wt); \
+	__wt = (__typeof__(x))((__wt) >> __MCC_GBITS); } \
+	_Pragma("GCC diagnostic pop") __wr; }))
+	#define __mcc_wclz(x) (__extension__ ({ \
+	_Pragma("GCC diagnostic push") \
+	_Pragma("GCC diagnostic ignored \"-Wshift-count-overflow\"") \
+	_Pragma("GCC diagnostic ignored \"-Wshift-count-negative\"") \
+	__typeof__(x) __wt = (x); \
+	int __wp = __mcc_gprec(x), __wr = __wp, __wc = 0; \
+	while (__wt) { __mcc_gu_t __wl = (__mcc_gu_t)__wt; \
+	if (__wl) __wr = __wp - ((__wc + 1) * __MCC_GBITS - __mcc_gclz(__wl)); \
+	__wt = (__typeof__(x))((__wt) >> __MCC_GBITS); __wc++; } \
+	_Pragma("GCC diagnostic pop") __wr; }))
+	#define __mcc_wctz(x) (__extension__ ({ \
+	_Pragma("GCC diagnostic push") \
+	_Pragma("GCC diagnostic ignored \"-Wshift-count-overflow\"") \
+	_Pragma("GCC diagnostic ignored \"-Wshift-count-negative\"") \
+	__typeof__(x) __wt = (x); \
+	int __wr = __mcc_gprec(x), __wc = 0; \
+	while (__wt) { __mcc_gu_t __wl = (__mcc_gu_t)__wt; \
+	if (__wl) { __wr = __wc * __MCC_GBITS + __mcc_gctz(__wl); break; } \
+	__wt = (__typeof__(x))((__wt) >> __MCC_GBITS); __wc++; } \
+	_Pragma("GCC diagnostic pop") __wr; }))
+	#define __mcc_clzg1(x) (__mcc_gwide(x) ? __mcc_wclz(x) \
+	: __mcc_gclzp((__mcc_gu_t)(x), __mcc_gprec(x)))
 	#define __mcc_clzg2(x, f) __mcc_gclzf((__mcc_gu_t)(x), __mcc_gprec(x), (int)(f))
 	#define __builtin_clzg(...) \
 	__mcc_gsel(__VA_ARGS__, __mcc_clzg2, __mcc_clzg1, 0)(__VA_ARGS__)
-	#define __mcc_ctzg1(x) __mcc_gctzp((__mcc_gu_t)(x), __mcc_gprec(x))
+	#define __mcc_ctzg1(x) (__mcc_gwide(x) ? __mcc_wctz(x) \
+	: __mcc_gctzp((__mcc_gu_t)(x), __mcc_gprec(x)))
 	#define __mcc_ctzg2(x, f) __mcc_gctzf((__mcc_gu_t)(x), __mcc_gprec(x), (int)(f))
 	#define __builtin_ctzg(...) \
 	__mcc_gsel(__VA_ARGS__, __mcc_ctzg2, __mcc_ctzg1, 0)(__VA_ARGS__)
 	#define __builtin_clrsbg(x) __mcc_gclrsb((__mcc_gs_t)(x), __mcc_gprec(x))
 	#define __builtin_ffsg(x) __mcc_gffs((__mcc_gs_t)(x), __mcc_gprec(x))
-	#define __builtin_popcountg(x) __mcc_gpop((__mcc_gu_t)(x))
-	#define __builtin_parityg(x) (__mcc_gpop((__mcc_gu_t)(x)) & 1)
+	#define __builtin_popcountg(x) \
+	(__mcc_gwide(x) ? __mcc_wpop(x) : __mcc_gpop((__mcc_gu_t)(x)))
+	#define __builtin_parityg(x) (__builtin_popcountg(x) & 1)
 	#define __builtin_bswapg(x) \
 	((__typeof__(x))__mcc_gbswap((__mcc_gu_t)(x), (int)sizeof(x)))
 
@@ -1377,11 +1409,11 @@
 
 	#define __mcc_gnot(x) ((__mcc_gu_t)(__typeof__(x))~(x))
 	#define __builtin_stdc_leading_zeros(x) \
-	((unsigned int)__mcc_gclzp((__mcc_gu_t)(x), __mcc_gprec(x)))
+	((unsigned int)__mcc_clzg1(x))
 	#define __builtin_stdc_leading_ones(x) \
 	((unsigned int)__mcc_gclzp(__mcc_gnot(x), __mcc_gprec(x)))
 	#define __builtin_stdc_trailing_zeros(x) \
-	((unsigned int)__mcc_gctzp((__mcc_gu_t)(x), __mcc_gprec(x)))
+	((unsigned int)__mcc_ctzg1(x))
 	#define __builtin_stdc_trailing_ones(x) \
 	((unsigned int)__mcc_gctzp(__mcc_gnot(x), __mcc_gprec(x)))
 	#define __builtin_stdc_first_leading_one(x) \
@@ -1392,12 +1424,12 @@
 	__mcc_gfto((__mcc_gu_t)(x), __mcc_gprec(x))
 	#define __builtin_stdc_first_trailing_zero(x) \
 	__mcc_gfto(__mcc_gnot(x), __mcc_gprec(x))
-	#define __builtin_stdc_count_ones(x) ((unsigned int)__mcc_gpop((__mcc_gu_t)(x)))
+	#define __builtin_stdc_count_ones(x) ((unsigned int)__builtin_popcountg(x))
 	#define __builtin_stdc_count_zeros(x) \
-	((unsigned int)(__mcc_gprec(x) - __mcc_gpop((__mcc_gu_t)(x))))
-	#define __builtin_stdc_has_single_bit(x) ((_Bool)(__mcc_gpop((__mcc_gu_t)(x)) == 1))
+	((unsigned int)(__mcc_gprec(x) - __builtin_popcountg(x)))
+	#define __builtin_stdc_has_single_bit(x) ((_Bool)(__builtin_popcountg(x) == 1))
 	#define __builtin_stdc_bit_width(x) \
-	((unsigned int)(__mcc_gprec(x) - __mcc_gclzp((__mcc_gu_t)(x), __mcc_gprec(x))))
+	((unsigned int)(__mcc_gprec(x) - __mcc_clzg1(x)))
 	#define __builtin_stdc_bit_floor(x) \
 	((__typeof__(x))__mcc_gbitfloor((__mcc_gu_t)(x), __mcc_gprec(x)))
 	#define __builtin_stdc_bit_ceil(x) \

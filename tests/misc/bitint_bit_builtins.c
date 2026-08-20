@@ -31,6 +31,20 @@ int main(void) {
 	if (__builtin_clzg(ull) != 56) return 11;
 	if (__builtin_popcountg(ull) != 8) return 12;
 
+#if defined(__SIZEOF_INT128__)
+	unsigned _BitInt(200) w = (unsigned _BitInt(200))1 << 150;
+	unsigned _BitInt(256) x = (unsigned _BitInt(256))1 << 200;
+	if (__builtin_clzg(w) != 49) return 20;
+	if (__builtin_ctzg(w) != 150) return 21;
+	if (__builtin_popcountg(w) != 1) return 22;
+	if (__builtin_stdc_bit_width(w) != 151) return 23;
+	if (__builtin_stdc_leading_zeros(w) != 49) return 24;
+	if (__builtin_stdc_count_ones(w) != 1) return 25;
+	if (__builtin_clzg(x) != 55) return 26;
+	if (__builtin_ctzg(x) != 200) return 27;
+	if (__builtin_popcountg(x) != 1) return 28;
+#endif
+
 	if (__builtin_bitprecisionof(a) != 40) return 13;
 	if (__builtin_bitprecisionof(b) != 100) return 14;
 	if (__builtin_bitprecisionof(c) != 33) return 15;
