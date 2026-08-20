@@ -501,6 +501,9 @@ static void mk_complex_type(CType *type, CType *base);
 static void combine_complex_base(CType *r0, CType *r1, CType *out);
 static CType complex_operand_real_type(SValue *v);
 #define MCC_VECTOR_MAX_ELEM 1024
+#ifdef MCC_TARGET_X86_64
+void x86_64_vec16_packed_op(SValue *res, SValue *lhs, SValue *rhs, int op, int is_double);
+#endif
 static void gen_vector_op(int op);
 static int vector_nelem(CType *type);
 static inline int is_vector_type(CType *type);
@@ -8507,6 +8510,20 @@ static void gen_vector_op(int op) { MCC_TRACE("enter\n");
 		mk_vector_type(&rt, &ebase, n);
 	}
 	vector_local(&rt, &res);
+
+#ifdef MCC_TARGET_X86_64
+	if (!cmp && mcc_state && mcc_state->optimize >= 1) { MCC_TRACE("br\n");
+		int ebt = vector_elem_type(&vt)->t & VT_BTYPE;
+		int is_double = ebt == VT_DOUBLE;
+		if ((is_double && n == 2) || (ebt == VT_FLOAT && n == 4)) { MCC_TRACE("br\n");
+			if (op == '+' || op == '-' || op == '*' || op == '/') { MCC_TRACE("br\n");
+				x86_64_vec16_packed_op(&res, &lhs, &rhs, op, is_double);
+				vpushv(&res);
+				return;
+			}
+		}
+	}
+#endif
 
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		vpushv(&lhs);
