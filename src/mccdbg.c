@@ -96,6 +96,7 @@ static const struct
 #define DWARF_ABBREV_FORMAL_PARAMETER2 26
 #define DWARF_ABBREV_CONST_TYPE 27
 #define DWARF_ABBREV_VOLATILE_TYPE 28
+#define DWARF_ABBREV_UNSPECIFIED_TYPE 29
 
 static const unsigned char dwarf_abbrev_init[] = {
 		DWARF_ABBREV_COMPILE_UNIT, DW_TAG_compile_unit, 1,
@@ -279,6 +280,9 @@ static const unsigned char dwarf_abbrev_init[] = {
 		0, 0,
 		DWARF_ABBREV_VOLATILE_TYPE, DW_TAG_volatile_type, 0,
 		DW_AT_type, DW_FORM_ref4,
+		0, 0,
+		DWARF_ABBREV_UNSPECIFIED_TYPE, DW_TAG_unspecified_type, 0,
+		DW_AT_name, DW_FORM_strp,
 		0, 0,
 		0};
 
@@ -2660,12 +2664,17 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 			char name[100];
 
 			debug_type = dwarf_info_section->data_offset;
-			dwarf_data1(dwarf_info_section, DWARF_ABBREV_BASE_TYPE);
-			dwarf_uleb128(dwarf_info_section, default_debug[i - 1].size);
-			dwarf_data1(dwarf_info_section, default_debug[i - 1].encoding);
 			pstrcpy(name, sizeof name, default_debug[i - 1].name);
 			*strchr(name, ':') = 0;
-			dwarf_strp(dwarf_info_section, name);
+			if ((default_debug[i - 1].type & VT_BTYPE) == VT_VOID) { MCC_TRACE("br\n");
+				dwarf_data1(dwarf_info_section, DWARF_ABBREV_UNSPECIFIED_TYPE);
+				dwarf_strp(dwarf_info_section, name);
+			} else { MCC_TRACE("br\n");
+				dwarf_data1(dwarf_info_section, DWARF_ABBREV_BASE_TYPE);
+				dwarf_uleb128(dwarf_info_section, default_debug[i - 1].size);
+				dwarf_data1(dwarf_info_section, default_debug[i - 1].encoding);
+				dwarf_strp(dwarf_info_section, name);
+			}
 			dwarf_info.base_type_used[i - 1] = debug_type;
 		}
 	}

@@ -824,6 +824,15 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'compile=%s const=%s volatile=%s verify=%s\\n' $rc $ct $vt $ver",
 		 "compile=0 const=1 volatile=1 verify=1\n"},
 
+		{"dwarf_void_unspecified_type", "os=Darwin",
+		 "printf 'void doit(void){}\\nint main(void){doit();return 0;}\\n' > {W}/vd.c && "
+		 "{MCC} -B{B} -g -c {W}/vd.c -o {W}/vd.o 2>{W}/vd.err; rc=$?; "
+		 "uns=$(dwarfdump {W}/vd.o 2>/dev/null | grep -c 'DW_TAG_unspecified_type'); "
+		 "voidbase=$(dwarfdump {W}/vd.o 2>/dev/null | grep -B2 'DW_AT_name.*\"void\"' | grep -c 'DW_TAG_base_type'); "
+		 "ver=$(dwarfdump --verify {W}/vd.o 2>&1 | grep -c 'No errors'); "
+		 "printf 'compile=%s unspec=%s voidbase=%s verify=%s\\n' $rc $uns $voidbase $ver",
+		 "compile=0 unspec=1 voidbase=0 verify=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
