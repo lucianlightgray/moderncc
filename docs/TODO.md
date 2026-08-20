@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T02:40Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10422   | 2026-08-20T01:48Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10426   | 2026-08-20T02:05Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T03:00Z |
 
 ## Contracts — blocking, highest priority
@@ -62,10 +62,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 31f50f6e | TS: 2026-08-20T01:53Z
       REF: DETAILS.md#t-lin-10419-coop-mn-pool-unify-jit-gpu | DEPS: T-lin-10001[DONE]
 
-- [ ] T-lin-10420 [S] research: which gcc/clang optimizations/strategies mcc should implement to close the benchmark gap. Evidence (`tests/benchmarks` + `vendor/plb`, `perf instructions:u`): mcc's -O ladder is nearly FLAT (barely moves -O0→-O4, sometimes rises), and mcc uses 2–15× more instructions than gcc-15/clang-22 at best (nbody8i 11–15×, mcc's -O does ~nothing; spectral ~5.8×) — correctness is fine (byte-identical output), the gap is pure optimizer quality. Characterize the missing passes (register allocation/spill, LICM, strength-reduction/IV-simplify, inlining+IPCP, CSE/GVN, instr-selection/addressing, why -O3/-O4 sometimes regress) against the oracles via -S/insn-count diffs on the kernels, publish a ranked strategy to DETAILS, then mint the top ones as [S] implementation tasks. Umbrella/research — does not itself change codegen.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 31f50f6e | TS: 2026-08-20T01:53Z
-      REF: DETAILS.md#t-lin-10420-optimizer-parity-research | DEPS: —
-
 - SESSION WRAP (lin-x64, 2026-08-20T01:06Z): all pushed, tree clean, HEAD on origin/main; no active lin claims. **This session:** (1) **T-lin-10412 [X] DONE** (feat f6676667) — riscv64 coop `<threads.h>` context-switch backend, the last deferred backend of T-lin-10001 [C]. Its "no qemu-user" deferral premise was STALE: `qemu-riscv64` + the lp64d `vendor/gentoo-stage3-riscv64-glibc` sysroot + `cmake-cross/mcc-riscv64` are all present on this box, so the full coop test (mtx/cnd/tss/once/4-worker join) was verified GREEN through the real harness under qemu-riscv64 at -O0/2/3/s. o0-neutral (riscv64-gated); new `c11_threads_coop_riscv64` golden over a stdio-free clone in `tests/misc/` (zero corpus drift). DETAILS#t-lin-10412-riscv64-coop-backend. (2) **Minted T-lin-10418 [S]** (OPEN) — the riscv64 glibc `<stdio.h>` `_Float128` keyword/typedef collision that blocks the general riscv64 exec-conformance tier (surfaced while doing 10412; the coop clone sidesteps it). (3) **Re-OPENed T-mac-30158** (04914a1f) — its Mach-O AOT ctor-priority residual needs native Darwin verify lin can't do; moved to Open for mac (mac ACK'd, fix direction mapped). Env: this box is gcc-15.3.0 not gcc-16 ([[lin-box-gcc-15-not-16]]); FULL SUITES at -j1 (user directive). **Remaining lin-verifiable work is deep-only** (T-mac-30165 overflow_p fold→intrinsics, T-mac-30197 label-diff data-relocations, T-mac-30070 fleet-wide 64-bit sizes, T-mac-30149 constant_p-under-O) or other-platform/GPU/human-gated. NEW for successors: the riscv64 qemu run-tier IS available here (`-DMCC_QEMU_TESTS=ON`, sysroot at `vendor/gentoo-stage3-riscv64-glibc`) — riscv64 codegen is now natively verifiable.
 
 - HANDOFF-BOX-FACTS (lin-x64, kept for successors): FULL SUITES RUN AT `-j1` ON THIS BOX — user directive 2026-08-16 ("limit to -j1, my machine is still running too slowly"), superseding -j8 then -j16 then M-TODO-0005's -j32 (all withdrawn same day; DETAILS.md#lin-x64-full-suite-parallelism-is-j16-superseding-the-j32-convention records the -j16 history). The user is ACTIVELY GAMING on this box (was WoWClassic.exe; now Baldur's Gate 3 bg3.exe ~6 cores + ~6 GB GPU), so a suite must not compete: -j1 caps CPU to one core, and GPU cells (slice/*, gpu/*, cref-oracle) should be gated to run only when WoW is OFF the GPU (else they contend with the game AND risk the T-lin-10359 false-reds). At -j1 there is NO self-contention, so slice/quiesce/cref-oracle load-flakiness (T-lin-10074) largely disappears — the main cost is wall-clock (full -j1 suite ≈ several hours). Independently the better setting here: the -j32 §8 run reported 2 failures and only ONE was genuine (slice/quiesce passes standalone in 0.35s = load-induced T-lin-10074; slice/census reproduced = real, T-lin-10391). After ANY aborted suite, wait for /proc/loadavg < 8 before starting the next — a killed -j32 run holds the 1-min average above 100 and a suite started into that decay measures contention, not the tree. Corpora are host-local symlinks in vendor/ -> ~/Projects/{gcc,llvm-test-suite,llvm-project} and are NOT tracked: if they vanish, six cells silently become skip stubs instead of failing (T-lin-10388). cmake-cross measures 7/7 active o0-baseline keys incl. BOTH *-osx; cmake-debug is the plain native build
@@ -107,6 +103,22 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: INVESTIGATIONS.md#r34-low-cluster | DEPS: —
 
 ## Open — claimable
+
+- [ ] T-lin-10422 [S] optimizer quick win: promote-locals selection/bailout (ast_plan_promotion, src/mccast.c:4592). Narrow the function-wide `has_landor` bailout (:4637) to fire only when the &&/||/cond-store references a promotion candidate (collect candidates before the bailout), and bias `cweight` (:4642) toward loop-body references so induction vars + invariant base pointers pin into registers first. o0-safe (gated optimize>=2). MUST pass exec + exec-replay (record==replay faithfulness) + rir-coverage + o0-baseline before DONE. Evidence: a cold &&-if inflates a hot loop ~36%. Child of T-lin-10420.
+      OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
+      REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
+
+- [ ] T-lin-10423 [S] optimizer: IVOPTS strength reduction — `MCC_OPT_IVOPTS` is nominally on at -O1 but inert (nbody2/8i/nsieve recompute `imul $stride` every iteration instead of pointer `+=stride`). Make derived per-iteration address math a strength-reduced induction. MED-HIGH difficulty; o0-safe. Child of T-lin-10420.
+      OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
+      REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
+
+- [ ] T-lin-10424 [S] optimizer investigation: the LEVEL(4) middle-end (GCSE/LICM/PRE/reassoc/DSE, src/mccopt.h) is gated ON only at -O4 while -O3 gets none of it — flat ladder. Re-gate LEVEL(4)->LEVEL(3) is a one-line-per-knob flip BUT the passes currently REGRESS nbody2 at -O4 (146 vs 143 insns) and barely move the kernels — first fix why the passes are weak/counterproductive on real loops, then re-gate. Perturbs only the -O3 board (o0 untouched). Child of T-lin-10420.
+      OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
+      REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
+
+- [ ] T-lin-10425 [S] optimizer: `__m128d`/GNU-vector packed codegen + `_mm_rsqrt_ps` — mcc has no VT_VECTOR and scalarizes vector types (nbody8i: 0 packed SSE vs gcc rsqrtps/mulpd/divpd), the specific ~2x unlock for the 11-15x nbody8i gap. HIGH difficulty (new machinery). Child of T-lin-10420.
+      OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
+      REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
 
 - [ ] T-lin-10418 [S] riscv64 glibc `<stdio.h>` blocked by `_Float128` keyword/typedef collision — any riscv64 program reaching `bits/floatn.h` fails `too many basic types` on `typedef long double _Float128;` (mcc advertises `__GNUC__ 4` so glibc typedefs it, and mcc treats `_Float128` as a distinct keyword; riscv64 `long double` is modelled 64-bit vs lp64d 128-bit quad). Blocks the whole riscv64 glibc exec-conformance tier. Fix: stop advertising a distinct `_Float128` keyword on riscv64 (or predefine the float128 feature macros) so the glibc typedef is benign — verify with a trivial `#include <stdio.h>` compile + a `qemu-riscv64` run against `vendor/gentoo-stage3-riscv64-glibc`. Surfaced by T-lin-10412.
       OWNER: — | STATE: OPEN | SHA: f6676667 | TS: 2026-08-20T01:06Z
