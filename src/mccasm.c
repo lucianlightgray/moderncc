@@ -609,6 +609,48 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		}
 		break;
 #endif
+	case TOK_ASMDIR_float:
+	case TOK_ASMDIR_double: { MCC_TRACE("br\n");
+		int is_double = (tok == TOK_ASMDIR_double);
+		next();
+		for (;;) { MCC_TRACE("br\n");
+			double dv;
+			int neg = 0;
+			const char *p;
+			if (tok == '-' || tok == '+') { MCC_TRACE("br\n");
+				neg = (tok == '-');
+				next();
+			}
+			if (tok != TOK_PPNUM)
+				{ MCC_TRACE("br\n"); expect("floating constant"); }
+			p = tokc.str.data;
+			dv = strtod(p, (char **)&p);
+			if (*p != '\0')
+				{ MCC_TRACE("br\n"); mcc_error("floating constant"); }
+			if (neg)
+				{ MCC_TRACE("br\n"); dv = -dv; }
+			next();
+			if (sec->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
+				if (is_double) { MCC_TRACE("br\n");
+					uint64_t bits;
+					memcpy(&bits, &dv, 8);
+					gen_le32((uint32_t)bits);
+					gen_le32((uint32_t)(bits >> 32));
+				} else { MCC_TRACE("br\n");
+					float fv = (float)dv;
+					uint32_t bits;
+					memcpy(&bits, &fv, 4);
+					gen_le32(bits);
+				}
+			} else { MCC_TRACE("br\n");
+				ind += is_double ? 8 : 4;
+			}
+			if (tok != ',')
+				{ MCC_TRACE("br\n"); break; }
+			next();
+		}
+		break;
+	}
 	case TOK_ASMDIR_byte:
 		size = 1;
 		goto asm_data;
