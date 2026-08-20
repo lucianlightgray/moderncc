@@ -1092,6 +1092,86 @@ static int decode(Dis *d) { MCC_TRACE("enter\n");
 		modrm(d, 8, 1);
 		P(d, "movq\t%s, %s", xmm(d, d->reg), d->rm);
 		return d->len;
+	case 0x62:
+		modrm(d, 8, 1);
+		P(d, "punpckldq\t%s, %s", d->rm, xmm(d, d->reg));
+		return d->len;
+	case 0x64:
+	case 0x65:
+	case 0x66: {
+		const char *sz = op == 0x64 ? "b" : op == 0x65 ? "w" : "d";
+		modrm(d, 8, 1);
+		P(d, "pcmpgt%s\t%s, %s", sz, d->rm, xmm(d, d->reg));
+		return d->len;
+	}
+	case 0x70: {
+		unsigned char im;
+		modrm(d, 8, 1);
+		im = get8(d);
+		P(d, "pshufd\t$0x%x, %s, %s", im, d->rm, xmm(d, d->reg));
+		return d->len;
+	}
+	case 0x74:
+	case 0x75:
+	case 0x76: {
+		const char *sz = op == 0x74 ? "b" : op == 0x75 ? "w" : "d";
+		modrm(d, 8, 1);
+		P(d, "pcmpeq%s\t%s, %s", sz, d->rm, xmm(d, d->reg));
+		return d->len;
+	}
+	case 0xc2: {
+		static const char *const pred[8] = {"eq", "lt", "le", "unord",
+																				"neq", "nlt", "nle", "ord"};
+		unsigned char im;
+		const char *ty = d->opsz ? "pd" : "ps";
+		modrm(d, 8, 1);
+		im = get8(d);
+		P(d, "cmp%s%s\t%s, %s", pred[im & 7], ty, d->rm, xmm(d, d->reg));
+		return d->len;
+	}
+	case 0xd4:
+		modrm(d, 8, 1);
+		P(d, "paddq\t%s, %s", d->rm, xmm(d, d->reg));
+		return d->len;
+	case 0xd5:
+		modrm(d, 8, 1);
+		P(d, "pmullw\t%s, %s", d->rm, xmm(d, d->reg));
+		return d->len;
+	case 0xdb:
+		modrm(d, 8, 1);
+		P(d, "pand\t%s, %s", d->rm, xmm(d, d->reg));
+		return d->len;
+	case 0xeb:
+		modrm(d, 8, 1);
+		P(d, "por\t%s, %s", d->rm, xmm(d, d->reg));
+		return d->len;
+	case 0xf4:
+		modrm(d, 8, 1);
+		P(d, "pmuludq\t%s, %s", d->rm, xmm(d, d->reg));
+		return d->len;
+	case 0xf5:
+		modrm(d, 8, 1);
+		P(d, "pmaddwd\t%s, %s", d->rm, xmm(d, d->reg));
+		return d->len;
+	case 0xf8:
+	case 0xf9:
+	case 0xfa:
+	case 0xfb: {
+		const char *sz = op == 0xf8 ? "b" : op == 0xf9 ? "w"
+									 : op == 0xfa ? "d"
+																: "q";
+		modrm(d, 8, 1);
+		P(d, "psub%s\t%s, %s", sz, d->rm, xmm(d, d->reg));
+		return d->len;
+	}
+	case 0xfc:
+	case 0xfd:
+	case 0xfe: {
+		const char *sz = op == 0xfc ? "b" : op == 0xfd ? "w" : "d";
+		modrm(d, 8, 1);
+		P(d, "padd%s\t%s, %s", sz, d->rm, xmm(d, d->reg));
+		return d->len;
+	}
 	case 0xef:
 		modrm(d, 8, 1);
 		P(d, "pxor\t%s, %s", d->rm, xmm(d, d->reg));
