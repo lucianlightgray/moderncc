@@ -16630,7 +16630,7 @@ static int ast_pre_run(AstArena *a) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); continue; }
 		int et;
 		uint64_t er;
-		if (!ast_ident_etype(a, e, &et, &er) || !ast_ident_intt(et))
+		if (!ast_ident_etype(a, e, &et, &er) || !ast_cse_scalar(et))
 			{ MCC_TRACE("br\n"); continue; }
 		if (!ast_licm_operands_ok(a, n, e))
 			{ MCC_TRACE("br\n"); continue; }
