@@ -85,6 +85,11 @@ fi
 if [ -n "$DIS" ] && [ -f "$OUT/i256probe.o" ]; then
   "$DIS" -d "$OUT/i256probe.o" > "$OUT/34-i256probe-disasm.txt" 2>&1 || true
 fi
+# disasm the REAL runtime int256.c (__mcc_i256_from_f64 + w256_from_double_mag)
+"$MCC" $RT -c "$S/runtime/lib/int256.c" -o "$OUT/int256-rt.o" 2>/dev/null || true
+if [ -n "$DIS" ] && [ -f "$OUT/int256-rt.o" ]; then
+  "$DIS" -d "$OUT/int256-rt.o" > "$OUT/40-int256-rt-disasm.txt" 2>&1 || true
+fi
 
 # the committed goldens for reference
 grep -nE '"(float128|integer_promotion)"' "$S/tests/exec/goldens.h" > "$OUT/04-goldens.txt" 2>&1 || true

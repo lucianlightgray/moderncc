@@ -21,6 +21,9 @@ static int __attribute__((noinline)) abitest(void *p, double d, int flag) {
 typedef unsigned long long L;
 static void repro_mag(L r[4], double x) {
 	int i;
+	L b;
+	__builtin_memcpy(&b, &x, 8);
+	printf("  repro_mag received x bits=%016llx (1e30=46293e5939a08cea)\n", b);
 	for (i = 0; i < 4; i++) r[i] = 0;
 	if (x >= 1.0) r[0] = 1;          /* nonzero magnitude marker */
 }
