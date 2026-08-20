@@ -2371,6 +2371,13 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE \"different signedness|CLEAN_OK|SILENT_DEFAULT\" | LC_ALL=C sort | uniq -c | sed 's/^ *//'",
 		 "1 CLEAN_OK\n1 SILENT_DEFAULT\n2 different signedness\n"},
 
+		{"arm64_disasm_adr_pc_relative", "cpu=arm64",
+		 "printf '.text\\n.globl _f\\n_f:\\n nop\\n nop\\n adr x0, _f\\n ret\\n' > {W}/adrt.s && "
+		 "clang -c {W}/adrt.s -o {W}/adrt.o 2>/dev/null && "
+		 "{MCC} -B{B} -S {W}/adrt.o -o {W}/adrt.dis.s 2>/dev/null && "
+		 "grep -oE 'adr[[:space:]]+x0, 0x[0-9a-f]+' {W}/adrt.dis.s | sed 's/[[:space:]]\\+/ /g'",
+		 "adr x0, 0x0\n"},
+
 		{"wpedantic_alias", "",
 		 "printf 'int x = 0o5;\\nint main(void){return x;}\\n' > {W}/wp.c && "
 		 "{ {MCC} -B{B} -I{I} -Wpedantic -c {W}/wp.c -o /dev/null 2>&1; "

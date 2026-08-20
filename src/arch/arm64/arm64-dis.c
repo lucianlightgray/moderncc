@@ -270,9 +270,14 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 				{ MCC_TRACE("br\n"); return D_ASM; }
 			return D_CMT;
 		}
-		snprintf(out, osz, "%s\t%s, 0x%llx", nm, ir(dc, 1, rd),
-						 (unsigned long long)(simm(w, 5, 19) << 2 |
-																	(int)((w >> 29) & 3)));
+		{
+			long long imm = simm(w, 5, 19) << 2 | (int)((w >> 29) & 3);
+			addr_t target = (w >> 31)
+													? ((pc & ~(addr_t)0xfff) + ((addr_t)imm << 12))
+													: (pc + (addr_t)imm);
+			snprintf(out, osz, "%s\t%s, 0x%llx", nm, ir(dc, 1, rd),
+							 (unsigned long long)target);
+		}
 		return D_CMT;
 	}
 
