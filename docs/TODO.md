@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30263   | 2026-08-20T20:00Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10453   | 2026-08-20T21:20Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-20T19:39Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-20T21:40Z |
 
 ## Contracts — blocking, highest priority
 
@@ -92,6 +92,9 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-mac-30211 [S] Fix: [MED, rejects-valid] assembler meta/CFI/arch directive families — CFI/ARCH SLICE DONE (99513c5d): `.cfi_*` accept-and-ignore under `!MCC_EH_FRAME`, `.arch`/`.cpu` accept-and-ignore. **MACRO ENGINE SLICE DONE (7a699f0a): `.macro`/`.endm` with positional `\param` substitution** — built on existing infra (PARSE_FLAG_ACCEPT_STRAYS for `\`-tokens + TOK_GET/tok_str_add2 body-walk+splice, NO core-lexer change); invocation hook is a no-op when no macros defined (zero change for existing asm); oracle byte-identical to gas (`add3 10,20,12`->`.long 42`, expr args, `\param` in instructions). o0-neutral; ZERO self-host risk (no repo .s uses .macro). TDD cli/asm_macro_directive. Verified: cli 380/380, exec 8181/8181, asm|preprocess 346/346, gates 18/18. (`.equ`/`.equiv`/`.comm`/`.lcomm` + full `.if` family done in T-mac-30058.) **`.irp`/`.endr` ITERATION SLICE DONE (29ef3d42): `.irp SYM, v1, v2, ...` repeats a body per value substituting `\SYM`** — factored the macro substitution into a shared `asm_macro_subst` helper (both `.macro` + `.irp` use it); oracle byte-identical to gas incl. expression values (`.irp p,5+5,3*4`->11,13). TDD cli/asm_irp_directive; cli 383/383. TTL-resumable. RESIDUAL: **macro token PASTING/concatenation** (`\p\@`, `label\n:` — gas expands textually + pastes; mcc's token-level substitution keeps them separate, so `\@` unique-label counter + prefix-concat are unsupported — needs text-level expansion), `.irpc` (char iteration), `.inst` (arm), `.tlsdesccall` (arm64 TLS).
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 29ef3d42 | TS: 2026-08-20T06:55Z
       REF: DETAILS.md#t-mac-30211-macro-engine | DEPS: —
+- [ ] T-mac-30085 [S] Fix: [MED] COFF `NumberOfRelocations` truncates at 65535 (WORD cast, mccpe.c) + no `IMAGE_SCN_LNK_NRELOC_OVFL` flag — a section with >65535 relocs wraps (69632->4096) so the linker applies the wrong fixup count. CLAIMED win-x64: premise reproduced on win-x64 (69632 `&g` relocs in `.data` -> baseline mcc writes numRelocs=4096, no flag; mcc-link+run gives `69632 0` = relocs past 4096 dropped). Fix: (writer) on relcount>=0xffff write 0xFFFF + set NRELOC_OVFL + a leading synthetic reloc VirtualAddress=count+1; (reader) decode the overflow entry for round-trip. gcc-mingw oracle confirms the encoding (numRelocs=65535, flag set, first VA=69633).
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 86c665d8 | TS: 2026-08-20T21:40Z
+      REF: INVESTIGATIONS.md#r16-coff-reloc-ovfl | DEPS: —
 
 ## Open — claimable
 
@@ -297,9 +300,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-mac-30083 [S] Fix: [HIGH] COFF `-c` emits `__thread` in `.tdata`/`.tbss` never renamed to `.tls` — ELF keeps `.tdata`+SHF_TLS (`mccelf.c:71-72`), Mach-O renames to `__thread_*`/S_THREAD_LOCAL (`mccmacho.c:1434-1437,1834-1835`), but `coff_output_obj` emits verbatim ELF section names (`mccpe.c:2187,2340`), `coff_section_characteristics` has no TLS case (`:2072-2095`), and mcc's own COFF reader keys TLS on the name `.tls` (`:2511-2512`) → flag lost across `.o` boundary; SECREL reloc (`:2105`) resolves against `.tdata` not the TLS block. Since COFF is default `-c` on x86_64-w64 (T-lin-10083), `__thread` vars are non-thread-local + mis-relocated on the PRIMARY Windows target. Fix: map SHF_TLS→`.tls$`/`.tls`, emit `_tls_used`/`_tls_index` directory. Verify on win-x64.
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-coff-tls | DEPS: —
-- [ ] T-mac-30085 [S] Fix: [MED] COFF `NumberOfRelocations` truncates at 65535 — `(WORD)relcount[k]` cast (`mccpe.c:2351`) + no `IMAGE_SCN_LNK_NRELOC_OVFL` in `coff_section_characteristics` (`:2072-2095`); a section with >65535 relocs silently wraps (65536→0) → linker applies wrong fixup count. ELF/Mach-O use 32-bit counts. Fix: on overflow write 0xFFFF + set NRELOC_OVFL + true count in a leading synthetic reloc's VirtualAddress. Verify on win-x64.
-      OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
-      REF: INVESTIGATIONS.md#r16-coff-reloc-ovfl | DEPS: —
 - [ ] T-mac-30086 [S] Fix: [MED→HIGH] `__LDBL_*` predefines report `double` precision on quad-`long double` targets — on Linux-arm64/riscv64 `long double` IS IEEE quad in `float.h` (`:127-147`, MANT_DIG 113) and codegen (`arm64-gen.c:1958-1968`, `riscv64-gen.c:430,741`, LDOUBLE_SIZE 16) but `mccdefs.h:308-318` maps `__LDBL_MANT_DIG__`→53/`__LDBL_MAX__`→1.79e308 → `_Static_assert(LDBL_MANT_DIG==__LDBL_MANT_DIG__)` fails, tgmath misroutes; PLUS mccdefs-internal contradiction: `__LDBL_MIN__`=e-4932 (`:502-508`) vs `__LDBL_MAX__`=e+308. Distinct from Apple/Win SIZE issue T-mac-30029. Fix: add arm64/riscv64 (non-Apple/non-Win) quad branch to mccdefs `#else`. Verify on Linux-arm64/riscv64 (qemu).
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-ldbl-macros | DEPS: —
