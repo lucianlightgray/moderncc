@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30263   | 2026-08-20T22:21Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30263   | 2026-08-20T22:29Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10453   | 2026-08-20T21:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-20T22:35Z |
 
@@ -177,6 +177,8 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       OWNER: — | STATE: OPEN | SHA: e7a57695 | TS: 2026-08-18T20:15Z
       REF: INVESTIGATIONS.md#r35-dylib-exports | DEPS: T-mac-30157
 - [ ] T-mac-30230 [S] Fix: [MED] `__builtin_stdc_*`/`*g` not const-foldable + no `<stdbit.h>` header — they expand to static-inline helper calls (`mccdefs.h:1321-1381`) → `_Static_assert(__builtin_stdc_bit_width(255u)==8)` / `int a[__builtin_stdc_count_ones(0xFu)]` → `error: constant expression expected` (gcc folds; classic __builtin_clz/popcount DO fold). Separately `#include <stdbit.h>` fails — but PLATFORM-WIDE (clang+gcc-16 also lack C stdbit.h on this SDK); mcc already has the correct __builtin_stdc_* machinery, so a thin `<stdbit.h>` under runtime/include/ (map stdc_*→__builtin_stdc_* + endian macros) would EXCEED the local oracles. Fix: make stdc_*/*g const-foldable + ship a thin <stdbit.h>.
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 9edfdede | TS: 2026-08-20T22:29Z
+      REF: DETAILS.md#t-mac-30230-typed-stdbit-fns | DEPS: —
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 9edfdede | TS: 2026-08-19T01:01Z | NOTE: SLICE DONE (thin <stdbit.h>, 9edfdede) — shipped runtime/include/stdbit.h mapping the 14 C23 type-generic stdc_* macros to __builtin_stdc_* + __STDC_VERSION_STDBIT_H__ + __STDC_ENDIAN_{LITTLE,BIG,NATIVE}__ (found via mcc's -B include path; TDD cli/stdbit_header, anti-vacuity verified; EXCEEDS the local oracles which lack <stdbit.h>). RESIDUAL: (a) make __builtin_stdc_*/*g const-foldable in the ICE evaluator (`_Static_assert(__builtin_stdc_bit_width(255u)==8)` still errors "constant expression expected"); (b) the per-type named functions (stdc_leading_zeros_ui, ...).
       REF: INVESTIGATIONS.md#r35-stdbit-fold | DEPS: —
 - [ ] T-mac-30232 [S] Fix: [LOW cluster] archive/dylib/driver/phases/disasm cosmetics — ARCHIVE: mcc `-ar` can't archive Mach-O objects (ELF-only interop); `-ar ...T` thin-archive flag silently ignored. DYLIB: ~~export trie leaks `__mh_execute_header`/`_edata`/`_end`/`_etext`~~ **DONE (T-mac-30229 ae37f0c0)** (+ wrong header name residual); ~~`-Wl,-current_version`/`-compatibility_version`~~ **DONE (7d0d53cd: routed to parse_version in mcc_set_linker, MACHO-guarded; DETAILS#t-mac-30232-wl-dylib-version)**; `-exported_symbols_list` rejected (ties T-mac-30229 visibility residual). DRIVER: `-###`/`-time` error; ~~no-args exits 0 (oracles exit 1)~~ **NON-ISSUE (mac-arm64 2026-08-19: verified `mcc`/`mcc -B` bare → rc=1 "no input files", matches gcc/clang; the earlier "exits 0" was a pipe-to-`head` rc artifact)**; `-x c-header` accepted but no-ops (no .gch); `-dumpspecs`/`-print-multiarch`/`-print-libgcc-file-name`/`-target` unsupported (clang also lacks some). PHASES: `%:%:` digraph split by a line-splice not recombined; `-E` collapses spliced logical lines (LINE correct). DISASM: broad D_CMT `.long // <asm>` readability class (decode correct, not clean-reassemblable).
