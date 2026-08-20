@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30263   | 2026-08-20T21:40Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30263   | 2026-08-20T21:52Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10453   | 2026-08-20T21:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-20T21:40Z |
 
@@ -330,7 +330,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 328fb7b3 | TS: 2026-08-18T02:27Z
       REF: INVESTIGATIONS.md#r13-stdc-fp | DEPS: —
 - [ ] T-mac-30070 [S] Investigate: ICE evaluator (folded values/overflow/shift-sign/accept-reject/float-guard/bitfield-widths all match clang+gcc-16) — [MED] array-declaration size capped at 32 bits: `expr_const()` hard-errors "constant exceeds 32 bit" (`mccgen.c:14987`) + result stored `int n` (`:9702`) → `char a[5000000000]`/`a[0x100000001]` rejected, `a[2147483648]`→"invalid array size" (all accepted by clang+gcc-16); reject-valid not miscompile (guards prevent wrong size); same cap on designated-init indices (`:16698`); fix needs `expr_const64`+wider plumbing; [LOW] out-of-range/truncating `case` labels emit no diagnostic (`case 257` on char, `case 1LL<<40` on int; clang/gcc warn, runtime correct)
-      OWNER: — | STATE: OPEN | SHA: 328fb7b3 | TS: 2026-08-18T02:27Z
+      OWNER: — | STATE: OPEN | SHA: 328fb7b3 | TS: 2026-08-18T02:27Z | NOTE (mac-arm64 2026-08-20, DETAILS#t-mac-verify-first-scouting-sweep-mac-arm64-2026-08-20): array-size 32-bit cap is a HARD BLOCKER — the array dimension lives in `Sym.c`, a 32-bit `int` (mcc.h, union w/ sym_scope/jnext/…); widening = whole-compiler data-model change, NOT a slice. `case 257`-on-char sub-item is DONE (T-mac-30148(1)). `case 1LL<<40`-on-int overflow is part of a missing broad -Woverflow (subtle gcc signed/unsigned exemptions) — disproportionate for [LOW].
       REF: INVESTIGATIONS.md#r13-ice-array-cap | DEPS: —
 - [ ] T-mac-30064 [S] Investigate: GPU Metal 32-bit lane-index overflow (kernel codegen otherwise exceptionally robust) — [MED] `msl_main_begin`/`msl_main_end` (`mccgpu.h:559/566`) compute per-lane buffer index `gi*nlive*IN_SLOTS` with `gi=as_type<int>(gid)` (32-bit wrapping `mcc_mul`) while the Metal size gate is only `inlen>maxBufferLength` (64-bit, tens-of-GB on high-mem Apple Silicon; `mccgpu.c:703/458`) → a single-buffer dispatch >8GB (2^31 words) wraps negative → `inb[]`/`outb[]` OOB on an accepted dispatch; Vulkan structurally immune (single buffer ≤4GB `maxStorageBufferRange`, `mccgpu.c:2693`) → same-source backend divergence
       OWNER: — | STATE: OPEN | SHA: 3259ae30 | TS: 2026-08-18T02:16Z
@@ -350,7 +350,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: bed656d6 | TS: 2026-08-20T07:20Z
       REF: INVESTIGATIONS.md#r10-ubsan-divrem DETAILS.md#t-mac-30055-arm64-divrem-overflow | DEPS: —
 - [ ] T-mac-30056 [S] Investigate: preprocessor secondary features — [MED] `#pragma once` dedups by textual path not device+inode (`mccpp.c:2562`, `host_path_normalize` `libmcc.c:783`, no realpath/stat) → same file via a symlink/two -I roots included twice → redefinition errors; [LOW-MED] `__TIMESTAMP__` entirely unimplemented (no token/macro/handler) → bare-identifier passthrough → compile error in string context; [LOW] `#error` keeps comment text verbatim + >1023 truncates + no `#include_next`-in-primary warning. include_next/computed-include/push-pop_macro/__COUNTER__/_Pragma ROBUST
-      OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z
+      OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z | NOTE (mac-arm64 2026-08-20, DETAILS#t-mac-verify-first-scouting-sweep-mac-arm64-2026-08-20): two sub-items STALE on mac — `__TIMESTAMP__` is DONE (T-mac-30153, mccpp.c:5719, tests/pp/loc_macros.c asserts it); `#pragma once` via symlink / `../`-aliased two-path include already dedups (no double-include, == gcc/clang). Residual = `#error` comment/>1023-truncation cosmetics only.
       REF: INVESTIGATIONS.md#r10-pp-secondary | DEPS: —
 - [ ] T-mac-30057 [S] Investigate: bounds checker `-b` coverage (feature BUILT+WORKING, detection ROBUST) — [MED] libc string/mem writers outside the `__BOTH` redirect escape checking (false negative): `mempcpy`/`stpcpy`/`stpncpy`/`bcopy`/`bzero`/`memccpy`/`index`/`strstr` declared `__BUILTIN` not `__BOTH` (`mccdefs.h:715-728`) → no `__bound_*` wrapper, `bzero(a4,64)` raw SIGSEGV; fortify `_chk` variants forward unchecked (distinct axis from the T-mac-30047 link-failure); [LOW] no positive-detection regression test (`mcctest-bcheck` is differential-only, `tests/exec/bounds/*` trivial) → a dropped check passes CI
       OWNER: — | STATE: OPEN | SHA: 5c26b0da | TS: 2026-08-18T01:00Z
