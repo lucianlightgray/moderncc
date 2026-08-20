@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T03:35Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T02:50Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T04:05Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T04:45Z |
 
 ## Contracts — blocking, highest priority
 
@@ -99,9 +99,9 @@ _Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z
 - [ ] T-mac-30223 [S] Fix: [LOW cluster] driver/diagnostic-quality — sub-item (2) DONE (1278bd93): `#error`/`#warning` message no longer truncated at 1023 chars (`preprocess()` TOK_ERROR/TOK_WARNING now accumulates into a dynamic CString, was fixed `char buf[1024]`) — matches gcc+clang which emit the full message; o0-neutral (byte-identical ≤1023 chars); TDD cli/preprocess_long_warning_not_truncated. TTL-resumable. RESIDUAL: (1) `-fstack-protector` promoted to `-all` (errs safe, borderline); (3) caret column at EOL not directive; (4) `-g -S` no `.loc`; (5) `-p` hard-errors (borderline).
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1278bd93 | TS: 2026-08-19T17:05Z
       REF: INVESTIGATIONS.md#r34-low-cluster | DEPS: —
-- [ ] T-mac-30210 [S] Fix: [MED, rejects-valid] standard data directives missing — add GNU-as data directives with correct widths (integer slice this turn: `.hword`/`.value`/`.2byte`=2B, `.4byte`=4B, `.8byte`/`.xword`=8B). Digit-leading forms need a dispatcher remap (lexer routes `.4byte` to PPNUM). RESIDUAL: `.octa`(16B), `.float`/`.double`(IEEE bits), `.dc.b/.w/.l`.
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 8f22703e | TS: 2026-08-20T04:05Z
-      REF: INVESTIGATIONS.md#r33-data-dirs | DEPS: —
+- [ ] T-mac-30210 [S] Fix: [MED, rejects-valid] standard data directives missing — INTEGER SLICE DONE (0745c4fd): `.hword`/`.value`/`.2byte`=2B, `.4byte`=4B, `.8byte`/`.xword`=8B, oracle-verified byte-exact vs mingw as; digit-leading `.Nbyte` remapped from PPNUM in the asm main loop (lexer routes `.`+digit to parse_num). TDD cli/asm_data_directives_widths; o0-neutral (asm-token enum shift, .s path never in corpus); cli 377/377 (also fixed pre-existing win red cli/line_macro_near_intmax = LLP64 `long`->`long long`, FYI mac). TTL-resumable. RESIDUAL: `.octa`(16B), `.float`/`.double`(IEEE bits), `.dc.b/.w/.l`(dotted).
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 0745c4fd | TS: 2026-08-20T04:45Z
+      REF: DETAILS.md#t-mac-30210-asm-data-directives | DEPS: —
 
 ## Open — claimable
 
