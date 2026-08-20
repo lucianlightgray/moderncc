@@ -68,6 +68,12 @@ int main(void) {
 	if (__builtin_stdc_rotate_left(w, 0) != w) return 84;
 	if (__builtin_stdc_rotate_left(zz, 20) != ((unsigned _BitInt(512))1 << 10)) return 85;
 	if (__builtin_stdc_rotate_right(zz, 20) != ((unsigned _BitInt(512))1 << 482)) return 86;
+	if (__builtin_bitreverseg((unsigned _BitInt(200))1) != ((unsigned _BitInt(200))1 << 199)) return 90;
+	if (__builtin_bitreverseg(w) != ((unsigned _BitInt(200))1 << 49)) return 91;
+	if (__builtin_bitreverseg(__builtin_bitreverseg(nb)) != nb) return 92;
+	unsigned _BitInt(256) bsw = 0xAB;
+	if (__builtin_bswapg(bsw) != ((unsigned _BitInt(256))0xAB << (31 * 8))) return 93;
+	if (__builtin_bswapg(__builtin_bswapg(zz)) != zz) return 94;
 	if (__builtin_stdc_leading_ones(w) != 0) return 30;
 	if (__builtin_stdc_trailing_ones(w) != 0) return 31;
 	if (__builtin_stdc_first_leading_one(w) != 50) return 32;

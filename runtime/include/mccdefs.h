@@ -1397,8 +1397,15 @@
 	unsigned int __mcc_bwc = (unsigned int)__builtin_stdc_bit_width(x); \
 	unsigned int __mcc_shc = (unsigned int)__builtin_stdc_bit_width((x) - 1); \
 	__mcc_bwc <= 1u ? (__typeof__(x))1 : ((__typeof__(x))1 << __mcc_shc); }))
-	#define __builtin_bswapg(x) \
-	((__typeof__(x))__mcc_gbswap((__mcc_gu_t)(x), (int)sizeof(x)))
+	#define __mcc_wbswap(x) (__extension__ ({ \
+	int __mcc_sn = (int)sizeof(x), __mcc_si; \
+	__typeof__(x) __mcc_sv = (x), __mcc_sr = (__typeof__(x))0; \
+	for (__mcc_si = 0; __mcc_si < __mcc_sn; __mcc_si++) \
+		__mcc_sr = (__typeof__(x))(((__mcc_sr) << 8) | (((__mcc_sv) >> (__mcc_si * 8)) & 0xff)); \
+	__mcc_sr; }))
+	#define __builtin_bswapg(x) (__mcc_gwide(x) \
+	? __mcc_wbswap(x) \
+	: ((__typeof__(x))__mcc_gbswap((__mcc_gu_t)(x), (int)sizeof(x))))
 
 	#define __builtin_bitreverse8(x) \
 	((__mcc_uchar_t)__mcc_gbitrev((__mcc_gu_t)(__mcc_uchar_t)(x), 8))
@@ -1412,8 +1419,15 @@
 	#define __builtin_bitreverse128(x) \
 	((__mcc_uint128_t)__mcc_gbitrev((__mcc_gu_t)(__mcc_uint128_t)(x), 128))
 	#endif
-	#define __builtin_bitreverseg(x) \
-	((__typeof__(x))__mcc_gbitrev((__mcc_gu_t)(x), __mcc_gprec(x)))
+	#define __mcc_wbitrev(x) (__extension__ ({ \
+	int __mcc_vp = (int)__mcc_gprec(x), __mcc_vi; \
+	__typeof__(x) __mcc_vv = (x), __mcc_vr = (__typeof__(x))0; \
+	for (__mcc_vi = 0; __mcc_vi < __mcc_vp; __mcc_vi++) \
+		__mcc_vr = (__typeof__(x))(((__mcc_vr) << 1) | (((__mcc_vv) >> __mcc_vi) & 1)); \
+	__mcc_vr; }))
+	#define __builtin_bitreverseg(x) (__mcc_gwide(x) \
+	? __mcc_wbitrev(x) \
+	: ((__typeof__(x))__mcc_gbitrev((__mcc_gu_t)(x), __mcc_gprec(x))))
 
 	#define __mcc_gnot(x) ((__mcc_gu_t)(__typeof__(x))~(x))
 	#define __builtin_stdc_leading_zeros(x) \
