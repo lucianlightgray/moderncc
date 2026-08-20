@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30261   | 2026-08-20T13:50Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10441   | 2026-08-20T14:19Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10441   | 2026-08-20T14:25Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50038   | 2026-08-20T14:22Z |
 
 ## Contracts — blocking, highest priority
@@ -539,7 +539,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10062-mcc-rir-stamp-is-off-by | DEPS: —
 - [ ] T-lin-10074 [S] `slice/quiesce` is structurally flaky and the device lock is built, priced and off
-      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-20T14:25Z
       REF: DETAILS.md#t-lin-10074-slicequiesce-is-structurally-flaky-and-the | DEPS: —
 - [ ] T-lin-10076 [S] N7 residue — an independent tree-side oracle for the slice evaluator
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
