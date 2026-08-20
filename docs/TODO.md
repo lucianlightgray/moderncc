@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T03:35Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T03:08Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T05:20Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T05:40Z |
 
 ## Contracts — blocking, highest priority
 
@@ -100,6 +100,9 @@ _Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z
 - [ ] T-mac-30223 [S] Fix: [LOW cluster] driver/diagnostic-quality — sub-item (2) DONE (1278bd93): `#error`/`#warning` message no longer truncated at 1023 chars (`preprocess()` TOK_ERROR/TOK_WARNING now accumulates into a dynamic CString, was fixed `char buf[1024]`) — matches gcc+clang which emit the full message; o0-neutral (byte-identical ≤1023 chars); TDD cli/preprocess_long_warning_not_truncated. TTL-resumable. RESIDUAL: (1) `-fstack-protector` promoted to `-all` (errs safe, borderline); (3) caret column at EOL not directive; (4) `-g -S` no `.loc`; (5) `-p` hard-errors (borderline).
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 1278bd93 | TS: 2026-08-19T17:05Z
       REF: INVESTIGATIONS.md#r34-low-cluster | DEPS: —
+- [ ] T-mac-30211 [S] Fix: [MED, rejects-valid] assembler meta/CFI/arch directive families — CFI/ARCH SLICE DONE (99513c5d): `.cfi_*` accept-and-ignore under `!MCC_EH_FRAME` (win-PE/Darwin/BSD/arm — no .eh_frame there; Linux EH-on path uses the real CFI parser unchanged), `.arch`/`.cpu` accept-and-ignore (mcc does no ISA-subsetting). Lets mcc reassemble typical compiler -S output. TDD cli/asm_cfi_arch_cpu_accepted; o0-neutral; cli 378/378. (`.equ`/`.equiv`/`.comm`/`.lcomm` + full `.if` family already done in T-mac-30058.) TTL-resumable. RESIDUAL: `.macro`/`.endm`/`.irp`/`.irpc` (macro engine), `.inst` (arm), `.tlsdesccall` (arm64 TLS).
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 99513c5d | TS: 2026-08-20T05:40Z
+      REF: INVESTIGATIONS.md#r33-meta-dirs | DEPS: —
 
 ## Open — claimable
 
@@ -208,9 +211,6 @@ _Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z
       REF: DETAILS.md#t-mac-30232-no-args-exit | DEPS: —
       OWNER: — | STATE: OPEN | SHA: 9717e3cd | TS: 2026-08-18T19:45Z
       REF: INVESTIGATIONS.md#r34-profiling | DEPS: —
-- [ ] T-mac-30211 [S] Fix: [MED, rejects-valid] assembler meta/CFI/arch directive families absent — `.macro`/`.endm`(+altmacro/purgem/exitm), the `.if`/`.else`/`.elseif`/`.endif`/`.ifdef`/`.ifndef`/`.ifeq`/`.ifne`/`.ifb`/`.ifc` family, `.irp`/`.irpc`, `.equ`/`.equiv`, `.comm`/`.lcomm` (all "not implemented"). `.cfi_*` gated off on Darwin — a full CFI parser EXISTS (`mccasm.c:957-1101`) behind MCC_EH_FRAME (off, `mcc.h:2145-2151`) → `.cfi_startproc` errors (nearly every compiler-gen aarch64 fn has `.cfi_*`). `.arch`/`.cpu`/`.inst`/`.tlsdesccall` also missing. (.set/sym=expr work.) Fix: add .macro/.if/.equ/.comm families; enable CFI parser or accept-and-ignore .cfi_*/.arch.
-      OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
-      REF: INVESTIGATIONS.md#r33-meta-dirs | DEPS: —
 - [ ] T-mac-30214 [S] Fix: [MED, design-level] no parser error recovery — every parser/semantic error uses mcc_error→`_mcc_error` (`libmcc.c:757-763`, NORETURN longjmp+exit(1)) → exactly ONE error per run then stops; clang/gcc recover + report all (3-error probe: mcc 1, oracles 4). `-fmax-errors=N` (`:735`) only affects the driver NOABORT path → inert for source errors. Classic TCC arch. FLIP SIDE positive: no cascading flood, robust vs malformed input (no crash/hang). Fix (large): parser recovery via sync points; at minimum make -fmax-errors meaningful.
       OWNER: — | STATE: OPEN | SHA: 8f22703e | TS: 2026-08-18T19:15Z
       REF: INVESTIGATIONS.md#r33-no-recovery | DEPS: —
