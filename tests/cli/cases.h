@@ -412,6 +412,12 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'X\\n' > {W}/u.c && {MCC} -B{B} -DX=1 -UX -E -P {W}/u.c",
 		 "X\n"},
 
+		{"array_bound_completed_through_pointer_redecl", "",
+		 "printf 'extern int(*p)[];int(*p)[10];extern int(**q)[];int(**q)[7];"
+		 "int main(void){return (sizeof(*p)==40&&sizeof(**q)==28)?0:1;}\\n' > {W}/abp.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/abp.c && echo OK",
+		 "OK\n"},
+
 		{"std_last_wins_trigraphs", "",
 		 "printf 'char *s = \"x?" "?=y\";\\n' > {W}/tg.c && "
 		 "printf 'c99=%s gnu=%s\\n' "

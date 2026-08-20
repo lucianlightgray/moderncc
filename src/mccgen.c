@@ -1846,6 +1846,14 @@ static void drop_gnu_inline_body(Sym *sym) { MCC_TRACE("enter\n");
 			mcc_state->inline_fns[i]->sym = NULL; } }
 }
 
+static void patch_array_bounds(CType *dst, CType *src) { MCC_TRACE("enter\n");
+	if ((dst->t & VT_ARRAY) && (src->t & VT_ARRAY) &&
+			dst->ref->c < 0 && src->ref->c >= 0)
+		{ MCC_TRACE("br\n"); dst->ref->c = src->ref->c; }
+	if ((dst->t & VT_BTYPE) == VT_PTR && (src->t & VT_BTYPE) == VT_PTR)
+		{ MCC_TRACE("br\n"); patch_array_bounds(pointed_type(dst), pointed_type(src)); }
+}
+
 static void patch_type(Sym *sym, CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 	if (!(type->t & VT_EXTERN) || IS_ENUM_VAL(sym->type.t)) { MCC_TRACE("br\n");
 		if (!(sym->type.t & VT_EXTERN)) { MCC_TRACE("br\n");
@@ -1896,9 +1904,7 @@ static void patch_type(Sym *sym, CType *type, AttributeDef *ad) { MCC_TRACE("ent
 				{ MCC_TRACE("br\n"); sym->type.ref = type->ref; }
 		}
 	} else { MCC_TRACE("br\n");
-		if ((sym->type.t & VT_ARRAY) && type->ref->c >= 0) { MCC_TRACE("br\n");
-			sym->type.ref->c = type->ref->c;
-		}
+		patch_array_bounds(&sym->type, type);
 		if ((type->t ^ sym->type.t) & VT_STATIC) { MCC_TRACE("br\n");
 			if ((type->t & VT_STATIC) && !(sym->type.t & VT_STATIC))
 				{ MCC_TRACE("br\n"); mcc_error("static declaration of '%s' follows non-static "
