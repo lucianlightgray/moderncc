@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30261   | 2026-08-20T13:50Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10441   | 2026-08-20T14:25Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10442   | 2026-08-20T14:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50038   | 2026-08-20T14:40Z |
 
 ## Contracts — blocking, highest priority
@@ -111,6 +111,10 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-lin-10425 [S] optimizer: `__m128d`/GNU-vector packed codegen + `_mm_rsqrt_ps` — mcc has no VT_VECTOR and scalarizes vector types (nbody8i: 0 packed SSE vs gcc rsqrtps/mulpd/divpd), the specific ~2x unlock for the 11-15x nbody8i gap. HIGH difficulty (new machinery). Child of T-lin-10420.
       OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
       REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
+
+- [ ] T-lin-10441 [S] optimizer TYPE-COMPLETENESS (do FIRST, before algorithm tuning; per user 2026-08-20): make every optimizer pass handle EVERY VT type — bool/byte/short/int/long/float/double/ldouble/__int128(VT_QLONG/QFLOAT)/__float128/`_BitInt`(bs.bp)/void.func-skip; vector(128/256/512) is T-lin-10425. Audit each `ast_*_run`/strategy for `is_float`/btype/`ast_bad_type` bailouts that drop float/wide/128 programs, extend to all types, keep o0-neutral (passes are O2+), verify exec+exec-replay+o0-baseline + benchmark parity per fix. Child of T-lin-10420.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 90f28bdc | TS: 2026-08-20T14:35Z
+      REF: DETAILS.md#t-lin-10441-optimizer-type-completeness | DEPS: —
 
 
 - [ ] T-mac-30257 [S] Fix: [LOW-MED, diagnostic] `-Wsequence-point` intra-expression read-vs-write (part a of the former T-mac-30111) — warn on `a[i]=i++`, `x=i+i++` (clang/gcc do; mcc under-reports). **PRIOR ATTEMPT REVERTED (74cd7fc3):** the flat `seqp` `(Sym,off)` event model cannot distinguish a read that belongs to the `++` codegen from a separate program read, so a `scalar_storage_order` member post-increment `x.u++` (byte-swap load-modify-store → reads=2/mods=1) false-positives vs clang (broke exec/sso + exec/loop_cond_effects fleet-wide). Needs a real per-subexpression sequencing model, not just enabling read events. Part-b (write-write inter-arg, win 5eecf861) stays landed. See DETAILS#t-mac-30111-part-a-reverted.
