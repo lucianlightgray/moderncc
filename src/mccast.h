@@ -185,6 +185,7 @@ uint64_t ast_intention_value(void);
 void ast_func_begin(struct Sym *sym);
 void ast_func_end(struct Sym *sym);
 void ast_func_epilog(void);
+void ast_reemit_finalize_span(struct Sym *sym);
 void ast_reemit_forward_inlines(void);
 void ast_reemit_with_gates(struct Sym *sym, AstArena *ast, uint64_t gate_mask);
 

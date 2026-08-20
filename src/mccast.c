@@ -3819,6 +3819,12 @@ static int ast_reemit_retain(AstArena *a, Sym *sym) { MCC_TRACE("enter\n");
 	return 1;
 }
 
+void ast_reemit_finalize_span(Sym *sym) { MCC_TRACE("enter\n");
+	if (ast_reemit_n > 0 && ast_reemit_pool[ast_reemit_n - 1].sym == sym)
+		{ MCC_TRACE("br\n"); ast_reemit_pool[ast_reemit_n - 1].body_len =
+				ind - ast_reemit_pool[ast_reemit_n - 1].body_ind; }
+}
+
 static struct AstBaselineFn {
 	Sym *sym;
 	AstArena *ast;

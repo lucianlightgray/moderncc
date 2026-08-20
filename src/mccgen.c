@@ -19284,6 +19284,7 @@ static void gen_function(Sym *sym, int ctor_prio) {
 	gfunc_epilog();
 
 	mcc_debug_funcend(mcc_state, ind - func_ind);
+	ast_reemit_finalize_span(sym);
 
 	mcc_inv_add("aot.fn", 1);
 	mcc_inv_add("aot.bytes", (long long)(ind - func_ind));
