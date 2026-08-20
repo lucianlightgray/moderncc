@@ -13446,7 +13446,7 @@ static void ast_ltemp_scan(AstArena *a, AstLocal loop, AstLocal n, int lval) { M
 			ast_cse_regpure(a, n) && ast_licm_operands_ok(a, loop, n)) { MCC_TRACE("br\n");
 		int et;
 		uint64_t er;
-		if (ast_ident_etype(a, n, &et, &er) && ast_ident_intt(et)) { MCC_TRACE("br\n");
+		if (ast_ident_etype(a, n, &et, &er) && ast_cse_scalar(et)) { MCC_TRACE("br\n");
 			int cnt = 0;
 			ast_ltemp_count_occ(a, loop, n, 0, &cnt);
 			if (cnt >= 1) { MCC_TRACE("br\n");
@@ -13491,7 +13491,7 @@ static int ast_ltemp_materialize(AstArena *a, AstLocal loop, AstLocal e) { MCC_T
 	uint64_t er;
 	if (ast_ltemp_n >= AST_LTEMP_MAX)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (!ast_ident_etype(a, e, &et, &er) || !ast_ident_intt(et))
+	if (!ast_ident_etype(a, e, &et, &er) || !ast_cse_scalar(et))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal parent = ast_parent(a, loop);
 	if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
