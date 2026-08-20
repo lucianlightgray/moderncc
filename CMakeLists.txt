@@ -4485,7 +4485,7 @@ if(MCC_BUILD_TESTS)
                 COMMAND "${CMAKE_COMMAND}"
                         -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
                         -DBINDIR=${CMAKE_BINARY_DIR}
-                        "-DPINNED=mccast.c;mccgen.c;mccircap.c;mccpp.c;mccrir.c"
+                        "-DPINNED=mccasm.c;mccast.c;mccgen.c;mccircap.c;mccpp.c;mccrir.c"
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake")
             set_tests_properties("build/fragments-are-not-tus" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900 SKIP_RETURN_CODE 77)
@@ -4495,7 +4495,7 @@ if(MCC_BUILD_TESTS)
                         -DSCRIPT=${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu.cmake
                         -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
                         -DBINDIR=${CMAKE_BINARY_DIR}
-                        "-DPINNED=mccast.c;mccgen.c;mccircap.c;mccpp.c;mccrir.c"
+                        "-DPINNED=mccasm.c;mccast.c;mccgen.c;mccircap.c;mccpp.c;mccrir.c"
                         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/frag_not_tu_mutate.cmake")
             set_tests_properties("build/fragments-are-not-tus-known-positive"
                 PROPERTIES FIXTURES_REQUIRED MCC_BUILT TIMEOUT 900
