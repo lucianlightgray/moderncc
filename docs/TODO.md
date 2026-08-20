@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30261   | 2026-08-20T19:00Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10449   | 2026-08-20T19:20Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10450   | 2026-08-20T20:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50041   | 2026-08-20T18:37Z |
 
 ## Contracts — blocking, highest priority
@@ -115,6 +115,10 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
 
 
+
+- [ ] T-lin-10449 [S] FLEET RED: `ast/o0-baseline` (native x86_64) is red on HEAD — the WHOLE x86_64 O0 board moved hash (every existing file, not just corpus growth) while `exec` (O0) stays 374/374 green ⇒ benign global object-byte drift, NOT a correctness regression. A recent pulled commit changed O0 object emission fleet-wide without rebanking the x86_64 board (mac/win can't bank it natively; lin-x64 can). Isolation done: pristine-HEAD (my 10447 token reverted) still red ⇒ pre-existing, not mine. Agent bisecting the culprit SHA + benign-vs-regression verdict; remedy is likely a lin x86_64 o0-baseline REBANK once the culprit is a confirmed-benign global change (else a source fix). Also relates to win-x64's FYI that the 3 non-arm64 win32 *gated* o0-banks are corpus-growth stale (needs lin/mac gated re-bank). Child of T-lin-10424.
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 6daa02c2 | TS: 2026-08-20T20:20Z
+      REF: DETAILS.md#t-lin-10420-child-decomposition | DEPS: —
 
 - [ ] T-lin-10441 [S] optimizer TYPE-COMPLETENESS (do FIRST, before algorithm tuning; per user 2026-08-20): make every optimizer pass handle EVERY VT type — bool/byte/short/int/long/float/double/ldouble/__int128(VT_QLONG/QFLOAT)/__float128/`_BitInt`(bs.bp)/void.func-skip; vector(128/256/512) is T-lin-10425. Audit each `ast_*_run`/strategy for `is_float`/btype/`ast_bad_type` bailouts that drop float/wide/128 programs, extend to all types, keep o0-neutral (passes are O2+), verify exec+exec-replay+o0-baseline + benchmark parity per fix. Child of T-lin-10420.
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 90f28bdc | TS: 2026-08-20T14:35Z
