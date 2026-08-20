@@ -849,6 +849,18 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'compile=%s complex=%s verify=%s\\n' $rc $cplx $ver",
 		 "compile=0 complex=2 verify=1\n"},
 
+		{"attr_dll_ignored_macho", "os=Darwin",
+		 "printf 'int __attribute__((dllexport)) f(void){return 0;}\\nint __attribute__((dllimport)) h;\\n' > {W}/dll.c && "
+		 "{MCC} -B{B} -c {W}/dll.c -o {W}/dll.o 2>&1 | grep -oE \"'dll(ex|im)port' attribute directive ignored\"; "
+		 "{MCC} -B{B} -Wno-attributes -c {W}/dll.c -o {W}/dll.o 2>&1 | grep -oE 'attribute directive ignored'; echo END",
+		 "'dllexport' attribute directive ignored\n'dllimport' attribute directive ignored\nEND\n"},
+
+		{"attr_protected_visibility_macho", "os=Darwin",
+		 "printf 'int __attribute__((visibility(\"protected\"))) g = 1;\\nint __attribute__((visibility(\"hidden\"))) hh = 2;\\n' > {W}/pv.c && "
+		 "{MCC} -B{B} -c {W}/pv.c -o {W}/pv.o 2>&1 | grep -oE 'protected visibility attribute not supported in this configuration; ignored'; "
+		 "{MCC} -B{B} -w -c {W}/pv.c -o {W}/pv.o 2>&1 | grep -oE 'visibility attribute not supported'; echo END",
+		 "protected visibility attribute not supported in this configuration; ignored\nEND\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

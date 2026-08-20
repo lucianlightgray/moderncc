@@ -6710,8 +6710,16 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); ad->a.visibility = STV_HIDDEN; }
 			else if (!strcmp(astr, "internal"))
 				{ MCC_TRACE("br\n"); ad->a.visibility = STV_INTERNAL; }
-			else if (!strcmp(astr, "protected"))
-				{ MCC_TRACE("br\n"); ad->a.visibility = STV_PROTECTED; }
+			else if (!strcmp(astr, "protected")) { MCC_TRACE("br\n");
+#ifdef MCC_TARGET_MACHO
+				mcc_warning_c(warn_attributes)(
+					"protected visibility attribute not supported in this configuration; ignored");
+				skip(')');
+				break;
+#else
+				ad->a.visibility = STV_PROTECTED;
+#endif
+			}
 			else
 				{ MCC_TRACE("br\n"); expect("visibility(\"default|hidden|internal|protected\")"); }
 			ad->a.visibility_set = 1;
@@ -7005,12 +7013,18 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			break;
 		case TOK_DLLEXPORT:
 			ad->a.dllexport = 1;
+#ifdef MCC_TARGET_MACHO
+			mcc_warning_c(warn_attributes)("'dllexport' attribute directive ignored");
+#endif
 			break;
 		case TOK_NODECORATE:
 			ad->a.nodecorate = 1;
 			break;
 		case TOK_DLLIMPORT:
 			ad->a.dllimport = 1;
+#ifdef MCC_TARGET_MACHO
+			mcc_warning_c(warn_attributes)("'dllimport' attribute directive ignored");
+#endif
 			break;
 		default: {
 			char cbuf[32];
