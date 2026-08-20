@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T04:25Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T04:30Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T04:02Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T06:35Z |
 
@@ -217,7 +217,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
       REF: INVESTIGATIONS.md#r32-pp-space | DEPS: —
 - [ ] T-mac-30201 [S] Fix: [MED, debug metadata] wrong `DW_AT_decl_line` on struct/union/enum type DIEs + members — `mccdbg.c:2554` (struct)/`:2571` (member)/`:2622` (enum) emit `file->line_num` (current lexer line at lazy-emission time) not the definition line. struct Point on line 2 → decl_line 4; enum Color on line 3 → line 30 (main's closing brace). clang/gcc record the true line. DWARF otherwise functionally solid (dwarfdump --verify clean; breakpoints/backtrace/fbreg/member-offsets correct). Fix: capture the definition line at parse time + emit it.
-      OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 7ee0071e | TS: 2026-08-20T04:30Z
       REF: INVESTIGATIONS.md#r32-dwarf-declline | DEPS: —
 - [ ] T-mac-30202 [S] Fix: [MED, missing diagnostic] `-Wtautological-compare` SELF-comparison residual (`-Wtype-limits` DONE, see below) — self-cmp `x<x`/`x==x` compile clean; clang/gcc-16 warn under `-Wtautological-compare`. **BLOCKER (lin-x64):** detecting `x<x` needs syntactic identity of the two operand expressions, available only at the AST level; by `gen_op` time operands are lowered to `SValue`s (possibly register-loaded / side-effecting), so an `SValue`-identity check would false-positive/negative. Needs an AST-level comparison pass, not a `gen_op` patch. **DONE (lin-x64, 73d9e10f):** `-Wtype-limits` — `unsigned x; x<0`/`x>=0` (and mirrored `0>x`/`0<=x`) now warn "comparison of unsigned expression is always false/true"; default-off + off under `-Wall`, ON under `-Wextra` (matches gcc), `-Werror=type-limits` escalates. See DETAILS.md#t-mac-30202-type-limits.
       OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
