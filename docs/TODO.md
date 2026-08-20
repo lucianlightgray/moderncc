@@ -112,14 +112,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T04:08Z
       REF: DETAILS.md#t-lin-10422-promote-locals-hazard | DEPS: — | NOTE: needs full-suite incl self-host validation — see REF
 
-- [ ] T-lin-10423 [S] optimizer: IVOPTS strength reduction — `MCC_OPT_IVOPTS` is nominally on at -O1 but inert (nbody2/8i/nsieve recompute `imul $stride` every iteration instead of pointer `+=stride`). Make derived per-iteration address math a strength-reduced induction. MED-HIGH difficulty; o0-safe. Child of T-lin-10420.
-      OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
-      REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
-
-- [ ] T-lin-10424 [S] optimizer investigation: the LEVEL(4) middle-end (GCSE/LICM/PRE/reassoc/DSE, src/mccopt.h) is gated ON only at -O4 while -O3 gets none of it — flat ladder. Re-gate LEVEL(4)->LEVEL(3) is a one-line-per-knob flip BUT the passes currently REGRESS nbody2 at -O4 (146 vs 143 insns) and barely move the kernels — first fix why the passes are weak/counterproductive on real loops, then re-gate. Perturbs only the -O3 board (o0 untouched). Child of T-lin-10420.
-      OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
-      REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
-
 - [ ] T-lin-10425 [S] optimizer: `__m128d`/GNU-vector packed codegen + `_mm_rsqrt_ps` — mcc has no VT_VECTOR and scalarizes vector types (nbody8i: 0 packed SSE vs gcc rsqrtps/mulpd/divpd), the specific ~2x unlock for the 11-15x nbody8i gap. HIGH difficulty (new machinery). Child of T-lin-10420.
       OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
       REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
