@@ -56,6 +56,14 @@ diag_one() {
 diag_one "types/float128" "float128"
 diag_one "expressions/integer_promotion" "integer_promotion"
 
+# --- instrumented float128 probe: print each check's value to find the failure ---
+"$MCC" $RT "$S/tools/woa-float128-probe.c" -o "$OUT/f128probe.exe" > "$OUT/30-f128probe-compile.txt" 2>&1
+echo "probe compile rc=$?" >> "$OUT/30-f128probe-compile.txt"
+if [ -x "$OUT/f128probe.exe" ]; then
+  "$OUT/f128probe.exe" > "$OUT/31-f128probe-run.txt" 2>&1
+  echo "probe run rc=$?" >> "$OUT/31-f128probe-run.txt"
+fi
+
 # the committed goldens for reference
 grep -nE '"(float128|integer_promotion)"' "$S/tests/exec/goldens.h" > "$OUT/04-goldens.txt" 2>&1 || true
 
