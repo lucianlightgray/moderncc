@@ -271,6 +271,10 @@ static void gen_macho_tls_base(Sym *sym) { MCC_TRACE("enter\n");
 }
 #endif
 
+#ifndef MCC_TARGET_PE
+static void x86_64_vec16_move(int xr, SValue *sv, int is_store);
+#endif
+
 void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 	mcc_stackref_note(sv->r);
 	int v, t, ft, fc, fr;
@@ -281,6 +285,13 @@ void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 	fc = sv->c.i;
 	if (fc != sv->c.i && (fr & VT_SYM))
 		{ MCC_TRACE("br\n"); mcc_error("64 bit addend in load"); }
+
+#ifndef MCC_TARGET_PE
+	if ((ft & VT_BTYPE) == VT_FLOAT128 && (fr & VT_LVAL)) { MCC_TRACE("br\n");
+		x86_64_vec16_move(r, sv, 0);
+		return;
+	}
+#endif
 
 	ft &= ~VT_QUALIFY;
 
@@ -546,6 +557,13 @@ void store(int r, SValue *v) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mcc_error("64 bit addend in store"); }
 	ft &= ~VT_QUALIFY;
 	bt = ft & VT_BTYPE;
+
+#ifndef MCC_TARGET_PE
+	if (bt == VT_FLOAT128) { MCC_TRACE("br\n");
+		x86_64_vec16_move(r, v, 1);
+		return;
+	}
+#endif
 
 	if ((v->r & VT_SYM) && v->sym->type.t & VT_TLS) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_PE)
@@ -1149,6 +1167,7 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 
 	case VT_FLOAT:
 	case VT_DOUBLE:
+	case VT_FLOAT128:
 		return x86_64_mode_sse;
 
 	case VT_LDOUBLE:
@@ -1227,6 +1246,8 @@ static int x86_64_mixed_class(CType *ty, X86_64_Mode cls[2]) { MCC_TRACE("enter\
 static int x86_64_is_vec16(CType *ty) { MCC_TRACE("enter\n");
 	Sym *f;
 	int align, sz;
+	if ((ty->t & (VT_BTYPE | VT_ARRAY)) == VT_FLOAT128)
+		{ MCC_TRACE("br\n"); return 1; }
 	while ((ty->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY)) { MCC_TRACE("br\n");
 		if (type_size(ty, &align) != 16)
 			{ MCC_TRACE("br\n"); return 0; }
@@ -1250,6 +1271,17 @@ static void x86_64_vec16_move(int xr, SValue *sv, int is_store) { MCC_TRACE("ent
 	int fc = sv->c.i;
 	Sym *sym = sv->sym;
 	int v = fr & VT_VALMASK;
+
+	if (!(fr & VT_LVAL) && v < VT_CONST && (reg_classes[v] & MCC_RC_FLOAT)) { MCC_TRACE("br\n");
+		int sr = is_store ? xr : v;
+		int dr = is_store ? v : xr;
+		if (sr != dr) { MCC_TRACE("br\n");
+			sse_rex(dr, sr);
+			o(0x280f);
+			o(0xc0 + REG_VALUE(dr) * 8 + REG_VALUE(sr));
+		}
+		return;
+	}
 
 	if (v == VT_LLOCAL ||
 			(v == VT_CONST && (fr & VT_SYM) &&
@@ -1399,6 +1431,13 @@ ST_FUNC int gfunc_sret(CType *vt, int variadic, CType *ret, int *ret_align, int 
 		ret->t = VT_LDOUBLE;
 		ret->ref = NULL;
 		return -1;
+	}
+	if ((vt->t & VT_BTYPE) == VT_FLOAT128) { MCC_TRACE("br\n");
+		*ret_align = 16;
+		*regsize = 16;
+		ret->t = VT_FLOAT128;
+		ret->ref = NULL;
+		return 1;
 	}
 	if (x86_64_is_vec16(vt)) { MCC_TRACE("br\n");
 		*ret_align = 16;
