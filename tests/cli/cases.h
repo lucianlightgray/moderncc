@@ -569,6 +569,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -c {W}/cfaa.c -o {W}/cfaa.o 2>{W}/cfaa.e; echo arg=$?",
 		 "val=7\narg=1\n"},
 
+		{"builtin_dwarf_sp_column", "",
+		 "printf 'int arr[__builtin_dwarf_sp_column()>0 ? 1 : -1]; int main(void){ return (int)sizeof(arr); }\\n' > {W}/spc.c && "
+		 "{MCC} -B{B} {W}/spc.c -o {W}/spc.exe && {W}/spc.exe; echo rc=$?",
+		 "rc=4\n"},
+
 		{"preprocess_C_keeps_comments", "",
 		 "printf '#define M 1 /* DIRCMT */\\nint aa; /* BLOCKCMT */ int bb; // LINECMT\\nint cc = M;\\n' > {W}/kc.c && "
 		 "{MCC} -B{B} -E -C {W}/kc.c > {W}/kcC.out 2>{W}/kc.e1 && "

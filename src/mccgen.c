@@ -14351,6 +14351,29 @@ tok_next:
 			PUT_R_RET(vtop, at.t);
 		}
 	} break;
+	case TOK_builtin_dwarf_sp_column:
+		/* T-mac-30207: the DWARF register number of the stack pointer -- a
+		 * compile-time unsigned constant fixed by each target's psABI
+		 * (x86_64 RSP=7, i386 ESP=4, AArch64 SP=31, ARM r13=13, RISC-V x2=2).
+		 * gcc and clang both provide it; mcc lacked the token. */
+		next();
+		skip('(');
+		skip(')');
+#if defined MCC_TARGET_X86_64
+		vpushi(7);
+#elif defined MCC_TARGET_I386
+		vpushi(4);
+#elif defined MCC_TARGET_ARM64
+		vpushi(31);
+#elif defined MCC_TARGET_ARM
+		vpushi(13);
+#elif defined MCC_TARGET_RISCV64
+		vpushi(2);
+#else
+		vpushi(0);
+#endif
+		vtop->type.t = VT_INT | VT_UNSIGNED;
+		break;
 	case TOK_builtin_dwarf_cfa: {
 		/* T-mac-30206: the DWARF Canonical Frame Address -- the caller's stack
 		 * pointer value at the call site, i.e. the word just above the saved
