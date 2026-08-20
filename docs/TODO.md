@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30259   | 2026-08-20T05:35Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30259   | 2026-08-20T05:40Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T07:45Z |
 
@@ -324,9 +324,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-mac-30083 [S] Fix: [HIGH] COFF `-c` emits `__thread` in `.tdata`/`.tbss` never renamed to `.tls` — ELF keeps `.tdata`+SHF_TLS (`mccelf.c:71-72`), Mach-O renames to `__thread_*`/S_THREAD_LOCAL (`mccmacho.c:1434-1437,1834-1835`), but `coff_output_obj` emits verbatim ELF section names (`mccpe.c:2187,2340`), `coff_section_characteristics` has no TLS case (`:2072-2095`), and mcc's own COFF reader keys TLS on the name `.tls` (`:2511-2512`) → flag lost across `.o` boundary; SECREL reloc (`:2105`) resolves against `.tdata` not the TLS block. Since COFF is default `-c` on x86_64-w64 (T-lin-10083), `__thread` vars are non-thread-local + mis-relocated on the PRIMARY Windows target. Fix: map SHF_TLS→`.tls$`/`.tls`, emit `_tls_used`/`_tls_index` directory. Verify on win-x64.
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-coff-tls | DEPS: —
-- [ ] T-mac-30084 [S] Fix: [MED] Mach-O `-c` ignores `-fcommon` — `macho_output_file` calls `resolve_common_syms` UNCONDITIONALLY before the `MCC_OUTPUT_OBJ` check (`mccmacho.c:2537`), forcing every tentative def to strong `.bss`; ELF (`mccelf.c:3308-3330`, commons resolved only for EXE `:3157`) and COFF (`SHN_COMMON` as SectionNumber=0/Value=size `mccpe.c:2231-2233`) preserve COMMON → two TUs each with `int counter;` link as ELF/COFF but duplicate-symbol as Mach-O `.o`. Fix: gate the call on `file_type!=MCC_OUTPUT_OBJ`.
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 86c665d8 | TS: 2026-08-20T05:35Z
-      REF: INVESTIGATIONS.md#r16-macho-common | DEPS: —
 - [ ] T-mac-30085 [S] Fix: [MED] COFF `NumberOfRelocations` truncates at 65535 — `(WORD)relcount[k]` cast (`mccpe.c:2351`) + no `IMAGE_SCN_LNK_NRELOC_OVFL` in `coff_section_characteristics` (`:2072-2095`); a section with >65535 relocs silently wraps (65536→0) → linker applies wrong fixup count. ELF/Mach-O use 32-bit counts. Fix: on overflow write 0xFFFF + set NRELOC_OVFL + true count in a leading synthetic reloc's VirtualAddress. Verify on win-x64.
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-coff-reloc-ovfl | DEPS: —
