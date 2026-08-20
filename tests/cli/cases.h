@@ -853,7 +853,7 @@ static const cli_case_t cli_cases[] = {
 
 		{"print_multiarch_empty", "",
 		 "{MCC} -B{B} -print-multiarch > {W}/pm.out 2>{W}/pm.err; rc=$?; "
-		 "bytes=$(wc -c < {W}/pm.out | tr -d ' '); "
+		 "bytes=$(tr -d '\\r' < {W}/pm.out | wc -c | tr -d ' '); "
 		 "printf 'rc=%s bytes=%s\\n' $rc $bytes",
 		 "rc=0 bytes=1\n"},
 
