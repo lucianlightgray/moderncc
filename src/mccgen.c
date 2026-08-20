@@ -13423,7 +13423,10 @@ static int gen_negf_const_ref(void) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-__attribute__((noinline)) static void unary_warn_static_in_inline(Sym *s) { MCC_TRACE("enter\n");
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+static void unary_warn_static_in_inline(Sym *s) { MCC_TRACE("enter\n");
 	char pbuf[256];
 	snprintf(pbuf, sizeof pbuf,
 					 "'%s' has internal linkage but is referenced in an "
@@ -13432,7 +13435,10 @@ __attribute__((noinline)) static void unary_warn_static_in_inline(Sym *s) { MCC_
 	mcc_pedantic(pbuf);
 }
 
-__attribute__((noinline)) static void unary_generic_no_match(CType *ct) { MCC_TRACE("enter\n");
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+static void unary_generic_no_match(CType *ct) { MCC_TRACE("enter\n");
 	char buf[60];
 	type_to_str(buf, sizeof buf, ct, NULL);
 	mcc_error("type '%s' does not match any association", buf);
