@@ -11,7 +11,7 @@
 ## Contracts — blocking, highest priority
 
 - [ ] T-lin-10426 [C] coop M:N slice 1 — extract a generic worker-pool from the JIT-specific `mccjit_pool` (`src/mccjit_embed.c:1432`): genericize the resumable-tick job to `{int(*tick)(void*),void*ctx}`, keep the mutex+cond FIFO + pthread workers + `pthread_atfork` reset, re-point the JIT to consume it (JIT payload -> ctx, QSBR/codegen-lock stay JIT-side). Behavior-neutral; the gating dependency for the M:N core. Worker count from `host_nproc()` (mcchost.c:1276) / `--jit-conservative` (`s->jit_threads`, libmcc.c:3585). **PRIORITIZED (user 2026-08-20): the coop thread-pool track is the top TODO; this is its gating contract — dependents T-lin-10428/10429/10430 wait on it.** Promoted [S]->[C]. Child of T-lin-10419.
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: 0e081754 | TS: 2026-08-20T03:12Z
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 0e081754 | TS: 2026-08-20T03:14Z
       REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: —
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
