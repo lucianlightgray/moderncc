@@ -11071,10 +11071,11 @@ AstLocal ast_dup_sub(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return d;
 }
 
-static int ast_inline_scalar_int(int tt) { MCC_TRACE("enter\n");
+static int ast_inline_scalar_ok(int tt) { MCC_TRACE("enter\n");
 	int bt = tt & VT_BTYPE;
 	return bt == VT_BOOL || bt == VT_BYTE || bt == VT_SHORT || bt == VT_INT ||
-				 bt == VT_LLONG || bt == VT_PTR;
+				 bt == VT_LLONG || bt == VT_PTR || bt == VT_FLOAT || bt == VT_DOUBLE ||
+				 bt == VT_LDOUBLE || bt == VT_QFLOAT || bt == VT_QLONG || bt == VT_INT128;
 }
 
 static int ast_inline_type_ok(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
@@ -11082,8 +11083,7 @@ static int ast_inline_type_ok(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (tt & VT_VOLATILE)
 		{ MCC_TRACE("br\n"); return 0; }
 	int bt = tt & VT_BTYPE;
-	if (bt == VT_FLOAT || bt == VT_DOUBLE || bt == VT_LDOUBLE || bt == VT_QFLOAT ||
-			bt == VT_QLONG || bt == VT_INT128 || bt == VT_STRUCT)
+	if (bt == VT_STRUCT)
 		{ MCC_TRACE("br\n"); return 0; }
 	return 1;
 }
@@ -11121,44 +11121,107 @@ static int ast_inline_expr_pure(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	return 1;
 }
 
-static int ast_inline_pass_simple(struct AstInlineFn *e) { MCC_TRACE("enter\n");
-	if (!e->graftable)
-		{ MCC_TRACE("br\n"); return 0; }
-	AstArena *a = e->ast;
-	AstLocal nn = ast_count(a);
-	int nret = 0;
+static AstLocal ast_inline_local_init(AstArena *a, int off) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a), found = AST_NONE;
+	int count = 0;
 	for (AstLocal n = 0; n < nn; n++) { MCC_TRACE("br\n");
-		uint16_t k = ast_kind(a, n);
-		if (k == AST_BasicBlock)
+		if (ast_kind(a, n) != AST_Store)
 			{ MCC_TRACE("br\n"); continue; }
-		if (k == AST_Return) { MCC_TRACE("br\n");
-			if (ast_nchild(a, n) != 1)
-				{ MCC_TRACE("br\n"); return 0; }
-			nret++;
-			continue;
-		}
-		if (!ast_inline_type_ok(a, n) || !ast_inline_node_allowed(a, n))
-			{ MCC_TRACE("br\n"); return 0; }
-		if (k == AST_Ref) { MCC_TRACE("br\n");
-			int r = ast_op(a, n);
+		AstLocal d = ast_first_child(a, n);
+		if (d == AST_NONE || ast_kind(a, d) != AST_Ref)
+			{ MCC_TRACE("br\n"); continue; }
+		int r = ast_op(a, d);
+		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM) ||
+				(int)(int64_t)ast_ival(a, d) != off)
+			{ MCC_TRACE("br\n"); continue; }
+		AstLocal rhs = ast_next_sib(a, d);
+		if (rhs == AST_NONE)
+			{ MCC_TRACE("br\n"); return AST_NONE; }
+		count++;
+		found = rhs;
+	}
+	return count == 1 ? found : AST_NONE;
+}
+
+static int ast_inline_ref_temp_ok(AstArena *a, struct AstInlineFn *e, AstLocal n) { MCC_TRACE("enter\n");
+	int r = ast_op(a, n);
+	if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+		{ MCC_TRACE("br\n"); return 1; }
+	int off = (int)(int64_t)ast_ival(a, n);
+	for (int i = 0; i < e->nparams; i++)
+		{ MCC_TRACE("br\n"); if (e->param_off[i] == off)
+			{ MCC_TRACE("br\n"); return 1; } }
+	return ast_inline_local_init(a, off) != AST_NONE;
+}
+
+static int ast_inline_expr_ok(AstArena *a, struct AstInlineFn *e, AstLocal n) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	uint16_t k = ast_kind(a, n);
+	if (!ast_inline_type_ok(a, n) || !ast_inline_node_allowed(a, n))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (k == AST_Ref && !ast_inline_ref_temp_ok(a, e, n))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (k == AST_Unary && ast_op(a, n) == AST_OP_ADDR) { MCC_TRACE("br\n");
+		AstLocal c0 = ast_first_child(a, n);
+		if (c0 != AST_NONE && ast_kind(a, c0) == AST_Ref) { MCC_TRACE("br\n");
+			int r = ast_op(a, c0);
 			if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) { MCC_TRACE("br\n");
-				int off = (int)(int64_t)ast_ival(a, n), isparam = 0;
+				int off = (int)(int64_t)ast_ival(a, c0), isparam = 0;
 				for (int i = 0; i < e->nparams; i++)
-					{ MCC_TRACE("br\n"); if (e->param_off[i] == off) { MCC_TRACE("br\n");
-						isparam = 1;
-						break;
-					} }
+					{ MCC_TRACE("br\n"); if (e->param_off[i] == off)
+						{ MCC_TRACE("br\n"); isparam = 1; break; } }
 				if (!isparam)
 					{ MCC_TRACE("br\n"); return 0; }
 			}
 		}
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (!ast_inline_expr_ok(a, e, c))
+			{ MCC_TRACE("br\n"); return 0; } }
+	return 1;
+}
+
+static int ast_inline_pass_simple(struct AstInlineFn *e) { MCC_TRACE("enter\n");
+	if (!e->graftable)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstArena *a = e->ast;
+	AstLocal root = ast_root(a);
+	if (ast_kind(a, root) != AST_BasicBlock)
+		{ MCC_TRACE("br\n"); return 0; }
+	int nret = 0;
+	for (AstLocal s = ast_first_child(a, root); s != AST_NONE; s = ast_next_sib(a, s)) { MCC_TRACE("br\n");
+		uint16_t k = ast_kind(a, s);
+		if (k == AST_Store) { MCC_TRACE("br\n");
+			AstLocal d = ast_first_child(a, s);
+			if (d == AST_NONE || ast_kind(a, d) != AST_Ref)
+				{ MCC_TRACE("br\n"); return 0; }
+			int r = ast_op(a, d);
+			if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
+				{ MCC_TRACE("br\n"); return 0; }
+			if (ast_inline_local_init(a, (int)(int64_t)ast_ival(a, d)) == AST_NONE)
+				{ MCC_TRACE("br\n"); return 0; }
+			AstLocal rhs = ast_next_sib(a, d);
+			if (rhs == AST_NONE || !ast_inline_expr_ok(a, e, rhs))
+				{ MCC_TRACE("br\n"); return 0; }
+			continue;
+		}
+		if (k == AST_Return) { MCC_TRACE("br\n");
+			if (ast_nchild(a, s) != 1 || !ast_inline_expr_ok(a, e, ast_first_child(a, s)))
+				{ MCC_TRACE("br\n"); return 0; }
+			nret++;
+			continue;
+		}
+		{ MCC_TRACE("br\n"); return 0; }
 	}
 	return nret == 1;
 }
 
 static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
 																		 const AstLocal *argmap, const int *param_off,
-																		 int nparams) { MCC_TRACE("enter\n");
+																		 int nparams, int depth) { MCC_TRACE("enter\n");
+	if (depth > 48)
+		{ MCC_TRACE("br\n"); return AST_NONE; }
 	if (ast_kind(src, n) == AST_Ref) { MCC_TRACE("br\n");
 		int r = ast_op(src, n);
 		if ((r & VT_VALMASK) == VT_LOCAL && !(r & VT_SYM)) { MCC_TRACE("br\n");
@@ -11170,7 +11233,10 @@ static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
 					ast_add_child(dst, cv, ast_dup_sub(dst, argmap[i]));
 					return cv;
 				} }
-			AST_ASSERT(0);
+			AstLocal init = ast_inline_local_init(src, off);
+			if (init == AST_NONE)
+				{ MCC_TRACE("br\n"); return AST_NONE; }
+			return ast_inline_copy_expr(dst, src, init, argmap, param_off, nparams, depth + 1);
 		}
 	}
 	AstLocal d = ast_node(dst, ast_kind(src, n));
@@ -11179,8 +11245,12 @@ static AstLocal ast_inline_copy_expr(AstArena *dst, AstArena *src, AstLocal n,
 	ast_set_ival(dst, d, ast_ival(src, n));
 	ast_set_fbits(dst, d, ast_fbits(src, n));
 	ast_set_sym(dst, d, ast_sym(src, n));
-	for (AstLocal c = ast_first_child(src, n); c != AST_NONE; c = ast_next_sib(src, c))
-		{ MCC_TRACE("br\n"); ast_add_child(dst, d, ast_inline_copy_expr(dst, src, c, argmap, param_off, nparams)); }
+	for (AstLocal c = ast_first_child(src, n); c != AST_NONE; c = ast_next_sib(src, c)) { MCC_TRACE("br\n");
+		AstLocal cc = ast_inline_copy_expr(dst, src, c, argmap, param_off, nparams, depth + 1);
+		if (cc == AST_NONE)
+			{ MCC_TRACE("br\n"); return AST_NONE; }
+		ast_add_child(dst, d, cc);
+	}
 	return d;
 }
 
@@ -11203,7 +11273,7 @@ static int ast_inline_graft_node(AstArena *a, AstLocal call, struct AstInlineFn 
 	}
 	int callt = ast_type_t(a, call);
 	uint64_t callr = ast_type_ref(a, call);
-	if (!ast_inline_scalar_int(callt))
+	if (!ast_inline_scalar_ok(callt))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstArena *ca = e->ast;
 	AstLocal cnn = ast_count(ca), rv = AST_NONE;
@@ -11216,7 +11286,9 @@ static int ast_inline_graft_node(AstArena *a, AstLocal call, struct AstInlineFn 
 		{ MCC_TRACE("br\n"); return 0; }
 	ast_graft_total++;
 	ast_graft_budget -= (int)ast_count(ca);
-	AstLocal nv = ast_inline_copy_expr(a, ca, rv, argmap, e->param_off, e->nparams);
+	AstLocal nv = ast_inline_copy_expr(a, ca, rv, argmap, e->param_off, e->nparams, 0);
+	if (nv == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
 	ast_set_kind(a, call, AST_Convert);
 	ast_set_op(a, call, 0);
 	ast_set_type(a, call, callt, callr);
