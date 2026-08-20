@@ -1948,6 +1948,9 @@ typedef struct _mcc_coff_rel {
 #ifndef IMAGE_SCN_LNK_COMDAT
 #define IMAGE_SCN_LNK_COMDAT 0x00001000
 #endif
+#ifndef IMAGE_SCN_LNK_NRELOC_OVFL
+#define IMAGE_SCN_LNK_NRELOC_OVFL 0x01000000
+#endif
 
 #ifndef IMAGE_REL_AMD64_ADDR64
 #define IMAGE_REL_AMD64_ABSOLUTE 0x0000
@@ -2345,6 +2348,9 @@ ST_FUNC int coff_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("ent
 		if (relcount[k]) { MCC_TRACE("br\n");
 			relptr[k] = off;
 			off += relcount[k] * COFF_SIZEOF_RELOC;
+			if (relcount[k] >= 0xffff) { MCC_TRACE("br\n");
+				off += COFF_SIZEOF_RELOC;
+			}
 		} else { MCC_TRACE("br\n");
 			relptr[k] = 0;
 		}
@@ -2387,6 +2393,10 @@ ST_FUNC int coff_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("ent
 		sh.PointerToRelocations = relptr[k];
 		sh.NumberOfRelocations = (WORD)relcount[k];
 		sh.Characteristics = coff_section_characteristics(s);
+		if (relcount[k] >= 0xffff) { MCC_TRACE("br\n");
+			sh.NumberOfRelocations = 0xffff;
+			sh.Characteristics |= IMAGE_SCN_LNK_NRELOC_OVFL;
+		}
 		off += fwrite(&sh, 1, IMAGE_SIZEOF_SECTION_HEADER, f);
 	}
 
@@ -2411,6 +2421,12 @@ ST_FUNC int coff_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("ent
 		while (off < relptr[k]) { MCC_TRACE("br\n");
 			fputc(0, f);
 			off++;
+		}
+		if (relcount[k] >= 0xffff) { MCC_TRACE("br\n");
+			unsigned char ovfl[COFF_SIZEOF_RELOC];
+			memset(ovfl, 0, sizeof ovfl);
+			write32le(ovfl, (uint32_t)(relcount[k] + 1));
+			off += fwrite(ovfl, 1, COFF_SIZEOF_RELOC, f);
 		}
 		bytes = relcount[k] * COFF_SIZEOF_RELOC;
 		off += fwrite(relsec->data + relcur, 1, bytes, f);
@@ -2643,10 +2659,18 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 		Section *s = smap[i + 1].s;
 		unsigned char *rels;
 		int nr = sh->NumberOfRelocations, r;
+		int relbase = 0;
 
 		if (!s || !nr || !sh->PointerToRelocations)
 			{ MCC_TRACE("br\n"); continue; }
-		rels = load_data(fd, file_offset + sh->PointerToRelocations,
+		if ((sh->Characteristics & IMAGE_SCN_LNK_NRELOC_OVFL) && nr == 0xffff) { MCC_TRACE("br\n");
+			unsigned char *fr = load_data(fd, file_offset + sh->PointerToRelocations, COFF_SIZEOF_RELOC);
+			nr = (int)((MccCoffRel *)fr)->VirtualAddress - 1;
+			mcc_free(fr);
+			relbase = COFF_SIZEOF_RELOC;
+			if (nr <= 0) { MCC_TRACE("br\n"); continue; }
+		}
+		rels = load_data(fd, file_offset + sh->PointerToRelocations + relbase,
 										 (unsigned long)nr * COFF_SIZEOF_RELOC);
 		for (r = 0; r < nr; r++) { MCC_TRACE("br\n");
 			MccCoffRel *rl = (MccCoffRel *)(rels + (size_t)r * COFF_SIZEOF_RELOC);

@@ -39,6 +39,22 @@ static const cli_case_t cli_cases[] = {
 		 "grep '//' {W}/fam.dis.s | sed 's#.*// ##; s#[[:space:]]\\+# #g' | LC_ALL=C sort",
 		 "bfxil x9, x10, #8, #16\nclrex\nclz x0, x1\nldxr x11, [x12]\nrbit x2, x3\nrev x4, x5\nsmull x0, w1, w2\nstlr x13, [x14]\nsvc #0\numulh x6, x7, x8\nyield\n"},
 
+		{"coff_reloc_count_overflow_65535", "cpu=x86_64,os=WIN32",
+		 "printf 'int g=7;\\n"
+		 "#define A &g,\\n"
+		 "#define B A A A A A A A A\\n"
+		 "#define C B B B B B B B B\\n"
+		 "#define D C C C C C C C C\\n"
+		 "#define E D D D D D D D D\\n"
+		 "#define F E E E E E E E E\\n"
+		 "void*arr[]={F F E};\\n"
+		 "int main(void){int n=(int)(sizeof arr/sizeof arr[0]);"
+		 "int ok=arr[0]==(void*)&g&&arr[40000]==(void*)&g&&arr[n-1]==(void*)&g;"
+		 "return ok?(n==69632?42:7):1;}\\n' > {W}/relovfl.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/relovfl.c -o {W}/relovfl.obj && "
+		 "{MCC} -B{B} -I{I} {W}/relovfl.obj -o {W}/relovfl.exe && "
+		 "{W}/relovfl.exe ; echo rc=$?",
+		 "rc=42\n"},
 		{"debug_dwarf_struct_decl_line", "os=darwin",
 		 "printf 'struct Point {\\nint px;\\nint py;\\n};\\nunion Wrap {\\nint wi;\\nfloat wf;\\n};\\nenum Color {\\nCLR_A,\\nCLR_B\\n};\\nint main(void) {\\nstruct Point p;\\nunion Wrap w;\\nenum Color c;\\np.px = 1; p.py = 2; w.wi = 3; c = CLR_A;\\nreturn p.px + p.py + w.wi + (int)c;\\n}\\n' > {W}/dl.c && "
 		 "{MCC} -B{B} -I{I} -gdwarf-5 -c {W}/dl.c -o {W}/dl.o && "
