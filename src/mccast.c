@@ -9945,6 +9945,7 @@ static int ast_cprop_run(AstArena *a) { MCC_TRACE("enter\n");
 
 #define AST_DSE_MAX 128
 static int ast_dse_koff[AST_DSE_MAX];
+static int ast_dse_kwidth[AST_DSE_MAX];
 static AstLocal ast_dse_kstore[AST_DSE_MAX];
 static int ast_dse_kn;
 static int ast_dse_folds;
@@ -9962,6 +9963,7 @@ static void ast_dse_kill(int off) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	ast_dse_kn--;
 	ast_dse_koff[i] = ast_dse_koff[ast_dse_kn];
+	ast_dse_kwidth[i] = ast_dse_kwidth[ast_dse_kn];
 	ast_dse_kstore[i] = ast_dse_kstore[ast_dse_kn];
 }
 
@@ -9977,7 +9979,7 @@ static void ast_dse_kill_reads(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); ast_dse_kill_reads(a, c); }
 }
 
-static void ast_dse_gen(int off, AstLocal store) { MCC_TRACE("enter\n");
+static void ast_dse_gen(int off, int width, AstLocal store) { MCC_TRACE("enter\n");
 	int i = ast_dse_find(off);
 	if (i < 0) { MCC_TRACE("br\n");
 		if (ast_dse_kn >= AST_DSE_MAX)
@@ -9986,6 +9988,30 @@ static void ast_dse_gen(int off, AstLocal store) { MCC_TRACE("enter\n");
 		ast_dse_koff[i] = off;
 	}
 	ast_dse_kstore[i] = store;
+	ast_dse_kwidth[i] = width;
+}
+
+static int ast_dse_local(AstArena *a, AstLocal n, int *off, int *width) { MCC_TRACE("enter\n");
+	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
+		{ MCC_TRACE("br\n"); return 0; }
+	int r = ast_op(a, n);
+	if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
+		{ MCC_TRACE("br\n"); return 0; }
+	int t = ast_type_t(a, n), bt = t & VT_BTYPE;
+	if ((t & (VT_VOLATILE | VT_ARRAY | VT_BITFIELD)) || bt == VT_STRUCT ||
+			bt == VT_VOID || bt == VT_FUNC)
+		{ MCC_TRACE("br\n"); return 0; }
+	CType ct;
+	ct.t = t;
+	ct.bp = ast_type_bp(a, n);
+	ct.bs = ast_type_bs(a, n);
+	ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, n);
+	int al, w = type_size(&ct, &al);
+	if (w <= 0)
+		{ MCC_TRACE("br\n"); return 0; }
+	*off = (int)(int64_t)ast_ival(a, n);
+	*width = w;
+	return 1;
 }
 
 static void ast_dse_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
@@ -10005,15 +10031,15 @@ static void ast_dse_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 			ast_dse_kn = 0;
 			continue;
 		}
-		int off, tt;
-		if (ast_cprop_is_local(a, lval, &off, &tt) && !ast_cprop_escapes(a, off)) { MCC_TRACE("br\n");
+		int off, w;
+		if (ast_dse_local(a, lval, &off, &w) && !ast_cprop_escapes(a, off)) { MCC_TRACE("br\n");
 			int i = ast_dse_find(off);
-			if (i >= 0) { MCC_TRACE("br\n");
+			if (i >= 0 && w >= ast_dse_kwidth[i]) { MCC_TRACE("br\n");
 				ast_set_kind(a, ast_dse_kstore[i], AST_Poison);
 				ast_clear_children(a, ast_dse_kstore[i]);
 				ast_dse_folds++;
 			}
-			ast_dse_gen(off, s);
+			ast_dse_gen(off, w, s);
 		} else { MCC_TRACE("br\n");
 			ast_dse_kn = 0;
 		}
