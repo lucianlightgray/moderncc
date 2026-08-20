@@ -744,7 +744,7 @@ static int R_RET(int t) { MCC_TRACE("enter\n");
 	if ((t & VT_BTYPE) == VT_LDOUBLE)
 		{ MCC_TRACE("br\n"); return MCC_TREG_ST0; }
 #elif defined MCC_TARGET_RISCV64
-	if ((t & VT_BTYPE) == VT_LDOUBLE)
+	if ((t & VT_BTYPE) == VT_LDOUBLE || (t & VT_BTYPE) == VT_FLOAT128)
 		{ MCC_TRACE("br\n"); return REG_IRET; }
 #endif
 	return REG_FRET;
@@ -762,7 +762,7 @@ static int R2_RET(int t) { MCC_TRACE("enter\n");
 	if (t == VT_QFLOAT)
 		{ MCC_TRACE("br\n"); return REG_FRE2; }
 #elif defined MCC_TARGET_RISCV64
-	if (t == VT_LDOUBLE)
+	if (t == VT_LDOUBLE || t == VT_FLOAT128)
 		{ MCC_TRACE("br\n"); return REG_IRE2; }
 #endif
 	return VT_CONST;
@@ -960,7 +960,7 @@ static int MCC_RC_TYPE(int t) { MCC_TRACE("enter\n");
 	if ((t & VT_BTYPE) == VT_QFLOAT)
 		{ MCC_TRACE("br\n"); return MCC_RC_FRET; }
 #elif defined MCC_TARGET_RISCV64
-	if ((t & VT_BTYPE) == VT_LDOUBLE)
+	if ((t & VT_BTYPE) == VT_LDOUBLE || (t & VT_BTYPE) == VT_FLOAT128)
 		{ MCC_TRACE("br\n"); return MCC_RC_INT; }
 #endif
 	return MCC_RC_FLOAT;

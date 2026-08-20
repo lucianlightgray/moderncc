@@ -307,7 +307,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 		EI(opcode, func3, rr, br, fc);
 	} else if (v == VT_CONST) { MCC_TRACE("br\n");
 		int rb = 0, do32bit = 8, zext = 0;
-		if (is_float_abi(sv->type.t) && bt != VT_LDOUBLE) { MCC_TRACE("br\n");
+		if (is_float_abi(sv->type.t) && bt != VT_LDOUBLE && bt != VT_FLOAT128) { MCC_TRACE("br\n");
 			uint64_t val = sv->c.i;
 			int is_dbl = bt == VT_DOUBLE;
 			if (val == 0) { MCC_TRACE("br\n");
@@ -324,7 +324,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 			o(0x53 | (rr << 7) | (6 << 15) | ((unsigned)(0x78 | is_dbl) << 25));
 			return;
 		}
-		assert(is_ireg(r) || bt == VT_LDOUBLE);
+		assert(is_ireg(r) || bt == VT_LDOUBLE || bt == VT_FLOAT128);
 		if (fr & VT_SYM) { MCC_TRACE("br\n");
 			rb = load_symofs(r, sv, 0, &fc);
 			do32bit = 0;
@@ -426,8 +426,8 @@ ST_FUNC void store(int r, SValue *sv) { MCC_TRACE("enter\n");
 	int fc = sv->c.i;
 	int bt = sv->type.t & VT_BTYPE;
 	int align, size = type_size(&sv->type, &align);
-	assert(!is_float(bt) || is_freg(r) || bt == VT_LDOUBLE || IS_HALF_BT(bt));
-	if (bt == VT_LDOUBLE)
+	assert(!is_float(bt) || is_freg(r) || bt == VT_LDOUBLE || bt == VT_FLOAT128 || IS_HALF_BT(bt));
+	if (bt == VT_LDOUBLE || bt == VT_FLOAT128)
 		{ MCC_TRACE("br\n"); size = align = 8; }
 	if (bt == VT_STRUCT)
 		{ MCC_TRACE("br\n"); mcc_error("unimp: store(struct)"); }
@@ -560,7 +560,7 @@ static void reg_pass_rec(CType *type, int *rc, int *fieldofs, int ofs) { MCC_TRA
 			} else if (type->ref->c == 2)
 				{ MCC_TRACE("br\n"); rc[0] = -1; }
 		}
-	} else if (rc[0] == 2 || rc[0] < 0 || (type->t & VT_BTYPE) == VT_LDOUBLE)
+	} else if (rc[0] == 2 || rc[0] < 0 || (type->t & VT_BTYPE) == VT_LDOUBLE || (type->t & VT_BTYPE) == VT_FLOAT128)
 		{ MCC_TRACE("br\n"); rc[0] = -1; }
 	else if (!rc[0] || rc[1] == MCC_RC_FLOAT || is_float_abi(type->t)) { MCC_TRACE("br\n");
 		rc[++rc[0]] = is_float_abi(type->t) ? MCC_RC_FLOAT : MCC_RC_INT;
@@ -740,7 +740,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				assert(!r2);
 				r2 = 1 + MCC_TREG_RA;
 			}
-			if (loadt == VT_LDOUBLE) { MCC_TRACE("br\n");
+			if (loadt == VT_LDOUBLE || loadt == VT_FLOAT128) { MCC_TRACE("br\n");
 				assert(r2);
 				r2--;
 			} else if (r2) { MCC_TRACE("br\n");
@@ -751,7 +751,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			gv(r < 8 ? MCC_RC_R(r) : MCC_RC_F(r - 8));
 			vtop->type = origtype;
 
-			if (r2 && loadt != VT_LDOUBLE) { MCC_TRACE("br\n");
+			if (r2 && loadt != VT_LDOUBLE && loadt != VT_FLOAT128) { MCC_TRACE("br\n");
 				r2--;
 				assert(r2 < 16 || r2 == MCC_TREG_RA);
 				vswap();
@@ -778,7 +778,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			if (info[nb_args - 1 - i] & 16) { MCC_TRACE("br\n");
 				ES(0x23, 3, 2, ireg(vtop->r2), splitofs);
 				vtop->r2 = VT_CONST;
-			} else if (loadt == VT_LDOUBLE && vtop->r2 != r2) { MCC_TRACE("br\n");
+			} else if ((loadt == VT_LDOUBLE || loadt == VT_FLOAT128) && vtop->r2 != r2) { MCC_TRACE("br\n");
 				assert(vtop->r2 <= 7 && r2 <= 7);
 				EI(0x13, 0, ireg(r2), ireg(vtop->r2), 0);
 				vtop->r2 = r2;
