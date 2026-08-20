@@ -28,10 +28,17 @@ static int icse(int a, int b)
 	return x + y;
 }
 
+static long double lcse(long double a, long double b)
+{
+	long double x = a * b - a;
+	long double y = a * b - a;
+	return x + y;
+}
+
 int main(void)
 {
 	char buf[16];
-	printf("%.1f %.1f %ld %d\n", dcse(3, 4), (double)scse(3, 4), pcse(buf, 5),
-				 icse(3, 4));
+	printf("%.1f %.1f %ld %d %.1Lf\n", dcse(3, 4), (double)scse(3, 4),
+				 pcse(buf, 5), icse(3, 4), lcse(3, 4));
 	return 0;
 }

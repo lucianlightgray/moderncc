@@ -10687,6 +10687,12 @@ static int ast_cse_scalar(int t) { MCC_TRACE("enter\n");
 	return ast_ident_intt(t) || bt == VT_FLOAT || bt == VT_DOUBLE || bt == VT_PTR;
 }
 
+static int ast_cse_wide(int t) { MCC_TRACE("enter\n");
+	int bt = t & VT_BTYPE;
+	return ast_cse_scalar(t) || bt == VT_LDOUBLE || bt == VT_QFLOAT ||
+				 bt == VT_FLOAT128 || bt == VT_INT128 || bt == VT_QLONG;
+}
+
 static int ast_cse_is_local(AstArena *a, AstLocal n, int *off, int *tt) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -10694,7 +10700,7 @@ static int ast_cse_is_local(AstArena *a, AstLocal n, int *off, int *tt) { MCC_TR
 	if ((r & VT_VALMASK) != VT_LOCAL || !(r & VT_LVAL) || (r & VT_SYM))
 		{ MCC_TRACE("br\n"); return 0; }
 	int t = ast_type_t(a, n);
-	if (!ast_cse_scalar(t) || (t & (VT_VOLATILE | VT_BITFIELD)))
+	if (!ast_cse_wide(t) || (t & (VT_VOLATILE | VT_BITFIELD)))
 		{ MCC_TRACE("br\n"); return 0; }
 	*off = (int)(int64_t)ast_ival(a, n);
 	*tt = t;
@@ -10712,7 +10718,7 @@ static int ast_cse_regpure_compute(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		int r = ast_op(a, n);
 		if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
 			{ MCC_TRACE("br\n"); return 0; }
-		if ((t & VT_BITFIELD) || !ast_cse_scalar(t))
+		if ((t & VT_BITFIELD) || !ast_cse_wide(t))
 			{ MCC_TRACE("br\n"); return 0; }
 		return 1;
 	}
@@ -16700,7 +16706,7 @@ static void ast_cse_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				if (!ast_cprop_escapes(a, off) && ast_cse_n < ast_cse_window &&
 						ast_cse_regpure(a, val) && !ast_ident_leaf(a, val) &&
 						!ast_tco_reads_off(a, val, off) &&
-						ast_ident_etype(a, val, &et, &er) && ast_cse_scalar(et) &&
+						ast_ident_etype(a, val, &et, &er) && ast_cse_wide(et) &&
 						(et & (VT_BTYPE | VT_UNSIGNED)) == (tt & (VT_BTYPE | VT_UNSIGNED)) &&
 						(er == ast_type_ref(a, lval) ||
 						 (et & VT_BTYPE) == VT_PTR)) { MCC_TRACE("br\n");
@@ -16801,7 +16807,7 @@ static void ast_cse_stmts(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 				if (!ast_cprop_escapes(a, off) && ast_cse_n < ast_cse_window &&
 						ast_cse_regpure(a, val) && !ast_ident_leaf(a, val) &&
 						!ast_tco_reads_off(a, val, off) &&
-						ast_ident_etype(a, val, &et, &er) && ast_cse_scalar(et) &&
+						ast_ident_etype(a, val, &et, &er) && ast_cse_wide(et) &&
 						(et & (VT_BTYPE | VT_UNSIGNED)) == (tt & (VT_BTYPE | VT_UNSIGNED)) &&
 						(er == ast_type_ref(a, lval) ||
 						 (et & VT_BTYPE) == VT_PTR)) { MCC_TRACE("br\n");

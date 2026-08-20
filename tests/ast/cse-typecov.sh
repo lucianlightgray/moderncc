@@ -10,10 +10,10 @@
 # float or pointer expression is reused. CSE reuses the first store's existing
 # local (no new temp), so it is value-safe for any scalar. See DETAILS#t-lin-10441.
 #
-# The subject repeats double, float, pointer, and int exprs -- 4 CSE
+# The subject repeats double, float, pointer, int, and ldouble exprs -- 5 CSE
 # folds. Anti-vacuity: an integer-only CSE would fold only 1 (icse); with the
-# float type extension it folds 4. Correctness: -O2 output must equal -O0.
-# (long double is deliberately excluded -- >8B vs the shared width-8 ltemp slot;
+# float type extension it folds 5. Correctness: -O2 output must equal -O0.
+# (ldouble CSE works (reuses the existing local; no width-8 temp) via ast_cse_wide;
 # pointer CSE now fires too via the pointee-ref relaxation.)
 set -e
 
@@ -31,10 +31,10 @@ src=$SRCDIR/tests/misc/cse_typecov_subject.c
 
 cse=$(MCC_STATS=strategy "$MCC" -O2 -c "$src" -o "$WORK/c.o" 2>&1 |
 	sed -n 's/.*[^a-z]cse=\([0-9][0-9]*\).*/\1/p' | tail -1)
-echo "cse folds (double+float+ptr+int) = $cse"
+echo "cse folds (double+float+ptr+int+ldbl) = $cse"
 
-if [ -z "$cse" ] || [ "$cse" -lt 4 ]; then
-	echo "FAIL: type-complete CSE did not fire on the double+float+pointer expressions (cse=$cse, want >=4)"
+if [ -z "$cse" ] || [ "$cse" -lt 5 ]; then
+	echo "FAIL: type-complete CSE did not fire on the double+float+pointer+ldouble expressions (cse=$cse, want >=5)"
 	exit 1
 fi
 
@@ -47,4 +47,4 @@ if [ "$r0" != "$r2" ]; then
 	exit 1
 fi
 
-echo "ast/cse-typecov OK: CSE type-complete (cse=$cse over double+float+ptr+int), result-invariant ($r2)"
+echo "ast/cse-typecov OK: CSE type-complete (cse=$cse over double+float+ptr+int+ldbl), result-invariant ($r2)"
