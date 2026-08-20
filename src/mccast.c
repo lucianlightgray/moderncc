@@ -18716,7 +18716,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 	int ntuple = (int)space;
 
 	ast_ladder_gpu_rungs++;
-	if (n < 1 || n > AST_EVAL_LADDER_MAXIN || space > AST_LADDER_GPU_MAX)
+	if (n < 0 || n > AST_EVAL_LADDER_MAXIN || space > AST_LADDER_GPU_MAX)
 		return ast_ladder_gpu_refuse(AST_LGR_ARITY);
 	mcc_gpu_stats(&gs);
 	if (ast_ladder_gpu_budget && gs.dispatches >= ast_ladder_gpu_budget)
@@ -18737,7 +18737,7 @@ static int ast_ladder_gpu_run(AstArena *a, AstLocal ar, AstArena *b, AstLocal br
 		mcc_gpu_code_free(&ca);
 		return ast_ladder_gpu_refuse(AST_LGR_EMIT_RHS);
 	}
-	tin = mcc_malloc((size_t)ntuple * n * MCC_GPU_IN_SLOTS * 4);
+	tin = mcc_malloc((size_t)ntuple * (n ? n : 1) * MCC_GPU_IN_SLOTS * 4);
 	oa = mcc_malloc((size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	ob = mcc_malloc((size_t)ntuple * MCC_GPU_OUT_SLOTS * 4);
 	if (!tin || !oa || !ob) { MCC_TRACE("br\n");

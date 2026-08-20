@@ -2320,6 +2320,26 @@ static void ast_eval_slice_ladder(AstArena *a, AstLocal aroot, AstArena *b,
 	if (n == 0) {
 		int32_t off[1];
 		int64_t val[1];
+		if (ast_ladder_gpu_hook) {
+			int he[1], hsh[1];
+			int hr = ast_ladder_gpu_hook(a, aroot, b, broot, in, 0, he, hsh, 0, 1, res);
+			if (hr >= 0) {
+				if (hr == 0) {
+					res->verdict = 0;
+					res->rung = AST_LADDER_RUNG_CONST;
+					res->diff_width = 0;
+					return;
+				}
+				if (res->informative == 0) {
+					res->reason = AST_LADDER_R_VACUOUS;
+					return;
+				}
+				res->verdict = 1;
+				res->rung = AST_LADDER_RUNG_CONST;
+				res->type_complete = 1;
+				return;
+			}
+		}
 		if (!ast_eval_ladder_point(a, aroot, b, broot, off, val, 0, res)) {
 			res->verdict = 0;
 			res->rung = AST_LADDER_RUNG_CONST;
