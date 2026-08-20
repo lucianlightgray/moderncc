@@ -892,6 +892,24 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		}
 	}
 
+	if ((w & 0x3b000000) == 0x18000000) { MCC_TRACE("br\n");
+		int opc = (w >> 30) & 3, V = (w >> 26) & 1;
+		addr_t target = pc + (addr_t)((int64_t)simm(w, 5, 19) << 2);
+		if (V) { MCC_TRACE("br\n");
+			int kind = opc == 0 ? 's' : opc == 1 ? 'd' : opc == 2 ? 'q' : 0;
+			if (!kind)
+				{ MCC_TRACE("br\n"); return D_UNK; }
+			snprintf(out, osz, "ldr\t%s, 0x%llx", fr(dc, kind, rd),
+							 (unsigned long long)target);
+			return D_CMT;
+		}
+		if (opc == 3)
+			{ MCC_TRACE("br\n"); return D_UNK; }
+		snprintf(out, osz, "%s\t%s, 0x%llx", opc == 2 ? "ldrsw" : "ldr",
+						 ir(dc, opc == 0 ? 0 : 1, rd), (unsigned long long)target);
+		return D_CMT;
+	}
+
 	if ((w & 0xff200c00) == 0x1e200800) { MCC_TRACE("br\n");
 		static const char *nm[16] = {
 				"fmul", "fdiv", "fadd", "fsub", "fmax", "fmin", "fmaxnm", "fminnm",
@@ -932,12 +950,56 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 		snprintf(out, osz, "fcvt\t%s, %s", fr(dc, 's', rd), fr(dc, 'd', rn));
 		return D_CMT;
 	}
+	if ((w & 0xffbc7c00) == 0x1e244000) { MCC_TRACE("br\n");
+		static const char *frnm[8] = {
+				"frintn", "frintp", "frintm", "frintz", "frinta", 0, "frintx", "frinti"};
+		int kind = (w & 0x400000) ? 'd' : 's', op3 = (w >> 15) & 7;
+		if (!frnm[op3])
+			{ MCC_TRACE("br\n"); return D_UNK; }
+		snprintf(out, osz, "%s\t%s, %s", frnm[op3], fr(dc, kind, rd), fr(dc, kind, rn));
+		return D_CMT;
+	}
 	if ((w & 0xffa0fc17) == 0x1e202000) { MCC_TRACE("br\n");
 		int kind = (w & 0x400000) ? 'd' : 's';
 		if (w & 8)
 			{ MCC_TRACE("br\n"); snprintf(out, osz, "fcmp\t%s, #0.0", fr(dc, kind, rn)); }
 		else
 			{ MCC_TRACE("br\n"); snprintf(out, osz, "fcmp\t%s, %s", fr(dc, kind, rn), fr(dc, kind, rm)); }
+		return D_CMT;
+	}
+	if ((w & 0xffa0fc17) == 0x1e202010) { MCC_TRACE("br\n");
+		int kind = (w & 0x400000) ? 'd' : 's';
+		if (w & 8)
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "fcmpe\t%s, #0.0", fr(dc, kind, rn)); }
+		else
+			{ MCC_TRACE("br\n"); snprintf(out, osz, "fcmpe\t%s, %s", fr(dc, kind, rn), fr(dc, kind, rm)); }
+		return D_CMT;
+	}
+	if ((w & 0xffa00c00) == 0x1e200c00) { MCC_TRACE("br\n");
+		int kind = (w & 0x400000) ? 'd' : 's', cond = (w >> 12) & 15;
+		snprintf(out, osz, "fcsel\t%s, %s, %s, %s", fr(dc, kind, rd),
+						 fr(dc, kind, rn), fr(dc, kind, rm), cc[cond]);
+		return D_CMT;
+	}
+	if ((w & 0xffa01fe0) == 0x1e201000) { MCC_TRACE("br\n");
+		int kind = (w & 0x400000) ? 'd' : 's', imm8 = (w >> 13) & 0xff;
+		int a = (imm8 >> 7) & 1, b = (imm8 >> 6) & 1, c = (imm8 >> 5) & 1, d = (imm8 >> 4) & 1;
+		int frac = imm8 & 15;
+		char v[48];
+		if (kind == 's') { MCC_TRACE("br\n");
+			unsigned e = ((~b & 1) << 7) | (b ? 0x7c : 0) | (c << 1) | d;
+			unsigned bits = ((unsigned)a << 31) | (e << 23) | ((unsigned)frac << 19);
+			float fv;
+			memcpy(&fv, &bits, 4);
+			snprintf(v, sizeof v, "%.8f", (double)fv);
+		} else { MCC_TRACE("br\n");
+			uint64_t e = ((uint64_t)(~b & 1) << 10) | (b ? 0x3fcULL : 0) | (c << 1) | d;
+			uint64_t bits = ((uint64_t)a << 63) | (e << 52) | ((uint64_t)frac << 48);
+			double dv;
+			memcpy(&dv, &bits, 8);
+			snprintf(v, sizeof v, "%.8f", dv);
+		}
+		snprintf(out, osz, "fmov\t%s, #%s", fr(dc, kind, rd), v);
 		return D_CMT;
 	}
 	if ((w & 0x7fbefc00) == 0x1e220000) { MCC_TRACE("br\n");
@@ -966,6 +1028,22 @@ static int decode(disasm_ctx *dc, uint32_t w, char *out, size_t osz) { MCC_TRACE
 	}
 	if ((w & 0xfffffc00) == 0x1e270000) { MCC_TRACE("br\n");
 		snprintf(out, osz, "fmov\t%s, %s", fr(dc, 's', rd), ir(dc, 0, rn));
+		return D_CMT;
+	}
+	if ((w & 0x7f20fc00) == 0x1e200000) { MCC_TRACE("br\n");
+		int ptype = (w >> 22) & 3, rmode = (w >> 19) & 3, opc = (w >> 16) & 7;
+		int kind = ptype ? 'd' : 's';
+		const char *rnd;
+		if (ptype > 1 || (opc & 2))
+			{ MCC_TRACE("br\n"); return D_UNK; }
+		if (opc & 4)
+			{ MCC_TRACE("br\n"); rnd = rmode == 0 ? "a" : 0; }
+		else
+			{ MCC_TRACE("br\n"); rnd = rmode == 0 ? "n" : rmode == 1 ? "p" : rmode == 2 ? "m" : "z"; }
+		if (!rnd)
+			{ MCC_TRACE("br\n"); return D_UNK; }
+		snprintf(out, osz, "fcvt%s%c\t%s, %s", rnd, (opc & 1) ? 'u' : 's',
+						 ir(dc, sf, rd), fr(dc, kind, rn));
 		return D_CMT;
 	}
 	if ((w & 0xffeffc00) == 0x4e083c00) { MCC_TRACE("br\n");
