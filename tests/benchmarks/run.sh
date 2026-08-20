@@ -58,7 +58,7 @@ for src in "$ROOT"/tests/benchmarks/*.c; do
 	echo "### $name"
 	printf "%-10s %-4s | %14s | %9s | %s\n" toolchain -O "instructions" "wall(ms)" "result"
 	# toolchain|compiler-invocation-tag|olevels
-	for tc in "gcc" "clang" "mcc-nat" "mcc-coop"; do
+	for tc in "gcc" "clang" "mcc-nat" "mcc-coop" "mcc-coop-mn"; do
 		for o in 0 1 3; do
 			exe="$WORK/${name}_${tc}_O${o}"
 			case $tc in
@@ -66,6 +66,7 @@ for src in "$ROOT"/tests/benchmarks/*.c; do
 				clang)    [ -z "$CLANG" ] && continue; "$CLANG" -O$o -pthread "$src" -o "$exe" -lm >"$WORK/be" 2>&1 ;;
 				mcc-nat)  "$MCC" -B"$MB" -O$o -pthread "$src" -o "$exe" -lm >"$WORK/be" 2>&1 ;;
 				mcc-coop) "$MCC" -B"$MB" -O$o -DMCC_THREADS_COOP "$src" -o "$exe" -lm >"$WORK/be" 2>&1 ;;
+				mcc-coop-mn) "$MCC" -B"$MB" -O$o -DMCC_THREADS_COOP -DMCC_COOP_MN -pthread "$src" -o "$exe" -lm >"$WORK/be" 2>&1 ;;
 			esac
 			if [ $? -ne 0 ]; then
 				printf "%-10s -O%s | %14s | %9s | %s\n" "$tc" "$o" "BUILD-FAIL" "-" "$(head -1 "$WORK/be")"

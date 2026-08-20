@@ -5,6 +5,17 @@
 #include <stdint.h>
 #include <time.h>
 
+#if defined(MCC_COOP_MN) && !defined(MCC_COOP_MT)
+#define MCC_COOP_MT 1
+#endif
+
+#ifdef MCC_COOP_MN
+#include <pthread.h>
+#include <unistd.h>
+#include <sched.h>
+#include <errno.h>
+#endif
+
 extern void *malloc(size_t);
 extern void *calloc(size_t, size_t);
 extern void free(void *);
@@ -56,6 +67,18 @@ typedef int (*thrd_start_t)(void *);
 typedef void (*tss_dtor_t)(void *);
 typedef int tss_t;
 
+#ifdef MCC_COOP_MN
+typedef struct {
+	pthread_mutex_t pm;
+	int type;
+	int inited;
+} mtx_t;
+
+typedef struct {
+	pthread_cond_t pc;
+	int inited;
+} cnd_t;
+#else
 typedef struct {
 	int locked;
 	int type;
@@ -66,6 +89,7 @@ typedef struct {
 typedef struct {
 	int dummy;
 } cnd_t;
+#endif
 
 /*
  * Define glibc's own once_flag guard so that a later <stdlib.h> (which, under
@@ -318,7 +342,9 @@ static void *__mcc_ctx_make(void *__base, unsigned long __size, void (*__entry)(
 #endif
 
 static __mcc_fiber __mcc_main;
+#ifndef MCC_COOP_MN
 static __mcc_fiber *__mcc_cur = (__mcc_fiber *)0;
+#endif
 static __mcc_fiber *__mcc_ready_head = (__mcc_fiber *)0;
 static __mcc_fiber *__mcc_ready_tail = (__mcc_fiber *)0;
 static __mcc_fiber *__mcc_all = (__mcc_fiber *)0;
@@ -327,13 +353,7 @@ static int __mcc_inited = 0;
 static int __mcc_tss_next = 0;
 static tss_dtor_t __mcc_tss_dtor[__MCC_COOP_MAX_TSS];
 
-#if defined(MCC_COOP_MN) && !defined(MCC_COOP_MT)
-#define MCC_COOP_MT 1
-#endif
-
 #ifdef MCC_COOP_MN
-#include <pthread.h>
-#include <unistd.h>
 
 #define __MCC_MN_MAX_WORKERS 256
 
@@ -352,6 +372,7 @@ static int __mcc_mn_nworkers = 0;
 static int __mcc_mn_started = 0;
 static int __mcc_mn_quit = 0;
 static _Thread_local __mcc_worker *__mcc_self = (__mcc_worker *)0;
+#define __mcc_cur (__mcc_self->cur)
 
 #define __MCC_LOCK() pthread_mutex_lock(&__mcc_mn_lock)
 #define __MCC_UNLOCK() pthread_mutex_unlock(&__mcc_mn_lock)
@@ -439,6 +460,8 @@ static void *__mcc_mn_worker_main(void *__arg) {
 			pthread_mutex_unlock(&__mcc_mn_lock);
 			__mcc_ctx_swap(&__w->sched_sp, __f->sp);
 			pthread_mutex_lock(&__mcc_mn_lock);
+			__f->state = __MCC_F_DONE;
+			pthread_cond_broadcast(&__mcc_mn_done);
 			__w->cur = (__mcc_fiber *)0;
 			continue;
 		}
@@ -448,6 +471,21 @@ static void *__mcc_mn_worker_main(void *__arg) {
 		}
 		pthread_cond_wait(&__mcc_mn_work, &__mcc_mn_lock);
 	}
+}
+
+__attribute__((destructor)) static void __mcc_mn_shutdown(void) {
+	int __i, __n;
+	pthread_mutex_lock(&__mcc_mn_lock);
+	if (!__mcc_mn_started) {
+		pthread_mutex_unlock(&__mcc_mn_lock);
+		return;
+	}
+	__mcc_mn_quit = 1;
+	pthread_cond_broadcast(&__mcc_mn_work);
+	__n = __mcc_mn_nworkers;
+	pthread_mutex_unlock(&__mcc_mn_lock);
+	for (__i = 0; __i < __n; __i++)
+		pthread_join(__mcc_mn_workers[__i].th, (void *)0);
 }
 
 static void __mcc_need_init(void) {
@@ -480,10 +518,6 @@ static void __mcc_fiber_start(void) {
 	__mcc_worker *__w = __mcc_self;
 	__mcc_fiber *__self = __w->cur;
 	__self->result = __self->fn(__self->arg);
-	pthread_mutex_lock(&__mcc_mn_lock);
-	__self->state = __MCC_F_DONE;
-	pthread_cond_broadcast(&__mcc_mn_done);
-	pthread_mutex_unlock(&__mcc_mn_lock);
 	__mcc_ctx_swap(&__self->sp, __w->sched_sp);
 }
 #endif
@@ -681,7 +715,11 @@ static thrd_t thrd_current(void) {
 }
 
 static void thrd_yield(void) {
+#ifdef MCC_COOP_MN
+	sched_yield();
+#else
 	__mcc_yield();
+#endif
 }
 
 static int thrd_sleep(const struct timespec *__dur, struct timespec *__rem) {
@@ -690,7 +728,11 @@ static int thrd_sleep(const struct timespec *__dur, struct timespec *__rem) {
 		__rem->tv_sec = 0;
 		__rem->tv_nsec = 0;
 	}
+#ifdef MCC_COOP_MN
+	sched_yield();
+#else
 	__mcc_yield();
+#endif
 	return 0;
 }
 
@@ -740,7 +782,11 @@ static void call_once(once_flag *__flag, void (*__func)(void)) {
 		}
 	}
 	while (__atomic_load_n(__flag, __ATOMIC_ACQUIRE) != 2)
+#ifdef MCC_COOP_MN
+		sched_yield();
+#else
 		__mcc_yield();
+#endif
 #else
 	if (*__flag)
 		return;
@@ -749,6 +795,7 @@ static void call_once(once_flag *__flag, void (*__func)(void)) {
 #endif
 }
 
+#ifndef MCC_COOP_MN
 static int mtx_init(mtx_t *__m, int __type) {
 	__m->locked = 0;
 	__m->type = __type;
@@ -877,6 +924,92 @@ static int cnd_timedwait(cnd_t *__c, mtx_t *__m, const struct timespec *__ts) {
 static void cnd_destroy(cnd_t *__c) {
 	(void)__c;
 }
+#else
+static int mtx_init(mtx_t *__m, int __type) {
+	__m->type = __type;
+	__m->inited = 1;
+	if (__type & mtx_recursive) {
+		pthread_mutexattr_t __at;
+		int __r;
+		pthread_mutexattr_init(&__at);
+		pthread_mutexattr_settype(&__at, PTHREAD_MUTEX_RECURSIVE);
+		__r = pthread_mutex_init(&__m->pm, &__at);
+		pthread_mutexattr_destroy(&__at);
+		return __r ? thrd_error : thrd_success;
+	}
+	return pthread_mutex_init(&__m->pm, (void *)0) ? thrd_error : thrd_success;
+}
+
+static int mtx_lock(mtx_t *__m) {
+	return pthread_mutex_lock(&__m->pm) ? thrd_error : thrd_success;
+}
+
+static int mtx_trylock(mtx_t *__m) {
+	int __r = pthread_mutex_trylock(&__m->pm);
+	if (__r == 0)
+		return thrd_success;
+	if (__r == EBUSY)
+		return thrd_busy;
+	return thrd_error;
+}
+
+static int mtx_timedlock(mtx_t *__m, const struct timespec *__ts) {
+	for (;;) {
+		int __r = pthread_mutex_trylock(&__m->pm);
+		if (__r == 0)
+			return thrd_success;
+		if (__r != EBUSY)
+			return thrd_error;
+		{
+			struct timespec __now;
+			struct timespec __nap = {0, 1000000};
+			clock_gettime(CLOCK_REALTIME, &__now);
+			if (__now.tv_sec > __ts->tv_sec ||
+					(__now.tv_sec == __ts->tv_sec && __now.tv_nsec >= __ts->tv_nsec))
+				return thrd_timedout;
+			nanosleep(&__nap, (void *)0);
+		}
+	}
+}
+
+static int mtx_unlock(mtx_t *__m) {
+	return pthread_mutex_unlock(&__m->pm) ? thrd_error : thrd_success;
+}
+
+static void mtx_destroy(mtx_t *__m) {
+	pthread_mutex_destroy(&__m->pm);
+}
+
+static int cnd_init(cnd_t *__c) {
+	__c->inited = 1;
+	return pthread_cond_init(&__c->pc, (void *)0) ? thrd_error : thrd_success;
+}
+
+static int cnd_signal(cnd_t *__c) {
+	return pthread_cond_signal(&__c->pc) ? thrd_error : thrd_success;
+}
+
+static int cnd_broadcast(cnd_t *__c) {
+	return pthread_cond_broadcast(&__c->pc) ? thrd_error : thrd_success;
+}
+
+static int cnd_wait(cnd_t *__c, mtx_t *__m) {
+	return pthread_cond_wait(&__c->pc, &__m->pm) ? thrd_error : thrd_success;
+}
+
+static int cnd_timedwait(cnd_t *__c, mtx_t *__m, const struct timespec *__ts) {
+	int __r = pthread_cond_timedwait(&__c->pc, &__m->pm, __ts);
+	if (__r == 0)
+		return thrd_success;
+	if (__r == ETIMEDOUT)
+		return thrd_timedout;
+	return thrd_error;
+}
+
+static void cnd_destroy(cnd_t *__c) {
+	pthread_cond_destroy(&__c->pc);
+}
+#endif
 
 static int tss_create(tss_t *__key, tss_dtor_t __dtor) {
 #ifdef MCC_COOP_MT
