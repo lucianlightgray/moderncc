@@ -36,36 +36,11 @@ static void asm_macros_free(void) { MCC_TRACE("enter\n");
 	}
 }
 
-static void asm_macro_expand(MCCState *s1, AsmMacro *m, int global) { MCC_TRACE("enter\n");
-	TokenString *args[ASM_MACRO_MAXPARAM];
-	TokenString *subst;
-	const int *p;
-	int nargs = 0, i, saved = parse_flags;
-
-	for (i = 0; i < ASM_MACRO_MAXPARAM; i++)
-		args[i] = NULL;
-	parse_flags |= PARSE_FLAG_ACCEPT_STRAYS;
-	if (tok != TOK_LINEFEED && tok != TOK_EOF && tok != ';') { MCC_TRACE("br\n");
-		args[0] = tok_str_alloc();
-		for (;;) { MCC_TRACE("br\n");
-			if (tok == TOK_LINEFEED || tok == TOK_EOF || tok == ';')
-				{ MCC_TRACE("br\n"); break; }
-			if (tok == ',') { MCC_TRACE("br\n");
-				next();
-				if (nargs < ASM_MACRO_MAXPARAM - 1)
-					{ MCC_TRACE("br\n"); nargs++; args[nargs] = tok_str_alloc(); }
-				continue;
-			}
-			tok_str_add_tok(args[nargs]);
-			next();
-		}
-		nargs++;
-	}
-	for (i = 0; i < nargs; i++)
-		{ MCC_TRACE("br\n"); tok_str_add(args[i], TOK_EOF); }
-
-	subst = tok_str_alloc();
-	p = m->body->str;
+static TokenString *asm_macro_subst(const int *params, int nparams,
+																		TokenString **args, int nargs,
+																		const int *body, int errname) { MCC_TRACE("enter\n");
+	TokenString *subst = tok_str_alloc();
+	const int *p = body;
 	while (*p && *p != TOK_EOF) { MCC_TRACE("br\n");
 		int t;
 		CValue cv;
@@ -91,12 +66,12 @@ static void asm_macro_expand(MCCState *s1, AsmMacro *m, int global) { MCC_TRACE(
 				}
 			} else if (t2 >= TOK_IDENT) { MCC_TRACE("br\n");
 				int found = -1, k;
-				for (k = 0; k < m->nparams; k++)
-					if (m->params[k] == t2)
+				for (k = 0; k < nparams; k++)
+					if (params[k] == t2)
 						{ MCC_TRACE("br\n"); found = k; break; }
 				if (found < 0) { MCC_TRACE("br\n");
-					mcc_error("undefined macro parameter '%s' in .macro %s",
-										get_tok_str(t2, NULL), get_tok_str(m->name, NULL));
+					mcc_error("undefined macro parameter '%s' in %s",
+										get_tok_str(t2, NULL), get_tok_str(errname, NULL));
 				} else if (found < nargs && args[found]) { MCC_TRACE("br\n");
 					const int *ap = args[found]->str;
 					while (*ap && *ap != TOK_EOF) { MCC_TRACE("br\n");
@@ -112,6 +87,38 @@ static void asm_macro_expand(MCCState *s1, AsmMacro *m, int global) { MCC_TRACE(
 		}
 	}
 	tok_str_add(subst, TOK_EOF);
+	return subst;
+}
+
+static void asm_macro_expand(MCCState *s1, AsmMacro *m, int global) { MCC_TRACE("enter\n");
+	TokenString *args[ASM_MACRO_MAXPARAM];
+	TokenString *subst;
+	int nargs = 0, i, saved = parse_flags;
+
+	for (i = 0; i < ASM_MACRO_MAXPARAM; i++)
+		args[i] = NULL;
+	parse_flags |= PARSE_FLAG_ACCEPT_STRAYS;
+	if (tok != TOK_LINEFEED && tok != TOK_EOF && tok != ';') { MCC_TRACE("br\n");
+		args[0] = tok_str_alloc();
+		for (;;) { MCC_TRACE("br\n");
+			if (tok == TOK_LINEFEED || tok == TOK_EOF || tok == ';')
+				{ MCC_TRACE("br\n"); break; }
+			if (tok == ',') { MCC_TRACE("br\n");
+				next();
+				if (nargs < ASM_MACRO_MAXPARAM - 1)
+					{ MCC_TRACE("br\n"); nargs++; args[nargs] = tok_str_alloc(); }
+				continue;
+			}
+			tok_str_add_tok(args[nargs]);
+			next();
+		}
+		nargs++;
+	}
+	for (i = 0; i < nargs; i++)
+		{ MCC_TRACE("br\n"); tok_str_add(args[i], TOK_EOF); }
+
+	subst = asm_macro_subst(m->params, m->nparams, args, nargs, m->body->str,
+													m->name);
 	parse_flags = saved;
 
 	begin_macro(subst, 1);
@@ -867,6 +874,62 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		parse_flags = saved_flags;
 		m->next = asm_macros;
 		asm_macros = m;
+		next();
+		break;
+	}
+	case TOK_ASMDIR_irp: { MCC_TRACE("br\n");
+		int sym, saved_flags = parse_flags, i, nvalues = 0;
+		TokenString *body;
+		TokenString *values[256];
+		next();
+		if (tok < TOK_IDENT)
+			{ MCC_TRACE("br\n"); expect("symbol name"); }
+		sym = tok;
+		next();
+		if (tok == ',')
+			{ MCC_TRACE("br\n"); next(); }
+		for (i = 0; i < 256; i++)
+			values[i] = NULL;
+		parse_flags |= PARSE_FLAG_ACCEPT_STRAYS;
+		if (tok != TOK_LINEFEED && tok != TOK_EOF && tok != ';') { MCC_TRACE("br\n");
+			values[0] = tok_str_alloc();
+			for (;;) { MCC_TRACE("br\n");
+				if (tok == TOK_LINEFEED || tok == TOK_EOF || tok == ';')
+					{ MCC_TRACE("br\n"); break; }
+				if (tok == ',') { MCC_TRACE("br\n");
+					next();
+					if (nvalues < 255)
+						{ MCC_TRACE("br\n"); nvalues++; values[nvalues] = tok_str_alloc(); }
+					continue;
+				}
+				tok_str_add_tok(values[nvalues]);
+				next();
+			}
+			nvalues++;
+		}
+		for (i = 0; i < nvalues; i++)
+			{ MCC_TRACE("br\n"); tok_str_add(values[i], TOK_EOF); }
+		body = tok_str_alloc();
+		while (next(), tok != TOK_ASMDIR_endr) { MCC_TRACE("br\n");
+			if (tok == CH_EOF || tok == TOK_EOF) { MCC_TRACE("br\n");
+				parse_flags = saved_flags;
+				mcc_error("unexpected end of file in .irp (missing .endr)");
+			}
+			tok_str_add_tok(body);
+		}
+		tok_str_add(body, TOK_EOF);
+		parse_flags = saved_flags;
+		for (i = 0; i < nvalues; i++) { MCC_TRACE("br\n");
+			TokenString *subst =
+					asm_macro_subst(&sym, 1, &values[i], 1, body->str, sym);
+			begin_macro(subst, 1);
+			mcc_assemble_internal(s1, (parse_flags & PARSE_FLAG_PREPROCESS), global);
+			end_macro();
+		}
+		tok_str_free(body);
+		for (i = 0; i < nvalues; i++)
+			if (values[i])
+				{ MCC_TRACE("br\n"); tok_str_free(values[i]); }
 		next();
 		break;
 	}
