@@ -1,0 +1,56 @@
+name: WoA-diag
+
+# Focused arm64-Windows diagnostic for T-win-50023 (__float128) + T-win-50024
+# (integer_promotion). Runs on real Windows-on-ARM (windows-11-arm), builds mcc
+# with MSVC/arm64, runs the two exec cells, and uploads mcc output + a clang
+# oracle + disassembly so the arm64-Windows codegen divergence is observable.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['woa-diag/**']
+
+concurrency:
+  group: woa-diag-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    name: diag / windows-11-arm
+    runs-on: windows-11-arm
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: set up MSVC dev shell (arm64)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: arm64
+      - name: toolchain facts
+        run: |
+          for t in cmake ninja clang cl llvm-objdump dumpbin; do
+            p="$(command -v $t || echo ABSENT)"; echo "$t: $p"
+          done
+          clang --version 2>/dev/null | head -1 || true
+          clang -dumpmachine 2>/dev/null || true
+      - name: run woa diagnostic
+        run: bash tools/woa-diag.sh
+      - name: quick view (float128 + integer_promotion)
+        if: always()
+        run: |
+          echo "===== ctest ====="; cat diag-out/03-ctest.txt 2>/dev/null | tail -80 || true
+          echo "===== float128 mcc run ====="; cat diag-out/float128-11-mcc-run.txt 2>/dev/null || true
+          echo "===== float128 clang run ====="; cat diag-out/float128-21-clang-run.txt 2>/dev/null || true
+          echo "===== integer_promotion mcc run ====="; cat diag-out/integer_promotion-11-mcc-run.txt 2>/dev/null || true
+          echo "===== integer_promotion clang run ====="; cat diag-out/integer_promotion-21-clang-run.txt 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: woa-diag
+          path: diag-out/
+          if-no-files-found: warn
