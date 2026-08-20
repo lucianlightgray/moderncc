@@ -306,6 +306,7 @@ struct SymAttr {
 			unavailable : 1,
 			is_register : 1,
 			used : 1,
+			retain : 1,
 			unused : 1,
 			inited : 1,
 			has_vla_member : 1,
