@@ -10,9 +10,21 @@ static void p256(const char *n, __int256 v) {
 	printf("%-14s %016llx%016llx%016llx%016llx\n", n, l[3], l[2], l[1], l[0]);
 }
 
+/* mirrors __mcc_i256_from_f64's signature (ptr, double, int) to test whether
+   the trailing int arg survives the arm64-Windows call ABI when a double sits
+   between the two integer args */
+static int __attribute__((noinline)) abitest(void *p, double d, int flag) {
+	(void)p; (void)d;
+	return flag;
+}
+
 int main(void) {
 	double x = -1e30;
 	volatile double vx = -1e30;
+
+	printf("abitest(p,-1e30,0)=%d want 0\n", abitest(&x, -1e30, 0));
+	printf("abitest(p,-1e30,7)=%d want 7\n", abitest(&x, -1e30, 7));
+	printf("abitest(p,+1e30,1)=%d want 1\n", abitest(&x, 1e30, 1));
 
 	u64 nb;
 	double nx = -x;                 /* want +1e30 */
