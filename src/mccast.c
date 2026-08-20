@@ -4479,7 +4479,10 @@ static void ast_promo_weigh(AstArena *a, AstLocal n, int depth, const int *coff,
 				} }
 		}
 	}
-	int cd = (k == AST_If && ast_op(a, n) == 2) ? depth + 1 : depth;
+	int cd = (k == AST_If && (ast_op(a, n) == 2 || ast_op(a, n) == 3 ||
+														ast_op(a, n) == 4 || ast_op(a, n) == 8))
+							 ? depth + 1
+							 : depth;
 	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
 		{ MCC_TRACE("br\n"); ast_promo_weigh(a, c, cd, coff, nc, cweight); }
 }
