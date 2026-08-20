@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T02:25Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10419   | 2026-08-20T01:06Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10422   | 2026-08-20T01:48Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-20T01:00Z |
 
 ## Contracts — blocking, highest priority
@@ -99,6 +99,18 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: INVESTIGATIONS.md#r34-low-cluster | DEPS: —
 
 ## Open — claimable
+
+- [ ] T-lin-10419 [S] coop threads: start a worker-thread pool sized to the CPU core count and run the coop coroutines/fibers across it (true M:N), replacing the current single-OS-thread cooperative model (`runtime/include/mcc_coop_threads.h`, T-lin-10001). MUST be the **same pool implementation the JIT and GPU use**, not a second runtime: the JIT already owns a `pthread_t` worker pool (`mccjit_pool_start`, `src/mccjit_embed.c:1551`, `MCCJIT_POOL_MAX=64`, `--jit-threads`) and `--jit-conservative` already co-sizes that pool + the GPU budget to 50% of hardware — factor it into a shared per-core pool + work-queue consumed by JIT jobs, GPU dispatch, and coop fibers alike (likely spins off a [C] shared-pool contract). Needs thread-safe mtx/cnd/tss/once (today single-threaded) + fiber parking; heed the opt-search race lesson (T-lin-10417).
+      OWNER: — | STATE: OPEN | SHA: 31f50f6e | TS: 2026-08-20T01:48Z
+      REF: DETAILS.md#t-lin-10419-coop-mn-pool-unify-jit-gpu | DEPS: T-lin-10001[DONE]
+
+- [ ] T-lin-10420 [S] research: which gcc/clang optimizations/strategies mcc should implement to close the benchmark gap. Evidence (`tests/benchmarks` + `vendor/plb`, `perf instructions:u`): mcc's -O ladder is nearly FLAT (barely moves -O0→-O4, sometimes rises), and mcc uses 2–15× more instructions than gcc-15/clang-22 at best (nbody8i 11–15×, mcc's -O does ~nothing; spectral ~5.8×) — correctness is fine (byte-identical output), the gap is pure optimizer quality. Characterize the missing passes (register allocation/spill, LICM, strength-reduction/IV-simplify, inlining+IPCP, CSE/GVN, instr-selection/addressing, why -O3/-O4 sometimes regress) against the oracles via -S/insn-count diffs on the kernels, publish a ranked strategy to DETAILS, then mint the top ones as [S] implementation tasks. Umbrella/research — does not itself change codegen.
+      OWNER: — | STATE: OPEN | SHA: 31f50f6e | TS: 2026-08-20T01:48Z
+      REF: DETAILS.md#t-lin-10420-optimizer-parity-research | DEPS: —
+
+- [ ] T-lin-10421 [S] fix: coop `<threads.h>` conflicts with glibc `<stdlib.h>` — under `-DMCC_THREADS_COOP`, `mcc_coop_threads.h` defines its own unguarded `once_flag`, and glibc's `<stdlib.h>` pulls in `bits/types/once_flag.h` which also typedefs `once_flag`, so including both (either order) is a hard `incompatible redefinition of once_flag` — a coop program can't `#include <stdlib.h>` (no malloc the normal way; `tests/benchmarks` had to hand-declare libc). Fix: coordinate the coop threads-types with glibc's once_flag guards (`_ONCE_FLAG_H`/`ONCE_FLAG_INIT`) so a coop TU can include `<stdlib.h>`/`<stdio.h>` clean while keeping C11 `once_flag`/`call_once` semantics. x86_64-verifiable; anti-vacuous cell = a coop program that includes `<stdlib.h>`. Same class as T-lin-10418 (riscv64 _Float128).
+      OWNER: — | STATE: OPEN | SHA: 31f50f6e | TS: 2026-08-20T01:48Z
+      REF: DETAILS.md#t-lin-10421-coop-once-flag-stdlib-conflict | DEPS: —
 
 - [ ] T-lin-10418 [S] riscv64 glibc `<stdio.h>` blocked by `_Float128` keyword/typedef collision — any riscv64 program reaching `bits/floatn.h` fails `too many basic types` on `typedef long double _Float128;` (mcc advertises `__GNUC__ 4` so glibc typedefs it, and mcc treats `_Float128` as a distinct keyword; riscv64 `long double` is modelled 64-bit vs lp64d 128-bit quad). Blocks the whole riscv64 glibc exec-conformance tier. Fix: stop advertising a distinct `_Float128` keyword on riscv64 (or predefine the float128 feature macros) so the glibc typedef is benign — verify with a trivial `#include <stdio.h>` compile + a `qemu-riscv64` run against `vendor/gentoo-stage3-riscv64-glibc`. Surfaced by T-lin-10412.
       OWNER: — | STATE: OPEN | SHA: f6676667 | TS: 2026-08-20T01:06Z
