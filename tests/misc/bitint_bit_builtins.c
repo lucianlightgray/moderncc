@@ -43,7 +43,23 @@ int main(void) {
 	if (__builtin_clzg(x) != 55) return 26;
 	if (__builtin_ctzg(x) != 200) return 27;
 	if (__builtin_popcountg(x) != 1) return 28;
+	if (__builtin_stdc_leading_ones(w) != 0) return 30;
+	if (__builtin_stdc_trailing_ones(w) != 0) return 31;
+	if (__builtin_stdc_first_leading_one(w) != 50) return 32;
+	if (__builtin_stdc_first_trailing_one(w) != 151) return 33;
+	if (__builtin_stdc_first_leading_zero(w) != 1) return 34;
+	if (__builtin_stdc_first_trailing_zero(w) != 1) return 35;
+	unsigned _BitInt(200) wo = ~(unsigned _BitInt(200))0;
+	if (__builtin_stdc_leading_ones(wo) != 200) return 36;
+	if (__builtin_stdc_first_leading_zero(wo) != 0) return 37;
 #endif
+
+	if (__builtin_stdc_leading_ones(u) != 0) return 40;
+	if (__builtin_stdc_trailing_ones(u) != 8) return 41;
+	if (__builtin_stdc_first_leading_one(u) != 25) return 42;
+	if (__builtin_stdc_first_trailing_one(u) != 1) return 43;
+	if (__builtin_stdc_first_leading_zero(u) != 1) return 44;
+	if (__builtin_stdc_first_trailing_zero(u) != 9) return 45;
 
 	if (__builtin_bitprecisionof(a) != 40) return 13;
 	if (__builtin_bitprecisionof(b) != 100) return 14;

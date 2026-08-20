@@ -1411,19 +1411,23 @@
 	#define __builtin_stdc_leading_zeros(x) \
 	((unsigned int)__mcc_clzg1(x))
 	#define __builtin_stdc_leading_ones(x) \
-	((unsigned int)__mcc_gclzp(__mcc_gnot(x), __mcc_gprec(x)))
+	((unsigned int)__mcc_clzg1(~(x)))
 	#define __builtin_stdc_trailing_zeros(x) \
 	((unsigned int)__mcc_ctzg1(x))
 	#define __builtin_stdc_trailing_ones(x) \
-	((unsigned int)__mcc_gctzp(__mcc_gnot(x), __mcc_gprec(x)))
-	#define __builtin_stdc_first_leading_one(x) \
-	__mcc_gflo((__mcc_gu_t)(x), __mcc_gprec(x))
-	#define __builtin_stdc_first_leading_zero(x) \
-	__mcc_gflo(__mcc_gnot(x), __mcc_gprec(x))
-	#define __builtin_stdc_first_trailing_one(x) \
-	__mcc_gfto((__mcc_gu_t)(x), __mcc_gprec(x))
-	#define __builtin_stdc_first_trailing_zero(x) \
-	__mcc_gfto(__mcc_gnot(x), __mcc_gprec(x))
+	((unsigned int)__mcc_ctzg1(~(x)))
+	#define __builtin_stdc_first_leading_one(x) (__extension__ ({ \
+	int __mcc_fr = __mcc_clzg1(x); \
+	__mcc_fr == __mcc_gprec(x) ? 0u : (unsigned int)__mcc_fr + 1u; }))
+	#define __builtin_stdc_first_leading_zero(x) (__extension__ ({ \
+	unsigned int __mcc_fl = __builtin_stdc_leading_ones(x); \
+	__mcc_fl == (unsigned int)__mcc_gprec(x) ? 0u : __mcc_fl + 1u; }))
+	#define __builtin_stdc_first_trailing_one(x) (__extension__ ({ \
+	int __mcc_fr = __mcc_ctzg1(x); \
+	__mcc_fr == __mcc_gprec(x) ? 0u : (unsigned int)__mcc_fr + 1u; }))
+	#define __builtin_stdc_first_trailing_zero(x) (__extension__ ({ \
+	unsigned int __mcc_ft = __builtin_stdc_trailing_ones(x); \
+	__mcc_ft == (unsigned int)__mcc_gprec(x) ? 0u : __mcc_ft + 1u; }))
 	#define __builtin_stdc_count_ones(x) ((unsigned int)__builtin_popcountg(x))
 	#define __builtin_stdc_count_zeros(x) \
 	((unsigned int)(__mcc_gprec(x) - __builtin_popcountg(x)))
