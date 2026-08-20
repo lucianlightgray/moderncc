@@ -9840,6 +9840,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) { MCC_TRACE("enter\n");
 	int n, l, t1, arg_size, align, pquals;
 	int star_param = 0;
+	int empty_paren = 0;
 	Sym **plast, *s, *first, **ps, *sr;
 	AttributeDef ad1;
 	CType pt;
@@ -9857,8 +9858,18 @@ static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) 
 		++in_func_params;
 		sr = sym_push2(ps, SYM_FIELD, 0, 0);
 
-		if (tok == ')')
-			{ MCC_TRACE("br\n"); l = 0; }
+		if (tok == ')') { MCC_TRACE("br\n");
+			/* T-mac-30142: C23 6.7.6.3 makes an empty `()` declarator a
+			 * prototype for a function taking NO arguments (identical to
+			 * `(void)`), NOT the pre-C23 unspecified/K&R form. Honor it ONLY
+			 * under an explicit strict-ISO C23 std (see c23_strict_breaking) --
+			 * the default gnu23 mode stays lenient/K&R so existing code + the
+			 * runtime keep building and the o0-baseline is byte-neutral. Under
+			 * -std=c23 synthesize the same (FUNC_NEW, no-param) shape `(void)`
+			 * yields so every downstream check treats it as prototyped-void. */
+			l = c23_strict_breaking(mcc_state) ? FUNC_NEW : 0;
+			empty_paren = 1;
+		}
 		else if (tok == TOK_DOTS && mcc_state->cversion >= 202311) { MCC_TRACE("br\n");
 			next();
 			l = FUNC_ELLIPSIS;
@@ -9876,7 +9887,7 @@ static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) 
 		first = NULL;
 		plast = &first;
 		arg_size = 0;
-		if (l && l != FUNC_ELLIPSIS) { MCC_TRACE("br\n");
+		if (l && l != FUNC_ELLIPSIS && !empty_paren) { MCC_TRACE("br\n");
 			for (;;) { MCC_TRACE("br\n");
 				if (l != FUNC_OLD) { MCC_TRACE("br\n");
 					if ((pt.t & VT_BTYPE) == VT_VOID && tok == ')') { MCC_TRACE("br\n");

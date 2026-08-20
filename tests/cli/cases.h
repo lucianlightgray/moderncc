@@ -588,6 +588,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'protofirst=%s deffirst=%s control=%s\\n' $pf $df $ctl",
 		 "protofirst=1 deffirst=1 control=7\n"},
 
+		{"c23_empty_paren_std_gated", "",
+		 "printf 'int g();\\nint main(void){ return g(1,2); }\\n' > {W}/ep.c && "
+		 "{MCC} -B{B} -c {W}/ep.c -o {W}/ep_d.o 2>{W}/ep_d.e; dflt=$?; "
+		 "{MCC} -B{B} -std=c23 -c {W}/ep.c -o {W}/ep_c.o 2>{W}/ep_c.e; c23=$?; "
+		 "{MCC} -B{B} -std=gnu23 -c {W}/ep.c -o {W}/ep_g.o 2>{W}/ep_g.e; gnu=$?; "
+		 "printf 'default=%s c23=%s gnu23=%s\\n' $dflt $c23 $gnu",
+		 "default=0 c23=1 gnu23=0\n"},
+
 		{"builtin_dwarf_cfa", "",
 		 "printf 'int main(void){ char*c=(char*)__builtin_dwarf_cfa(); char*f=(char*)__builtin_frame_address(0); return (c>=f && c!=0) ? 7 : 0; }\\n' > {W}/cfa.c && "
 		 "{MCC} -B{B} {W}/cfa.c -o {W}/cfa.exe && {W}/cfa.exe; echo val=$?; "

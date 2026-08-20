@@ -1154,6 +1154,18 @@ static inline int c99_stmt_scopes(MCCState *s1) {
 	return s1->cversion >= 199901;
 }
 
+/* Fleet C23-strictness policy (2026-08-20, human-decided via QUESTIONS.md): the
+ * DISRUPTIVE C23 breaking changes -- empty `()` == `(void)` (T-mac-30142),
+ * and any future accept->reject C23 change -- are honored ONLY under an
+ * explicit strict-ISO C23 std (`-std=c23`/`iso9899:2024`), NOT the default
+ * gnu23 mode. This keeps existing K&R/C17-valid code and mcc's own runtime
+ * building by DEFAULT (so the o0-baseline stays byte-neutral), while `-std=c23`
+ * gets the conforming behavior. NOTE: C23 FEATURES (typeof_unqual, etc.) stay
+ * on by default -- they gate on cversion alone; only breaking changes use this. */
+static inline int c23_strict_breaking(MCCState *s1) {
+	return s1->std_strict_ansi && s1->cversion >= 202311;
+}
+
 struct filespec {
 	char type;
 	char group;
