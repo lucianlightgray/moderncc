@@ -2332,6 +2332,13 @@ ST_FUNC void asm_clobber(uint8_t *clobber_regs, const char *str) { MCC_TRACE("en
 }
 
 ST_FUNC int asm_parse_regvar(int t) { MCC_TRACE("enter\n");
+	if (t >= TOK_ASM_x0 && t <= TOK_ASM_x30) { MCC_TRACE("br\n");
+		int p = t - TOK_ASM_x0;
+		if (p <= 18) { MCC_TRACE("br\n"); return p; }
+		if (p == 30) { MCC_TRACE("br\n"); return MCC_TREG_R30; }
+		if (p <= 28) { MCC_TRACE("br\n"); return MCC_TREG_SAVED(p - 19); }
+		return -1;
+	}
 	return arm64_parse_regvar(t);
 }
 

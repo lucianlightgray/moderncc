@@ -5,6 +5,20 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"arm64_register_asm_local_binds_physical_reg", "cpu=arm64",
+		 "printf 'int main(void){\\n"
+		 "register long a asm(\"x19\")=0x11; register long b asm(\"x20\")=0x22;\\n"
+		 "register long c asm(\"x28\")=0x33; register long d asm(\"x30\")=0x44;\\n"
+		 "register long e asm(\"x9\")=0x55; long oa,ob,oc,od,oe;\\n"
+		 "asm volatile(\"mov %%0, x19\":\"=r\"(oa):\"r\"(a));\\n"
+		 "asm volatile(\"mov %%0, x20\":\"=r\"(ob):\"r\"(b));\\n"
+		 "asm volatile(\"mov %%0, x28\":\"=r\"(oc):\"r\"(c));\\n"
+		 "asm volatile(\"mov %%0, x30\":\"=r\"(od):\"r\"(d));\\n"
+		 "asm volatile(\"mov %%0, x9\":\"=r\"(oe):\"r\"(e));\\n"
+		 "return !(oa==0x11 && ob==0x22 && oc==0x33 && od==0x44 && oe==0x55);}\\n' > {W}/rv.c && "
+		 "{MCC} -B{B} {W}/rv.c -o {W}/rv && {W}/rv && echo BIND_OK",
+		 "BIND_OK\n"},
+
 		{"o4_search_does_not_repeat_diagnostics", "cpu=x86_64,os=linux",
 		 "printf '_Alignas(16) i3;\\nint main(void){return 0;}\\n' > {W}/od.c && "
 		 "XDG_CACHE_HOME={W}/c1 {MCC} -B{B} -I{I} -O1 -c {W}/od.c -o {W}/o1.o 2>{W}/e1.txt; "
