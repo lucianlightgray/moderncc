@@ -5,6 +5,13 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"builtin_f128_inf_nan", "cpu=arm64",
+		 "printf 'int main(void){__float128 i=__builtin_infq(),h=__builtin_huge_valq(),j=__builtin_inff128();"
+		 "__float128 n=__builtin_nanq(\"\"),s=__builtin_nansq(\"\"),m=__builtin_nanf128(\"\"),hf=__builtin_huge_valf128();"
+		 "return ((i==h)&&(i==j)&&(i==hf)&&(i>(__float128)1e300)&&(n!=n)&&(s!=s)&&(m!=m))?0:1;}\\n' > {W}/f128b.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/f128b.c && echo OK",
+		 "OK\n"},
+
 		{"float32_float64_type_keywords", "",
 		 "printf 'int main(void){_Float32 a=1.5f;float b=a;_Float64 c=2.5;double d=c;"
 		 "_Float32 e=a+1.0f;_Float32 h=1.5f32;_Float64 g=2.5f64;"

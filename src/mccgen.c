@@ -2628,6 +2628,8 @@ static void fconst_bits(unsigned char *d, CValue *cv, int t) { MCC_TRACE("enter\
 		{ MCC_TRACE("br\n"); write64le(d, cv->i); }
 	else if (bt == VT_LDOUBLE)
 		{ MCC_TRACE("br\n"); write_ldouble(d, &cv->ld); }
+	else if (bt == VT_FLOAT128)
+		{ MCC_TRACE("br\n"); write64le(d, cv->q.lo); write64le(d + 8, cv->q.hi); }
 	else
 		{ MCC_TRACE("br\n"); write64le(d, cv->i); }
 }
@@ -14263,14 +14265,35 @@ tok_next:
 	case TOK_builtin_huge_vall:
 	case TOK_builtin_nanf16:
 	case TOK_builtin_inff16:
+#ifdef MCC_HAVE_FLOAT128
+	case TOK_builtin_infq:
+	case TOK_builtin_huge_valq:
+	case TOK_builtin_nanq:
+	case TOK_builtin_nansq:
+	case TOK_builtin_inff128:
+	case TOK_builtin_huge_valf128:
+	case TOK_builtin_nanf128:
+	case TOK_builtin_nansf128:
+#endif
 	case TOK_builtin_huge_valf16: {
 		int btok = tok, fbt;
 		unsigned long long bits;
 		CValue cv;
-		int is_nan = (btok == TOK_builtin_nan || btok == TOK_builtin_nanf || btok == TOK_builtin_nanl || btok == TOK_builtin_nanf16);
+		int is_nan = (btok == TOK_builtin_nan || btok == TOK_builtin_nanf || btok == TOK_builtin_nanl || btok == TOK_builtin_nanf16
+#ifdef MCC_HAVE_FLOAT128
+				|| btok == TOK_builtin_nanq || btok == TOK_builtin_nansq
+				|| btok == TOK_builtin_nanf128 || btok == TOK_builtin_nansf128
+#endif
+				);
 		int is_float = (btok == TOK_builtin_nanf || btok == TOK_builtin_inff || btok == TOK_builtin_huge_valf);
 		int is_ld = (btok == TOK_builtin_nanl || btok == TOK_builtin_infl || btok == TOK_builtin_huge_vall);
 		int is_f16 = (btok == TOK_builtin_nanf16 || btok == TOK_builtin_inff16 || btok == TOK_builtin_huge_valf16);
+		int is_f128 = 0, is_snan = 0;
+#ifdef MCC_HAVE_FLOAT128
+		is_f128 = (btok == TOK_builtin_infq || btok == TOK_builtin_huge_valq || btok == TOK_builtin_nanq || btok == TOK_builtin_nansq
+				|| btok == TOK_builtin_inff128 || btok == TOK_builtin_huge_valf128 || btok == TOK_builtin_nanf128 || btok == TOK_builtin_nansf128);
+		is_snan = (btok == TOK_builtin_nansq || btok == TOK_builtin_nansf128);
+#endif
 
 		if (is_nan)
 			{ MCC_TRACE("br\n"); parse_builtin_params(1, "e"); }
@@ -14279,6 +14302,15 @@ tok_next:
 		if (is_nan) { MCC_TRACE("br\n");
 			vtop--;
 		}
+#ifdef MCC_HAVE_FLOAT128
+		if (is_f128) { MCC_TRACE("br\n");
+			cv.q.lo = 0;
+			cv.q.hi = is_snan ? 0x7fff400000000000ULL
+					: is_nan ? 0x7fff800000000000ULL
+					: 0x7fff000000000000ULL;
+			fbt = VT_FLOAT128;
+		} else
+#endif
 		if (is_f16) { MCC_TRACE("br\n");
 			cv.i = is_nan ? 0x7e00 : 0x7c00;
 			fbt = VT_FLOAT16;
