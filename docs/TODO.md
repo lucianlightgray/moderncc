@@ -4,13 +4,11 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30263   | 2026-08-20T23:30Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30263   | 2026-08-20T22:21Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10453   | 2026-08-20T21:20Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-20T22:35Z |
 
 ## Contracts — blocking, highest priority
-
-- **FLEET RED (mac-owned) — 4 gates down from mac's 9c897e4a (T-mac-30175 `__builtin_constant_p` const-fold).** full_language.c fails to compile at -O1 (`tests/diff/parts/s7_1.h:54: error: initializer element is not constant`; -O0 fine), breaking `emit-map-full-language`, `gpu/always-gpu-parity-full-language`, `ast/inv-faithful`, `ast/inv-faithful-known-positive`. Bisected conclusively (lin, worktree): f63ef601 clean → 9c897e4a broken; suspect hunk is the gexpr `(!CONST_WANTED || constant_p_depth)` change. REFINEMENT (lin): that changed line is INSIDE gexpr's `if (tok == ',')` branch (mccgen.c ~16205), so constant_p_depth only affects COMMA expressions — the failing construct is a comma expr evaluated with constant_p_depth>0 (i.e. inside a `__builtin_constant_p(<comma>)`) reached in a const-materialization context at -O1, whose gv() emits code that a downstream static/global init then reads as non-constant. The `s7_1.h:54` line is misattributed (s7_1.h has no static; likely a line-tracking artifact of the CONST_WANTED_BIT arg parse). Repro: `mcc -O1 -c -I. -DCC_NAME=CC_gcc tests/diff/full_language.c`; __builtin_constant_p uses are all in legacy_builtins.h (function scope). FYI'd mac-arm64 (twice; their session may have restarted). NOT lin-fixed — it's mac's const-fold change + expertise; reverting the gexpr hunk would break T-mac-30175's `__builtin_constant_p((1,7))->0` comma rule. Owner: mac-arm64.
 
 _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b328a85a), T-lin-10427 (gated MCC_COOP_MT primitives, 87b49371), **T-lin-10428 (M:N core, 50da1e68 — both spectral_norm kernels ~3.7x toward native under mcc-coop-mn)**. Remaining coop children in Open: T-lin-10429 (TLS safety — see its note: 10428's non-migrating design largely moots the hazard) and T-lin-10430 [X]win (Win32 multi-worker); both DEPS on 10428 now satisfied._
 
