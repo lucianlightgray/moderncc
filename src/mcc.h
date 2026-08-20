@@ -917,6 +917,7 @@ struct MCCState {
 	unsigned char cx_limited_range;
 	unsigned char fold_math;
 	unsigned char no_math_errno;
+	unsigned char fast_math;
 
 	struct InlineFunc **inline_fns;
 	int nb_inline_fns;

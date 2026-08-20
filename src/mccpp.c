@@ -6112,6 +6112,8 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 		{ MCC_TRACE("br\n"); putdef(cs, "__CHAR_UNSIGNED__"); }
 	if (ast_math_errno_folds(s1))
 		{ MCC_TRACE("br\n"); putdef(cs, "__NO_MATH_ERRNO__"); }
+	if (s1->fast_math)
+		{ MCC_TRACE("br\n"); putdef(cs, "__FAST_MATH__"); }
 	if (s1->optimize > 0)
 		{ MCC_TRACE("br\n"); putdef(cs, "__OPTIMIZE__"); }
 	if (s1->optimize_size)

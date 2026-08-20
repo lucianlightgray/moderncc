@@ -1849,6 +1849,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/unlocked_check.c -o {W}/unlocked && {W}/unlocked",
 		 "A1\nB2\nC3\nUNLOCKED_OK\n"},
 
+		{"fast_math_predef_and_fp_opts", "",
+		 "printf 'int main(void){return 0;}\\n' > {W}/fm.c && "
+		 "{MCC} -B{B} -I{I} -ffast-math -dM -E {W}/fm.c 2>&1 | grep -o '__FAST_MATH__ 1' ; "
+		 "{MCC} -B{B} -I{I} -dM -E {W}/fm.c 2>&1 | grep -c '__FAST_MATH__' ; "
+		 "{MCC} -B{B} -I{I} -ffp-contract=fast -funsafe-math-optimizations -c {W}/fm.c -o {W}/fm.o 2>&1 | grep -c unsupported ; echo END",
+		 "__FAST_MATH__ 1\n0\n0\nEND\n"},
+
 		{"xlinker_accepted", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/xl.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/xl.c -o {W}/xl.o -Xlinker -Bsymbolic && echo XLINKER_OK",

@@ -3304,8 +3304,12 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->no_math_errno = on;
 				s->fold_math = on;
 				s->cx_limited_range = on;
+				s->fast_math = on;
 				s->optflag[MCC_OPT_BUILTIN_MATH] = on ? 1 : MCC_OPT_UNSET;
 				s->optflag[MCC_OPT_BUILTIN_MATH_FABS] = on ? 1 : MCC_OPT_UNSET;
+			} else if (!strncmp(optarg, "fp-contract=", 12) ||
+								 !strcmp(optarg, "unsafe-math-optimizations") ||
+								 !strcmp(optarg, "no-unsafe-math-optimizations")) { MCC_TRACE("br\n");
 			} else { MCC_TRACE("br\n");
 				int sf = set_flag(s, options_f, optarg);
 				if (sf == -2)
