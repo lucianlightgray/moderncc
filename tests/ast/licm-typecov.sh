@@ -28,10 +28,10 @@ src=$SRCDIR/tests/misc/licm_typecov_subject.c
 
 lt=$(MCC_STATS=strategy "$MCC" -O4 -c "$src" -o "$WORK/l.o" 2>&1 |
 	sed -n 's/.*[^a-z]ltemp=\([0-9][0-9]*\).*/\1/p' | tail -1)
-echo "ltemp hoists (double+int loops) = $lt"
+echo "ltemp hoists (double+int+long-double+__int128 loops) = $lt"
 
-if [ -z "$lt" ] || [ "$lt" -lt 2 ]; then
-	echo "FAIL: type-complete LICM did not hoist the float loop invariant (ltemp=$lt, want >=2)"
+if [ -z "$lt" ] || [ "$lt" -lt 4 ]; then
+	echo "FAIL: type-complete LICM did not hoist every-width loop invariant (ltemp=$lt, want >=4)"
 	exit 1
 fi
 
@@ -44,4 +44,4 @@ if [ "$r0" != "$r4" ]; then
 	exit 1
 fi
 
-echo "ast/licm-typecov OK: LICM type-complete (ltemp=$lt over double+int), result-invariant ($r4)"
+echo "ast/licm-typecov OK: LICM type-complete (ltemp=$lt over double+int+long-double+__int128), result-invariant ($r4)"

@@ -20,9 +20,9 @@ mkdir -p "$WORK"
 src=$SRCDIR/tests/misc/pre_typecov_subject.c
 pre=$(MCC_STATS=strategy "$MCC" -O4 -c "$src" -o "$WORK/p.o" 2>&1 |
 	sed -n 's/.*[^a-z]pre=\([0-9][0-9]*\).*/\1/p' | tail -1)
-echo "pre folds (double+int) = $pre"
-if [ -z "$pre" ] || [ "$pre" -lt 2 ]; then
-	echo "FAIL: type-complete PRE did not fire on the float redundancy (pre=$pre, want >=2)"; exit 1
+echo "pre folds (double+int+long-double+__int128) = $pre"
+if [ -z "$pre" ] || [ "$pre" -lt 4 ]; then
+	echo "FAIL: type-complete PRE did not fire on every-width redundancy (pre=$pre, want >=4)"; exit 1
 fi
 "$MCC" -O0 "$src" -o "$WORK/r0" >/dev/null 2>&1
 "$MCC" -O4 "$src" -o "$WORK/r4" >/dev/null 2>&1
@@ -30,4 +30,4 @@ r0=$("$WORK/r0"); r4=$("$WORK/r4")
 if [ "$r0" != "$r4" ]; then
 	echo "FAIL: -O4 output differs from -O0 ('$r4' vs '$r0')"; exit 1
 fi
-echo "ast/pre-typecov OK: PRE type-complete (pre=$pre over double+int), result-invariant ($r4)"
+echo "ast/pre-typecov OK: PRE type-complete (pre=$pre over double+int+long-double+__int128), result-invariant ($r4)"

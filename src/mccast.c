@@ -2181,6 +2181,19 @@ static int ast_ltemp_mint(int size, int align) { MCC_TRACE("enter\n");
 	return off;
 }
 
+static int ast_ltemp_size(int et, uint64_t er, int *palign) { MCC_TRACE("enter\n");
+	CType ct;
+	ct.t = et;
+	ct.ref = (Sym *)(uintptr_t)er;
+	int al = 8, sz = type_size(&ct, &al);
+	if (sz <= 8)
+		{ MCC_TRACE("br\n"); *palign = 8; return 8; }
+	if (al < 8)
+		{ MCC_TRACE("br\n"); al = 8; }
+	*palign = al;
+	return sz;
+}
+
 int ast_ltemp_overlaps(int lo, int sz) { MCC_TRACE("enter\n");
 	for (int t = 0; t < ast_ltemp_n; t++) { MCC_TRACE("br\n");
 		int a = ast_ltemp_off[t], as = ast_ltemp_sz[t] > 0 ? ast_ltemp_sz[t] : 8;
@@ -13466,7 +13479,7 @@ static void ast_ltemp_scan(AstArena *a, AstLocal loop, AstLocal n, int lval) { M
 			ast_cse_regpure(a, n) && ast_licm_operands_ok(a, loop, n)) { MCC_TRACE("br\n");
 		int et;
 		uint64_t er;
-		if (ast_ident_etype(a, n, &et, &er) && ast_cse_scalar(et)) { MCC_TRACE("br\n");
+		if (ast_ident_etype(a, n, &et, &er) && ast_cse_wide(et)) { MCC_TRACE("br\n");
 			int cnt = 0;
 			ast_ltemp_count_occ(a, loop, n, 0, &cnt);
 			if (cnt >= 1) { MCC_TRACE("br\n");
@@ -13511,12 +13524,15 @@ static int ast_ltemp_materialize(AstArena *a, AstLocal loop, AstLocal e) { MCC_T
 	uint64_t er;
 	if (ast_ltemp_n >= AST_LTEMP_MAX)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (!ast_ident_etype(a, e, &et, &er) || !ast_cse_scalar(et))
+	if (!ast_ident_etype(a, e, &et, &er) || !ast_cse_wide(et))
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal parent = ast_parent(a, loop);
 	if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
 		{ MCC_TRACE("br\n"); return 0; }
-	int off = (ast_ltemp_cur - 8) & -8;
+	int lal, lsz = ast_ltemp_size(et, er, &lal);
+	int off = ast_ltemp_mint(lsz, lal);
+	if (!off)
+		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal lref = ast_node(a, AST_Ref);
 	ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
 	ast_set_ival(a, lref, (uint64_t)off);
@@ -13536,8 +13552,6 @@ static int ast_ltemp_materialize(AstArena *a, AstLocal loop, AstLocal e) { MCC_T
 	ast_licm_subst(a, loop, e, tref, 0);
 	ast_cse_setref(a, e, tref);
 	ast_licm_folds++;
-	ast_ltemp_cur = off;
-	ast_ltemp_add(off, 8);
 	return 1;
 }
 
@@ -16650,7 +16664,7 @@ static int ast_pre_run(AstArena *a) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); continue; }
 		int et;
 		uint64_t er;
-		if (!ast_ident_etype(a, e, &et, &er) || !ast_cse_scalar(et))
+		if (!ast_ident_etype(a, e, &et, &er) || !ast_cse_wide(et))
 			{ MCC_TRACE("br\n"); continue; }
 		if (!ast_licm_operands_ok(a, n, e))
 			{ MCC_TRACE("br\n"); continue; }
@@ -16671,7 +16685,10 @@ static int ast_pre_run(AstArena *a) { MCC_TRACE("enter\n");
 		}
 		if (post == AST_NONE)
 			{ MCC_TRACE("br\n"); continue; }
-		int off = (ast_ltemp_cur - 8) & -8;
+		int pal, psz = ast_ltemp_size(et, er, &pal);
+		int off = ast_ltemp_mint(psz, pal);
+		if (!off)
+			{ MCC_TRACE("br\n"); continue; }
 		AstLocal lref = ast_node(a, AST_Ref);
 		ast_set_op(a, lref, VT_LOCAL | VT_LVAL);
 		ast_set_ival(a, lref, (uint64_t)off);
@@ -16693,8 +16710,6 @@ static int ast_pre_run(AstArena *a) { MCC_TRACE("enter\n");
 		ast_licm_subst(a, prhs, e, tref, 0);
 		ast_cse_setref(a, e, tref);
 		ast_licm_folds++;
-		ast_ltemp_cur = off;
-		ast_ltemp_add(off, 8);
 		did++;
 	}
 	return did;
