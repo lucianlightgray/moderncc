@@ -562,6 +562,13 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'protofirst=%s deffirst=%s control=%s\\n' $pf $df $ctl",
 		 "protofirst=1 deffirst=1 control=7\n"},
 
+		{"builtin_dwarf_cfa", "",
+		 "printf 'int main(void){ char*c=(char*)__builtin_dwarf_cfa(); char*f=(char*)__builtin_frame_address(0); return (c>=f && c!=0) ? 7 : 0; }\\n' > {W}/cfa.c && "
+		 "{MCC} -B{B} {W}/cfa.c -o {W}/cfa.exe && {W}/cfa.exe; echo val=$?; "
+		 "printf 'int main(void){ return (int)(long)__builtin_dwarf_cfa(0); }\\n' > {W}/cfaa.c && "
+		 "{MCC} -B{B} -c {W}/cfaa.c -o {W}/cfaa.o 2>{W}/cfaa.e; echo arg=$?",
+		 "val=7\narg=1\n"},
+
 		{"preprocess_C_keeps_comments", "",
 		 "printf '#define M 1 /* DIRCMT */\\nint aa; /* BLOCKCMT */ int bb; // LINECMT\\nint cc = M;\\n' > {W}/kc.c && "
 		 "{MCC} -B{B} -E -C {W}/kc.c > {W}/kcC.out 2>{W}/kc.e1 && "

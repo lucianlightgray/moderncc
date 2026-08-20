@@ -14351,6 +14351,31 @@ tok_next:
 			PUT_R_RET(vtop, at.t);
 		}
 	} break;
+	case TOK_builtin_dwarf_cfa: {
+		/* T-mac-30206: the DWARF Canonical Frame Address -- the caller's stack
+		 * pointer value at the call site, i.e. the word just above the saved
+		 * return address. Derived from the frame pointer using the SAME
+		 * per-target frame layout __builtin_return_address encodes (the return
+		 * address sits one word below the CFA in these ABIs). On x86_64/arm64
+		 * CFA = frame_address(0) + 2*PTR_SIZE (verified on win-x64 against
+		 * gcc/clang: `cfa - __builtin_frame_address(0)` == 16); on riscv64 the
+		 * prologue sets fp to the CFA already, so no adjustment is needed. */
+		next();
+		skip('(');
+		skip(')');
+		type.t = VT_VOID;
+		mk_pointer(&type);
+		vset(&type, VT_LOCAL, 0);
+#ifdef MCC_TARGET_ARM
+		vpushi(3 * MCC_PTR_SIZE);
+		gen_op('+');
+#elif defined MCC_TARGET_RISCV64
+		/* fp already points at the CFA -- nothing to add */
+#else
+		vpushi(2 * MCC_PTR_SIZE);
+		gen_op('+');
+#endif
+	} break;
 	case TOK_builtin_frame_address:
 	case TOK_builtin_return_address: {
 		int tok1 = tok;
