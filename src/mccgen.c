@@ -8634,7 +8634,8 @@ static void gen_vector_op(int op) { MCC_TRACE("enter\n");
 				ebt == VT_LLONG) { MCC_TRACE("br\n");
 			int ial, iesz = type_size(vector_elem_type(&vt), &ial);
 			if (iesz * n == 16 && (op == '+' || op == '-' || op == '&' ||
-														 op == '|' || op == '^')) { MCC_TRACE("br\n");
+														 op == '|' || op == '^' ||
+														 (op == '*' && iesz == 2))) { MCC_TRACE("br\n");
 				x86_64_vec16_packed_iop(&res, &lhs, &rhs, op, iesz);
 				vpushv(&res);
 				return;

@@ -1352,6 +1352,7 @@ void x86_64_vec16_packed_iop(SValue *res, SValue *lhs, SValue *rhs, int op, int 
 	case '&': opc = 0xdb; break;
 	case '|': opc = 0xeb; break;
 	case '^': opc = 0xef; break;
+	case '*': opc = 0xd5; break;
 	case '+':
 		opc = esz == 1 ? 0xfc : esz == 2 ? 0xfd : esz == 8 ? 0xd4 : 0xfe;
 		break;
