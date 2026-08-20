@@ -529,6 +529,8 @@ static void mcc_macho_add_destructor(MCCState *s1) { MCC_TRACE("enter\n");
 	s = find_section(s1, ".fini_array");
 	if (s->data_offset == 0)
 		{ MCC_TRACE("br\n"); return; }
+	reorder_ctor_array(s1, ".fini_array", s1->ctor_fini_prio,
+										 s1->nb_ctor_fini_prio);
 	init_sym = put_elf_sym(s1->symtab, text_section->data_offset, 0,
 												 ELFW(ST_INFO)(STB_LOCAL, STT_FUNC), 0,
 												 text_section->sh_num, "___GLOBAL_init_65535");
@@ -609,6 +611,8 @@ static void mcc_macho_add_destructor(MCCState *s1) { MCC_TRACE("enter\n");
 	s->reloc->data_offset = s->data_offset = 0;
 	s->sh_flags &= ~SHF_ALLOC;
 	add_array(s1, ".init_array", init_sym);
+	dynarray_add(&s1->ctor_init_prio, &s1->nb_ctor_init_prio,
+							 (void *)(intptr_t)0);
 }
 
 #if MCC_CONFIG_MACHO_CHAINED_FIXUPS

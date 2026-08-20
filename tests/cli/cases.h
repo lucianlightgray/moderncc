@@ -5,13 +5,24 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
-		{"wsequence_point_readwrite", "",
-		 "printf 'void g(int *a,int i,int x){ a[i]=i++; x=i+i++; (void)a;(void)x; }\\n' > {W}/sprw.c && "
-		 "printf 'void h(int i,int x){ i=i+1; i=i+i; i+=i; x=i; (void)x; }\\n' > {W}/sprc.c && "
-		 "{ {MCC} -B{B} -I{I} -Wsequence-point -c {W}/sprw.c -o {W}/sprw.o 2>&1; "
-		 "{MCC} -B{B} -I{I} -Wsequence-point -c {W}/sprc.c -o {W}/sprc.o 2>&1 && echo CLEAN_OK; } | "
-		 "grep -oE \"operation on 'i' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
-		 "1 CLEAN_OK\n2 operation on 'i' may be undefined\n"},
+		{"ctor_dtor_priority_aot", "os=Darwin",
+		 "printf 'extern long write(int,const void*,unsigned long);\\n"
+		 "#ifdef C\\n"
+		 "__attribute__((constructor(200))) static void c2(void){write(1,\"2\",1);}\\n"
+		 "__attribute__((constructor(100))) static void c1(void){write(1,\"1\",1);}\\n"
+		 "__attribute__((constructor)) static void cd(void){write(1,\"D\",1);}\\n"
+		 "#endif\\n"
+		 "#ifdef D\\n"
+		 "__attribute__((destructor(200))) static void e2(void){write(1,\"y\",1);}\\n"
+		 "__attribute__((destructor(100))) static void e1(void){write(1,\"x\",1);}\\n"
+		 "__attribute__((destructor)) static void ed(void){write(1,\"z\",1);}\\n"
+		 "#endif\\n"
+		 "int main(void){write(1,\"M\",1);return 0;}\\n' > {W}/cd.c && "
+		 "{MCC} -B{B} -nostdinc -w -DC -DD {W}/cd.c -o {W}/cdab && "
+		 "{MCC} -B{B} -nostdinc -w -DC {W}/cd.c -o {W}/cdco && "
+		 "{MCC} -B{B} -nostdinc -w -DD {W}/cd.c -o {W}/cddo && "
+		 "printf 'a=%s b=%s c=%s\\n' \"$({W}/cdab)\" \"$({W}/cdco)\" \"$({W}/cddo)\"",
+		 "a=12DMzyx b=12DM c=Mzyx\n"},
 
 		{"arm64_register_asm_local_binds_physical_reg", "cpu=arm64",
 		 "printf 'int main(void){\\n"

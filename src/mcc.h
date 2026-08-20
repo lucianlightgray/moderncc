@@ -1828,6 +1828,7 @@ ST_FUNC int mcc_object_type(int fd, ElfW(Ehdr) * h);
 ST_FUNC int mcc_load_object_file(MCCState *s1, int fd, unsigned long file_offset);
 ST_FUNC int mcc_load_archive(MCCState *s1, int fd, int alacarte);
 ST_FUNC void add_array(MCCState *s1, const char *sec, int c);
+ST_FUNC void reorder_ctor_array(MCCState *s1, const char *secname, void **prios, int nb_prio);
 
 ST_FUNC struct sym_attr *get_sym_attr(MCCState *s1, int index, int alloc);
 ST_FUNC addr_t get_sym_addr(MCCState *s, const char *name, int err, int forc);

@@ -389,15 +389,12 @@ static void block(int flags);
 
 enum {
 	SEQP_READ,
-	SEQP_WRITE,
-	SEQP_MODIFY
+	SEQP_WRITE
 };
 
 #define seqp_ev (mcc_state->seqp_ev)
 #define nb_seqp (mcc_state->nb_seqp)
 #define seqp_overflow (mcc_state->seqp_overflow)
-
-static int seqp_modify_pending;
 
 static void seqp_reset(void) { MCC_TRACE("enter\n");
 	nb_seqp = 0;
@@ -423,7 +420,7 @@ static void seqp_record_sv(SValue *sv, int kind) { MCC_TRACE("enter\n");
 	if (!seqp_key(sv, &obj, &off))
 		{ MCC_TRACE("br\n"); return; }
 	if ((mcc_state->warn_uninitialized & WARN_ON) && (obj->r & VT_VALMASK) == VT_LOCAL && obj->v >= TOK_IDENT && obj->v < SYM_FIRST_ANOM) { MCC_TRACE("br\n");
-		if (kind != SEQP_READ)
+		if (kind == SEQP_WRITE)
 			{ MCC_TRACE("br\n"); obj->a.inited = 1; }
 		else if (!obj->a.inited && !obj->a.addrtaken) { MCC_TRACE("br\n");
 			mcc_warning_c(warn_uninitialized)(
@@ -449,23 +446,17 @@ static void seqp_check(void) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); return; }
 	for (i = 0; i < nb_seqp; i++) { MCC_TRACE("br\n");
 		Sym *o = seqp_ev[i].obj;
-		unsigned long long ooff;
-		int reads = 0, writes = 0, mods = 0;
-		if (!o)
+		unsigned long long ooff = seqp_ev[i].off;
+		int writes = 0;
+		if (!o || seqp_ev[i].kind != SEQP_WRITE)
 			{ MCC_TRACE("br\n"); continue; }
-		ooff = seqp_ev[i].off;
-		for (j = i; j < nb_seqp; j++) { MCC_TRACE("br\n");
-			if (seqp_ev[j].obj != o || seqp_ev[j].off != ooff)
-				{ MCC_TRACE("br\n"); continue; }
-			if (seqp_ev[j].kind == SEQP_READ)
-				{ MCC_TRACE("br\n"); reads++; }
-			else { MCC_TRACE("br\n"); writes++;
-				if (seqp_ev[j].kind == SEQP_MODIFY)
-					{ MCC_TRACE("br\n"); mods++; } }
-			if (j > i)
-				{ MCC_TRACE("br\n"); seqp_ev[j].obj = NULL; }
-		}
-		if (writes >= 2 || (mods >= 1 && reads > mods))
+		for (j = i; j < nb_seqp; j++)
+			{ MCC_TRACE("br\n"); if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff && seqp_ev[j].kind == SEQP_WRITE)
+				{ MCC_TRACE("br\n"); writes++; } }
+		for (j = i + 1; j < nb_seqp; j++)
+			{ MCC_TRACE("br\n"); if (seqp_ev[j].obj == o && seqp_ev[j].off == ooff)
+				{ MCC_TRACE("br\n"); seqp_ev[j].obj = NULL; } }
+		if (writes >= 2)
 			{ MCC_TRACE("br\n"); mcc_warning_c(warn_sequence_point)(
 					"operation on '%s' may be undefined", get_tok_str(o->v, NULL)); }
 	}
@@ -6230,8 +6221,7 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 	int fbp, fbs;
 	rir_hook_vstore();
 
-	seqp_record_sv(vtop - 1, seqp_modify_pending ? SEQP_MODIFY : SEQP_WRITE);
-	seqp_modify_pending = 0;
+	seqp_record_sv(vtop - 1, SEQP_WRITE);
 	bitint_deconst();
 	wideint_deconst();
 
@@ -6498,7 +6488,6 @@ ST_FUNC void inc(int post, int c) { MCC_TRACE("enter\n");
 		}
 		vpushi(c - TOK_MID);
 		gen_op('+');
-		seqp_modify_pending = 1;
 		vstore();
 		if (post)
 			{ MCC_TRACE("br\n"); vpop(); }
@@ -15550,6 +15539,7 @@ static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 		wur_call_name = 0;
 		next();
 		c = condition_3way();
+		seqp_flush();
 		g = (tok == ':' && gnu_ext);
 		if (g)
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C forbids omitting the middle term of a ?: expression"); }
@@ -15575,7 +15565,6 @@ static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 			tt = gvtst(0, 0);
 		}
 
-		seqp_flush();
 		if (c == 0)
 			{ MCC_TRACE("br\n"); nocode_wanted++; }
 		rir_hook_ternary_branch(0);

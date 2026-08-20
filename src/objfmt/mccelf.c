@@ -1866,7 +1866,7 @@ static int ctor_prio_key(int enc) { MCC_TRACE("enter\n");
 	return enc == 0 ? 0x7fffffff : enc - 1;
 }
 
-static void reorder_ctor_array(MCCState *s1, const char *secname,
+ST_FUNC void reorder_ctor_array(MCCState *s1, const char *secname,
 															 void **prios, int nb_prio) { MCC_TRACE("enter\n");
 	Section *s, *sr;
 	ElfW_Rel *rel;
