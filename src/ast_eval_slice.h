@@ -2169,6 +2169,17 @@ static int (*ast_ladder_gpu_hook)(AstArena *a, AstLocal ar, AstArena *b,
 																	int total, uint64_t space,
 																	AstEvalLadderRes *res);
 
+static int (*ast_ladder_gpu_tuples_hook)(AstArena *a, AstLocal ar, AstArena *b,
+																				 AstLocal br, const AstEvalLadderIn *in,
+																				 int n, const int64_t *vals, int ntuple,
+																				 AstEvalLadderRes *res);
+
+#ifndef AST_LADDER_GPU_MAX
+#define AST_LADDER_GPU_MAX (1u << 20)
+#endif
+
+#define AST_LADDER_GPU_CORNER_CAP 256
+
 static int ast_eval_ladder_rung(AstArena *a, AstLocal ar, AstArena *b,
 																AstLocal br, const AstEvalLadderIn *in, int n,
 																int w, unsigned long budget, int *exact,
@@ -2253,6 +2264,21 @@ static int ast_eval_ladder_corner_sweep(AstArena *a, AstLocal ar, AstArena *b,
 			return -1;
 		total *= (unsigned long)k[i];
 	}
+	if (ast_ladder_gpu_tuples_hook && total >= 1 &&
+			total <= AST_LADDER_GPU_CORNER_CAP) {
+		int64_t vals[AST_LADDER_GPU_CORNER_CAP * AST_EVAL_LADDER_MAXIN];
+		int hr;
+		for (s = 0; s < total; s++) {
+			unsigned long rem = s;
+			for (i = 0; i < n; i++) {
+				vals[s * n + i] = set[i][rem % (unsigned long)k[i]];
+				rem /= (unsigned long)k[i];
+			}
+		}
+		hr = ast_ladder_gpu_tuples_hook(a, ar, b, br, in, n, vals, (int)total, res);
+		if (hr >= 0)
+			return hr;
+	}
 	for (s = 0; s < total; s++) {
 		unsigned long rem = s;
 		for (i = 0; i < n; i++) {
@@ -2279,6 +2305,11 @@ static int ast_eval_ladder_observed(AstArena *a, AstLocal ar, AstArena *b,
 															ast_eval_ladder_obs_user);
 	if (nt <= 0)
 		return -1;
+	if (ast_ladder_gpu_tuples_hook) {
+		int hr = ast_ladder_gpu_tuples_hook(a, ar, b, br, in, n, tuples, nt, res);
+		if (hr >= 0)
+			return hr;
+	}
 	for (t = 0; t < nt; t++) {
 		int64_t val[AST_EVAL_LADDER_MAXIN];
 		for (i = 0; i < n; i++)
