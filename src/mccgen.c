@@ -7650,7 +7650,7 @@ static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_T
 	int v, c, size, align, flexible, saw_vla, no_field, late_bf;
 	int bit_size, bsize, bt, ut;
 	Sym *s, *ss, **ps, *redef_prev = NULL;
-	int redef_saved_c = 0;
+	int redef_saved_c = 0, decl_line = 0;
 	AttributeDef ad, ad1;
 	CType type1, btype;
 
@@ -7661,7 +7661,7 @@ static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_T
 
 	v = 0;
 	if (tok >= TOK_IDENT)
-		{ MCC_TRACE("br\n"); v = tok, next(); }
+		{ MCC_TRACE("br\n"); v = tok; decl_line = file->line_num; next(); }
 	int named_tag = v;
 
 	bt = ut = 0;
@@ -7695,6 +7695,7 @@ static void struct_decl_nested(CType *type, int u, AttributeDef *ad_out) { MCC_T
 		if (tok != '{')
 			{ MCC_TRACE("br\n"); expect("struct/union/enum name"); }
 		v = anon_sym++;
+		decl_line = file->line_num;
 	}
 	type1.t = u | ut;
 	type1.ref = NULL;
@@ -7731,6 +7732,7 @@ do_decl:
 			tag_redef_parse++;
 		}
 		s->c = -2;
+		s->decl_line = decl_line;
 		ps = &s->next;
 		if (u == VT_ENUM) { MCC_TRACE("br\n");
 			long long ll = 0, pl = 0, nl = 0;
@@ -7971,6 +7973,7 @@ do_decl:
 					}
 					if (v) { MCC_TRACE("br\n");
 						ss = sym_push(v | SYM_FIELD, &type1, 0, 0);
+						ss->decl_line = file->line_num;
 						ss->a = ad1.a;
 						ss->a.full_bitfield = late_bf;
 						*ps = ss;

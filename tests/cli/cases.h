@@ -5,6 +5,12 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"debug_dwarf_struct_decl_line", "os=darwin",
+		 "printf 'struct Point {\\nint px;\\nint py;\\n};\\nunion Wrap {\\nint wi;\\nfloat wf;\\n};\\nenum Color {\\nCLR_A,\\nCLR_B\\n};\\nint main(void) {\\nstruct Point p;\\nunion Wrap w;\\nenum Color c;\\np.px = 1; p.py = 2; w.wi = 3; c = CLR_A;\\nreturn p.px + p.py + w.wi + (int)c;\\n}\\n' > {W}/dl.c && "
+		 "{MCC} -B{B} -I{I} -gdwarf-5 -c {W}/dl.c -o {W}/dl.o && "
+		 "dwarfdump {W}/dl.o | awk '/DW_TAG_/{n=\"\"} /DW_AT_name/{gsub(/.*\\(\"|\"\\).*/,\"\");n=$0} /DW_AT_decl_line/{gsub(/.*\\(|\\).*/,\"\");print n\" \"$0}' | grep -E '^(Point|px|py|Wrap|wi|wf|Color) ' | LC_ALL=C sort",
+		 "Color 9\nPoint 1\nWrap 5\npx 2\npy 3\nwf 7\nwi 6\n"},
+
 		{"float128_static_init_const_fold", "cpu=arm64",
 		 "printf '__float128 g=2.5;__float128 z=0.0;__float128 n=-1.5;"
 		 "__float128 big=1234567890123LL;__float128 ql=1.5q;_Float128 h=2.5;"

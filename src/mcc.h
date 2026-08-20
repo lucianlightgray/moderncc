@@ -382,6 +382,7 @@ typedef struct Sym {
 	int vla_inner_id;
 	int vla_min_goto_gpp;
 	int vla_dyn_slot;
+	int decl_line;
 	struct Sym *prev;
 
 	union {
