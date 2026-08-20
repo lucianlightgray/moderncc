@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T02:55Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T03:00Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T02:14Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T03:00Z |
 
@@ -140,8 +140,8 @@
       REF: DETAILS.md#t-lin-10418-riscv64-float128-stdio-blocker | DEPS: —
 
 - [ ] T-mac-30158 [S] Fix: [MED] constructor/destructor priority — **ELF slice DONE (c9ceca6c, lin-x64); Mach-O AOT residual only.** Re-OPENed from lin's zone 2026-08-20T00:45Z (lin cannot DoD-verify Mach-O natively). Remaining = `__mod_init_func`/`__mod_term_func` AOT priority ordering + a new AOT test cell; mac investigated deep (attempt reverted) and fully mapped the fix: make `reorder_ctor_array` permute `prios[]` in sync (→ idempotent), then reorder the resolved data slots at mccmacho.c ~728/928, OR do a single pre-resolution reorder. o0-neutral.
-      OWNER: — | STATE: OPEN | SHA: c9ceca6c | TS: 2026-08-20T00:45Z
-      REF: DETAILS.md#t-mac-30158-macho-ctor-priority-investigation | DEPS: —
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: c9ceca6c | TS: 2026-08-20T03:00Z
+      REF: DETAILS.md#t-mac-30158-macho-ctor-priority-fix-ready | DEPS: —
 
 - [ ] T-lin-10416 [S] Re-bank the stale x86_64-win32 / x86_64-osx (and i386/arm/arm64-win32) o0-baseline boards — a `cmake-cross measurable` CHECK shows `atomic_inlang_rmw.c`/`atomic_ptr.c`/`feature_macros.c` drifting on ALL `*-win32` keys + `codeopt.c` on x86_64-osx (compiler drift landed after the 2e762ccf fleet re-bank; native x86_64 board is current). Needs an EXEC run of the drifted objects per key (win32 under wine, x86_64-osx on a mac) before re-banking — a lin session cannot exec-verify these. win owns the `*-win32` keys; mac owns x86_64-osx.
       OWNER: — | STATE: OPEN | SHA: a67481f1 | TS: 2026-08-19T22:05Z
