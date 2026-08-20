@@ -44,4 +44,19 @@ if [ "$r0" != "$r4" ]; then
 	exit 1
 fi
 
-echo "ast/licm-typecov OK: LICM type-complete (ltemp=$lt over double+int+long-double+__int128), result-invariant ($r4)"
+ltn=$(MCC_STATS=strategy "$MCC" -O4 -fno-tree-loop-im -c "$src" -o "$WORK/ln.o" 2>&1 |
+	sed -n 's/.*[^a-z]ltemp=\([0-9][0-9]*\).*/\1/p' | tail -1)
+echo "ltemp hoists with -fno-tree-loop-im = ${ltn:-unset}"
+if [ -z "$ltn" ] || [ "$ltn" -ge "$lt" ]; then
+	echo "FAIL: -fno-tree-loop-im is INERT (ltemp=$ltn, want < baseline $lt) -- T-lin-10443 flag gate regressed"
+	exit 1
+fi
+
+"$MCC" -O4 -fno-tree-loop-im "$src" -o "$WORK/rn" >/dev/null 2>&1
+rn=$("$WORK/rn")
+if [ "$rn" != "$r0" ]; then
+	echo "FAIL: -fno-tree-loop-im output differs from -O0 ('$rn' vs '$r0')"
+	exit 1
+fi
+
+echo "ast/licm-typecov OK: LICM type-complete (ltemp=$lt over double+int+long-double+__int128), result-invariant ($r4); -fno-tree-loop-im gates it (ltemp $lt->$ltn, T-lin-10443)"
