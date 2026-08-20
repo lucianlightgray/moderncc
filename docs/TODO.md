@@ -539,8 +539,8 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10062-mcc-rir-stamp-is-off-by | DEPS: —
 - [ ] T-lin-10074 [S] `slice/quiesce` is structurally flaky and the device lock is built, priced and off
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 1695806f | TS: 2026-08-20T14:25Z
-      REF: DETAILS.md#t-lin-10074-slicequiesce-is-structurally-flaky-and-the | DEPS: —
+      OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-20T14:30Z
+      REF: DETAILS.md#t-lin-10074-slicequiesce-is-structurally-flaky-and-the | DEPS: — | NOTE (lin-x64, investigated, released on user pivot to optimizer work): the `-DMCC_DEVICE_LOCK` mechanism is a ctest RESOURCE_LOCK (CMakeLists.txt:10936, off) — TEST-harness only, touches no mcc runtime. Root of the flake is cross-process contention on the SHARED physical GPU (separate ctest processes each own a device; `slice/quiesce`'s teardown under -jN load makes peers' submit+wait time out). Per the "mcc must cope with load" directive the fix is mcc-runtime: a cross-process advisory `flock` folded into `MCC_GPU_LOCK`/`MCC_GPU_UNLOCK` (src/mccgpu.c:32-33) — default-ON, auto (instant when uncontended, serializes only under real multi-process contention), `flock` auto-releases on process death (no stale-lock). Env off-switch `MCC_GPU_XLOCK=0`. Needs sys/file.h+fcntl.h includes + xlock helpers. Ties to T-lin-10081 (narrow the in-proc lock via per-context resident state, mccgpu.c:1837) + budget auto-modes (`--jit-gpu-budget=auto` is stubbed unimplemented, mcc.c:103; CPU `auto`=-2 idle-core path works, libmcc.c:3596). Flake did NOT reproduce in 3×26-cell -j8 runs this session (rare).
 - [ ] T-lin-10076 [S] N7 residue — an independent tree-side oracle for the slice evaluator
       OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
       REF: DETAILS.md#t-lin-10076-n7-residue-an-independent-tree-side | DEPS: —
