@@ -2043,6 +2043,26 @@ void mccjit_set_search_budget(unsigned long secs) { MCC_TRACE("enter\n");
 	mccjit_search_budget_baked_s = secs;
 }
 
+#if defined(_WIN32)
+/* No-op ucrt invalid-parameter handler + installer, linked into PE embed-JIT
+ * programs (and mcc's own -run). ucrt printf/scanf fastfail (0xC0000409) on an
+ * invalid parameter; this no-op handler makes them tolerate it, as mingw's CRT
+ * startup does and as the msvcrt AOT path already behaves. Compatible-signature
+ * self-decl avoids a <stdlib.h> dependency here (in C on win wchar_t==unsigned
+ * short and uintptr_t==unsigned long long). (T-win-50021) */
+typedef void (*mccjit_iph_t)(const unsigned short *, const unsigned short *,
+		                     const unsigned short *, unsigned int,
+		                     unsigned long long);
+extern mccjit_iph_t _set_invalid_parameter_handler(mccjit_iph_t);
+static void mccjit_noop_iph(const unsigned short *a, const unsigned short *b,
+			        const unsigned short *c, unsigned int d, unsigned long long e) {
+	(void)a; (void)b; (void)c; (void)d; (void)e;
+}
+void mccjit_win_crt_compat(void) { MCC_TRACE("enter\n");
+	_set_invalid_parameter_handler(mccjit_noop_iph);
+}
+#endif
+
 void mccjit_set_always_gpu(int on) { MCC_TRACE("enter\n");
 	const char *e = getenv("MCC_JIT_ALWAYS_GPU");
 	if (e && *e)
@@ -2139,6 +2159,7 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 									 (void *)mccjit_boot_swap_async);
 #if MCC_HOST_WIN32
 		mcc_add_symbol(s1, "getenv", (void *)getenv);
+		mcc_add_symbol(s1, "mccjit_win_crt_compat", (void *)mccjit_win_crt_compat);
 #endif
 	} else if (MCC_DEV_ENV_ON("MCC_JIT_EXPORT_INTERNALS")) { MCC_TRACE("br\n");
 		int i;
@@ -2184,12 +2205,26 @@ void mccjit_embed_finalize(MCCState *s1) { MCC_TRACE("enter\n");
 		int def_on = (s1->output_type == MCC_OUTPUT_MEMORY && s1->jit >= 0)
 										 ? s1->jit
 										 : (MCC_JIT_DEFAULT ? 1 : 0);
-		cstr_printf(&cs, "extern char *getenv(const char*);\n");
-		cstr_printf(&cs, "extern void mccjit_set_search_budget(unsigned long);\n");
-		cstr_printf(&cs, "extern void mccjit_set_always_gpu(int);\n");
-		cstr_printf(
+			cstr_printf(&cs, "extern char *getenv(const char*);\n");
+			cstr_printf(&cs, "extern void mccjit_set_search_budget(unsigned long);\n");
+			cstr_printf(&cs, "extern void mccjit_set_always_gpu(int);\n");
+#ifdef MCC_TARGET_PE
+			/* PE embed-JIT programs link the ucrt api-sets (from the engine blob),
+			 * whose CRT fastfails (0xC0000409) on an invalid parameter -- e.g. a
+			 * printf format ucrt rejects -- instead of the lenient msvcrt behavior
+			 * the AOT path relies on. Install a no-op invalid-parameter handler via
+			 * the engine fn mccjit_win_crt_compat (so the ucrt import resolves with
+			 * the engine's own imports, not as a late-added reference), exactly as
+			 * mingw's own CRT startup does; before the MCC_JIT gate so it applies
+			 * even at MCC_JIT=0. (T-win-50021) */
+			cstr_printf(&cs, "extern void mccjit_win_crt_compat(void);\n");
+#endif
+			cstr_printf(
 				&cs,
 				"__attribute__((constructor)) static void __mccjit_boot_all(void){\n"
+#ifdef MCC_TARGET_PE
+				"mccjit_win_crt_compat();\n"
+#endif
 				"const char *__e = getenv(\"MCC_JIT\");\n"
 				"int __on = __e ? (__e[0] != '0') : %d;\n"
 				"int __i;\n"
