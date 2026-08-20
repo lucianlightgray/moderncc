@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T04:15Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T03:56Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T04:02Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T05:55Z |
 
 ## Contracts — blocking, highest priority
@@ -110,9 +110,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 
 
 
-- [ ] T-lin-10429 [S] coop M:N slice 4 — fiber-migration TLS safety (THE correctness gate): a fiber resuming on a different worker sees the worker`s `errno`/`_Thread_local` base (and gcc/clang may cache the TLS base in a callee-saved reg across a call). Decide pin-to-worker (no migration, load-imbalanced) vs reload-TLS-base-on-swap; verify no cross-worker TLS corruption. **REFRAMED (lin 2026-08-20, SHA 50da1e68): T-lin-10428 shipped a NON-MIGRATING design — a fiber runs entirely on the worker that picked it (blocks pthread-style on mtx/cnd, resumes same worker), so the migration TLS hazard DOES NOT ARISE in the current pool. This task is reduced to: (a) add a `_Thread_local`/errno-under-mtx regression test proving TLS is stable under MCC_COOP_MN, and (b) decide whether true unbounded M:N (M>>N with blocking, which WOULD need migration + TLS-reload) is ever wanted — if not, likely closeable as WON'T-DO-with-test.** Child of T-lin-10419.
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: 50da1e68 | TS: 2026-08-20T03:58Z
-      REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: T-lin-10428
 
 - [ ] T-lin-10430 [X] coop M:N slice 5 (win-x64) — Win32-fiber multi-worker rework: the coop Windows backend (`mcc_coop_threads.h:133-176`, ConvertThreadToFiber/CreateFiber/SwitchToFiber) assumes ONE OS thread — every worker needs its own ConvertThreadToFiber, the lazy `sp==0` capture breaks under a pool, and fiber handles already leak. Needs native Windows verification. Child of T-lin-10419.
       OWNER: — | STATE: OPEN | SHA: 695eb8c6 | TS: 2026-08-20T02:11Z
