@@ -1436,11 +1436,11 @@
 	#define __builtin_stdc_leading_zeros(x) \
 	((unsigned int)__mcc_clzg1(x))
 	#define __builtin_stdc_leading_ones(x) \
-	((unsigned int)__mcc_clzg1(~(x)))
+	((unsigned int)__mcc_clzg1((__typeof__(x))~(x)))
 	#define __builtin_stdc_trailing_zeros(x) \
 	((unsigned int)__mcc_ctzg1(x))
 	#define __builtin_stdc_trailing_ones(x) \
-	((unsigned int)__mcc_ctzg1(~(x)))
+	((unsigned int)__mcc_ctzg1((__typeof__(x))~(x)))
 	#define __builtin_stdc_first_leading_one(x) (__extension__ ({ \
 	int __mcc_fr = __mcc_clzg1(x); \
 	__mcc_fr == __mcc_gprec(x) ? 0u : (unsigned int)__mcc_fr + 1u; }))
