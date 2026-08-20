@@ -21,7 +21,9 @@ extern void *calloc(size_t, size_t);
 extern void free(void *);
 extern _Noreturn void abort(void);
 extern _Noreturn void exit(int);
+#if !(defined(_WIN32) && defined(MCC_COOP_MN))
 extern long write(int, const void *, size_t);
+#endif
 
 #define thread_local _Thread_local
 
@@ -195,6 +197,7 @@ static void *__mcc_ctx_make(void *__base, unsigned long __size, void (*__entry)(
 extern void *ConvertThreadToFiber(void *__param);
 extern void *CreateFiber(unsigned long long __stack_size, void (*__start)(void *), void *__param);
 extern void SwitchToFiber(void *__fiber);
+extern void DeleteFiber(void *__fiber);
 
 static void __mcc_fiber_proc(void *__entry) {
 	((void (*)(void))__entry)();
@@ -441,6 +444,10 @@ static void __mcc_reap(void) {
 	__MCC_LOCK();
 	if (__mcc_zombie) {
 		__mcc_all_remove(__mcc_zombie);
+#if defined(_WIN32) && defined(__x86_64__)
+		if (__mcc_zombie->sp)
+			DeleteFiber(__mcc_zombie->sp);
+#endif
 		free(__mcc_zombie->stack);
 		free(__mcc_zombie);
 		__mcc_zombie = (__mcc_fiber *)0;
@@ -497,7 +504,16 @@ static void __mcc_need_init(void) {
 	}
 	__mcc_mn_started = 1;
 	__mcc_inited = 1;
+#if defined(_WIN32)
+	{
+		extern char *getenv(const char *);
+		extern int atoi(const char *);
+		char *__np = getenv("NUMBER_OF_PROCESSORS");
+		__n = __np ? atoi(__np) : 1;
+	}
+#else
 	__n = (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
 	if (__n < 1)
 		__n = 1;
 	if (__n > __MCC_MN_MAX_WORKERS)
