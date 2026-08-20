@@ -347,7 +347,7 @@ f128_t __divtf3(f128_t fa, f128_t fb) {
 }
 
 f128_t __negtf2(f128_t f) {
-	((u128_t *)&f)->x1 ^= 1UL << 63;
+	((u128_t *)&f)->x1 ^= (uint64_t)1 << 63;
 	return f;
 }
 
