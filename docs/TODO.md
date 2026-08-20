@@ -270,9 +270,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: INVESTIGATIONS.md#r32-asm-atomics | DEPS: —
       OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
       REF: INVESTIGATIONS.md#r32-hash-adjacency | DEPS: T-mac-30200
-- [ ] T-mac-30206 [S] Fix: [MED, missing builtin] `__builtin_dwarf_cfa()` (canonical frame address, unwind/EH) not in the token table (`mcctok.h`; → implicit-decl error `mccgen.c:14201`) — both clang+gcc-16 support it. The two implemented stack builtins (__builtin_return_address/__builtin_frame_address) are ROBUST at -O0/-O2. Fix: add __builtin_dwarf_cfa returning the CFA.
-      OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
-      REF: INVESTIGATIONS.md#r32-dwarf-cfa | DEPS: —
 - [ ] T-mac-30207 [S] Fix: [LOW cluster] DWARF metadata + rare builtins + -E whitespace — DWARF (no debugger breakage): internal typedefs (__mcc_int_t, __builtin_va_list) misattributed to user source w/ bogus line numbers; const/volatile qualifiers dropped (no DW_TAG_const_type/volatile_type); void modeled as 1-byte DW_ATE_unsigned_char (should be absent/unspecified_type); duplicate .debug_line file_names entry (dwarfdump --verify warning); no column info + no DW_AT_prototyped; formal-params nested in the body lexical_block (T-mac-30103 remnant, lldb-tolerated). Missing rare builtins (clean errors): __builtin_thread_pointer (clang-only), __builtin_dwarf_sp_column, __builtin_stack_address (gcc-only). -E: omits some spaces clang/gcc keep after arg substitution where no merge occurs (cosmetic, e.g. `(5+1)` vs `(5 +1)`).
       OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
       REF: INVESTIGATIONS.md#r32-low-cluster | DEPS: —
