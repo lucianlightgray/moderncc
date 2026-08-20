@@ -226,6 +226,81 @@ static void *__mcc_ctx_make(void *__base, unsigned long __size, void (*__entry)(
 	return (void *)__sp;
 }
 
+#elif defined(__riscv) && __riscv_xlen == 64
+
+__asm__(
+	".text\n"
+	".p2align 2\n"
+	".globl __mcc_ctx_swap\n"
+	"__mcc_ctx_swap:\n"
+	"	addi sp, sp, -208\n"
+	"	sd ra,  0(sp)\n"
+	"	sd s0,  8(sp)\n"
+	"	sd s1,  16(sp)\n"
+	"	sd s2,  24(sp)\n"
+	"	sd s3,  32(sp)\n"
+	"	sd s4,  40(sp)\n"
+	"	sd s5,  48(sp)\n"
+	"	sd s6,  56(sp)\n"
+	"	sd s7,  64(sp)\n"
+	"	sd s8,  72(sp)\n"
+	"	sd s9,  80(sp)\n"
+	"	sd s10, 88(sp)\n"
+	"	sd s11, 96(sp)\n"
+	"	fsd fs0,  104(sp)\n"
+	"	fsd fs1,  112(sp)\n"
+	"	fsd fs2,  120(sp)\n"
+	"	fsd fs3,  128(sp)\n"
+	"	fsd fs4,  136(sp)\n"
+	"	fsd fs5,  144(sp)\n"
+	"	fsd fs6,  152(sp)\n"
+	"	fsd fs7,  160(sp)\n"
+	"	fsd fs8,  168(sp)\n"
+	"	fsd fs9,  176(sp)\n"
+	"	fsd fs10, 184(sp)\n"
+	"	fsd fs11, 192(sp)\n"
+	"	sd sp, 0(a0)\n"
+	"	mv sp, a1\n"
+	"	ld ra,  0(sp)\n"
+	"	ld s0,  8(sp)\n"
+	"	ld s1,  16(sp)\n"
+	"	ld s2,  24(sp)\n"
+	"	ld s3,  32(sp)\n"
+	"	ld s4,  40(sp)\n"
+	"	ld s5,  48(sp)\n"
+	"	ld s6,  56(sp)\n"
+	"	ld s7,  64(sp)\n"
+	"	ld s8,  72(sp)\n"
+	"	ld s9,  80(sp)\n"
+	"	ld s10, 88(sp)\n"
+	"	ld s11, 96(sp)\n"
+	"	fld fs0,  104(sp)\n"
+	"	fld fs1,  112(sp)\n"
+	"	fld fs2,  120(sp)\n"
+	"	fld fs3,  128(sp)\n"
+	"	fld fs4,  136(sp)\n"
+	"	fld fs5,  144(sp)\n"
+	"	fld fs6,  152(sp)\n"
+	"	fld fs7,  160(sp)\n"
+	"	fld fs8,  168(sp)\n"
+	"	fld fs9,  176(sp)\n"
+	"	fld fs10, 184(sp)\n"
+	"	fld fs11, 192(sp)\n"
+	"	addi sp, sp, 208\n"
+	"	ret\n"
+);
+
+extern void __mcc_ctx_swap(void **__save_sp, void *__to_sp);
+
+static void *__mcc_ctx_make(void *__base, unsigned long __size, void (*__entry)(void)) {
+	uintptr_t __top = ((uintptr_t)__base + __size) & ~(uintptr_t)15;
+	void **__sp = (void **)(__top - 208);
+	for (int __i = 0; __i < 26; __i++)
+		__sp[__i] = (void *)0;
+	__sp[0] = (void *)__entry;
+	return (void *)__sp;
+}
+
 #else
 #error "mcc_coop_threads.h: no __mcc_ctx_swap/__mcc_ctx_make backend for this target -- add the per-target [X] context switch (T-lin-10001 [C] core; arm64/win/riscv64 owned by mac/win)."
 #endif
