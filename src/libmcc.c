@@ -1203,6 +1203,7 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->warn_deprecated_declarations = WARN_ON;
 	s->warn_unused_result = WARN_ON;
 	s->warn_nonnull = WARN_ON;
+	s->warn_address_of_packed_member = WARN_ON;
 	s->warn_sentinel = WARN_ON;
 	s->warn_unsupported_option = WARN_ON;
 	s->warn_discarded_qualifiers = 1;
@@ -2479,6 +2480,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_unused_result), WD_ALL, "unused-result"},
 		{offsetof(MCCState, warn_nonnull), WD_ALL, "nonnull"},
 		{offsetof(MCCState, warn_sentinel), WD_ALL, "sentinel"},
+		{offsetof(MCCState, warn_address_of_packed_member), WD_ALL, "address-of-packed-member"},
 		{0, 0, NULL}};
 
 typedef char mcc_optflag_offsets_fit

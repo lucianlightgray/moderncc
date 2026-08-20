@@ -116,6 +116,14 @@ static const cli_case_t cli_cases[] = {
 		 "attribute error: glibc form\n"
 		 "NOFIRE_OK\n"},
 
+		{"address_of_packed_member_warn", "",
+		 "printf 'struct __attribute__((packed)) S{char c;int x;};int*f(struct S*s){return &s->x;}\\n' > {W}/pm.c && "
+		 "printf 'struct __attribute__((packed)) S{int x;char c;};char*f(struct S*s){return &s->c;}\\nstruct T{char c;int y;};int*g(struct T*t){return &t->y;}\\n' > {W}/pnp.c && "
+		 "{ {MCC} -B{B} -I{I} -c {W}/pm.c -o {W}/pm.o 2>&1 | grep -o 'packed member may result in an unaligned' ; "
+		 "{MCC} -B{B} -I{I} -c {W}/pnp.c -o {W}/pnp.o 2>&1 | grep -c 'packed' ; "
+		 "{MCC} -B{B} -I{I} -Wno-address-of-packed-member -c {W}/pm.c -o {W}/pm2.o 2>&1 | grep -c 'packed' ; echo OK ; }",
+		 "packed member may result in an unaligned\n0\n0\nOK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"

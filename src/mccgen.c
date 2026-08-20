@@ -10549,6 +10549,7 @@ static CType *type_decl(CType *type, AttributeDef *ad, int *v, int td) { MCC_TRA
 
 ST_FUNC void indir(void) { MCC_TRACE("enter\n");
 	rir_hook_indir();
+	mcc_state->gen_member_align = 0;
 	if ((vtop->type.t & VT_BTYPE) != VT_PTR) { MCC_TRACE("br\n");
 		if ((vtop->type.t & VT_BTYPE) == VT_FUNC)
 			{ MCC_TRACE("br\n"); return; }
@@ -13912,7 +13913,15 @@ tok_next:
 		break;
 	case '&':
 		next();
+		member_align_hint = 0;
 		unary();
+		if (member_align_hint && !(vtop->type.t & (VT_VLA | VT_BITFIELD))) { MCC_TRACE("br\n");
+			int nal;
+			if (type_size(&vtop->type, &nal) >= 0 && member_align_hint < nal)
+				{ MCC_TRACE("br\n"); mcc_warning_c(warn_address_of_packed_member)(
+							"taking address of packed member may result in an "
+							"unaligned pointer value"); }
+		}
 		if ((vtop->type.t & VT_BITFIELD) && !IS_BITINT(vtop->type.t))
 			{ MCC_TRACE("br\n"); mcc_error("cannot take address of bit-field"); }
 		/* A reverse scalar_storage_order member has no ordinary address: a plain
