@@ -4,13 +4,8 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-<<<<<<< Updated upstream
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T00:07Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T23:30Z |
-=======
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T00:20Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T23:25Z |
->>>>>>> Stashed changes
+| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T23:30Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T23:34Z |
 
 ## Contracts — blocking, highest priority
