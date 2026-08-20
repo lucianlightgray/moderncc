@@ -190,7 +190,7 @@ void __mcc_i256_from_f64(mcc_w256_limb *r, double x, int is_unsigned) {
 		if (is_unsigned)
 			{ mcc_w256_zero(r); return; }	/* UB; match gcc's 0 for negatives */
 		w256_from_double_mag(r, -x);
-		{ w256 t; mcc_w256_neg(t, r); mcc_w256_copy(r, t); }
+		mcc_w256_neg(r, r);
 		return;
 	}
 	w256_from_double_mag(r, x);

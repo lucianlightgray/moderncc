@@ -19,13 +19,31 @@ static int __attribute__((noinline)) abitest(void *p, double d, int flag) {
 }
 
 typedef unsigned long long L;
-static void repro_mag(L r[4], double x) {
+static void repro_shl(L r[4], unsigned n) {
+	unsigned limb = n / 64, bit = n % 64;
+	L out[4] = {0, 0, 0, 0};
 	int i;
-	L b;
+	for (i = 3; i >= 0; i--) {
+		int si = i - (int)limb;
+		if (si >= 0) {
+			out[i] |= r[si] << bit;
+			if (bit && si - 1 >= 0) out[i] |= r[si - 1] >> (64 - bit);
+		}
+	}
+	for (i = 0; i < 4; i++) r[i] = out[i];
+}
+static void repro_mag(L r[4], double x) {  /* real magnitude logic */
+	int i, exp, e;
+	L b, mant;
 	__builtin_memcpy(&b, &x, 8);
-	printf("  repro_mag received x bits=%016llx (1e30=46293e5939a08cea)\n", b);
 	for (i = 0; i < 4; i++) r[i] = 0;
-	if (x >= 1.0) r[0] = 1;          /* nonzero magnitude marker */
+	if (!(x >= 1.0)) return;
+	exp = (int)((b >> 52) & 0x7FF) - 1023;
+	mant = (b & 0xFFFFFFFFFFFFFULL) | ((L)1 << 52);
+	e = exp - 52;
+	if (exp >= 256) return;
+	r[0] = mant;
+	if (e > 0) repro_shl(r, (unsigned)e);
 }
 static void repro_neg(L r[4], const L a[4]) {
 	L z[4] = {0, 0, 0, 0}, borrow = 0;
