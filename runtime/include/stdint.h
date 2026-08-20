@@ -126,5 +126,42 @@ typedef unsigned long long uintmax_t;
 #define INTMAX_C(x) x##LL
 #define UINTMAX_C(x) x##ULL
 
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+#define __STDC_VERSION_STDINT_H__ 202311L
+#define INT8_WIDTH 8
+#define UINT8_WIDTH 8
+#define INT16_WIDTH 16
+#define UINT16_WIDTH 16
+#define INT32_WIDTH 32
+#define UINT32_WIDTH 32
+#define INT64_WIDTH 64
+#define UINT64_WIDTH 64
+#define INT_LEAST8_WIDTH 8
+#define UINT_LEAST8_WIDTH 8
+#define INT_LEAST16_WIDTH 16
+#define UINT_LEAST16_WIDTH 16
+#define INT_LEAST32_WIDTH 32
+#define UINT_LEAST32_WIDTH 32
+#define INT_LEAST64_WIDTH 64
+#define UINT_LEAST64_WIDTH 64
+#define INT_FAST8_WIDTH 8
+#define UINT_FAST8_WIDTH 8
+#define INT_FAST16_WIDTH 16
+#define UINT_FAST16_WIDTH 16
+#define INT_FAST32_WIDTH 32
+#define UINT_FAST32_WIDTH 32
+#define INT_FAST64_WIDTH 64
+#define UINT_FAST64_WIDTH 64
+#define INTPTR_WIDTH (__SIZEOF_POINTER__ * __CHAR_BIT__)
+#define UINTPTR_WIDTH (__SIZEOF_POINTER__ * __CHAR_BIT__)
+#define INTMAX_WIDTH 64
+#define UINTMAX_WIDTH 64
+#define PTRDIFF_WIDTH (__SIZEOF_POINTER__ * __CHAR_BIT__)
+#define SIZE_WIDTH (__SIZEOF_SIZE_T__ * __CHAR_BIT__)
+#define SIG_ATOMIC_WIDTH (__SIZEOF_INT__ * __CHAR_BIT__)
+#define WCHAR_WIDTH (__SIZEOF_WCHAR_T__ * __CHAR_BIT__)
+#define WINT_WIDTH (__SIZEOF_WINT_T__ * __CHAR_BIT__)
+#endif
+
 #endif
 #endif

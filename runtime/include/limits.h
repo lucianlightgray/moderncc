@@ -80,4 +80,47 @@
 #define ULLONG_MAX (__LONG_LONG_MAX__ * 2ULL + 1ULL)
 #endif
 
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 202311L
+#define __STDC_VERSION_LIMITS_H__ 202311L
+#ifndef BOOL_WIDTH
+#define BOOL_WIDTH 1
+#endif
+#ifndef CHAR_WIDTH
+#define CHAR_WIDTH CHAR_BIT
+#endif
+#ifndef SCHAR_WIDTH
+#define SCHAR_WIDTH CHAR_BIT
+#endif
+#ifndef UCHAR_WIDTH
+#define UCHAR_WIDTH CHAR_BIT
+#endif
+#ifndef SHRT_WIDTH
+#define SHRT_WIDTH (__SIZEOF_SHORT__ * CHAR_BIT)
+#endif
+#ifndef USHRT_WIDTH
+#define USHRT_WIDTH SHRT_WIDTH
+#endif
+#ifndef INT_WIDTH
+#define INT_WIDTH (__SIZEOF_INT__ * CHAR_BIT)
+#endif
+#ifndef UINT_WIDTH
+#define UINT_WIDTH INT_WIDTH
+#endif
+#ifndef LONG_WIDTH
+#define LONG_WIDTH (__SIZEOF_LONG__ * CHAR_BIT)
+#endif
+#ifndef ULONG_WIDTH
+#define ULONG_WIDTH LONG_WIDTH
+#endif
+#ifndef LLONG_WIDTH
+#define LLONG_WIDTH (__SIZEOF_LONG_LONG__ * CHAR_BIT)
+#endif
+#ifndef ULLONG_WIDTH
+#define ULLONG_WIDTH LLONG_WIDTH
+#endif
+#ifndef BOOL_MAX
+#define BOOL_MAX 1
+#endif
+#endif
+
 #endif
