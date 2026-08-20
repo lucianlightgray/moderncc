@@ -8081,7 +8081,28 @@ static int ast_ident_intt(int tt) { MCC_TRACE("enter\n");
 	return 0;
 }
 
+static int ast_float_rank(int bt) { MCC_TRACE("enter\n");
+	switch (bt) { MCC_TRACE("br\n");
+	case VT_FLOAT16:
+	case VT_BF16:
+		return 1;
+	case VT_FLOAT:
+		return 2;
+	case VT_DOUBLE:
+		return 3;
+	case VT_LDOUBLE:
+		return 4;
+	case VT_QFLOAT:
+	case VT_FLOAT128:
+		return 5;
+	}
+	return 0;
+}
+
 static int ast_ident_common(int t1, int t2) { MCC_TRACE("enter\n");
+	int fb1 = ast_float_rank(t1 & VT_BTYPE), fb2 = ast_float_rank(t2 & VT_BTYPE);
+	if (fb1 || fb2)
+		{ MCC_TRACE("br\n"); return (fb1 >= fb2 ? t1 : t2) & VT_BTYPE; }
 	if ((t1 & VT_BTYPE) == VT_LLONG || (t2 & VT_BTYPE) == VT_LLONG) { MCC_TRACE("br\n");
 		if ((t1 & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED) ||
 				(t2 & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED))
@@ -8189,6 +8210,15 @@ static int ast_ident_etype(AstArena *a, AstLocal n, int *tt, uint64_t *ref) { MC
 			break;
 		default:
 			return 0;
+		}
+		if ((op == '+' || op == '-' || op == '*' || op == '/') &&
+				(is_float(t1) || is_float(t2))) { MCC_TRACE("br\n");
+			if ((!is_float(t1) && !ast_ident_intt(t1)) ||
+					(!is_float(t2) && !ast_ident_intt(t2)))
+				{ MCC_TRACE("br\n"); return 0; }
+			*tt = ast_ident_common(t1, t2);
+			*ref = 0;
+			return 1;
 		}
 		if (!ast_ident_intt(t1) || !ast_ident_intt(t2))
 			{ MCC_TRACE("br\n"); return 0; }
