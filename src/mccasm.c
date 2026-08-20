@@ -577,6 +577,8 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		ind += size;
 		break;
 	case TOK_ASMDIR_quad:
+	case TOK_ASMDIR_xword:
+	case TOK_ASMDIR_8byte:
 #if MCC_PTR_SIZE == 8
 		size = 8;
 		goto asm_data;
@@ -615,9 +617,13 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		size = 4;
 		goto asm_data;
 #endif
+	case TOK_ASMDIR_hword:
+	case TOK_ASMDIR_value:
+	case TOK_ASMDIR_2byte:
 	case TOK_ASMDIR_short:
 		size = 2;
 		goto asm_data;
+	case TOK_ASMDIR_4byte:
 	case TOK_ASMDIR_long:
 	case TOK_ASMDIR_int:
 		size = 4;
@@ -1348,15 +1354,29 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 			asm_parse_directive(s1, global);
 		} else if (tok == TOK_PPNUM) { MCC_TRACE("br\n");
 			const char *p;
-			int n;
+			int n, dd;
 			p = tokc.str.data;
-			n = strtoul(p, (char **)&p, 10);
-			if (*p != '\0')
-				{ MCC_TRACE("br\n"); expect("':'"); }
-			asm_new_label(s1, asm_get_local_label_name(s1, n), 1);
-			next();
-			skip(':');
-			goto redo;
+			dd = 0;
+			if (p[0] == '.') { MCC_TRACE("br\n");
+				if (!strcmp(p, ".2byte"))
+					dd = TOK_ASMDIR_2byte;
+				else if (!strcmp(p, ".4byte"))
+					dd = TOK_ASMDIR_4byte;
+				else if (!strcmp(p, ".8byte"))
+					dd = TOK_ASMDIR_8byte;
+			}
+			if (dd) { MCC_TRACE("br\n");
+				tok = dd;
+				asm_parse_directive(s1, global);
+			} else { MCC_TRACE("br\n");
+				n = strtoul(p, (char **)&p, 10);
+				if (*p != '\0')
+					{ MCC_TRACE("br\n"); expect("':'"); }
+				asm_new_label(s1, asm_get_local_label_name(s1, n), 1);
+				next();
+				skip(':');
+				goto redo;
+			}
 		} else if (tok >= TOK_IDENT) { MCC_TRACE("br\n");
 #if MCC_EH_FRAME
 			if (!strncmp(get_tok_str(tok, NULL), ".cfi_", 5)) { MCC_TRACE("br\n");

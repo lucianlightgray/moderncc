@@ -452,8 +452,8 @@ static const cli_case_t cli_cases[] = {
 		 "OK\n"},
 
 		{"line_macro_near_intmax", "",
-		 "printf '#line 2147483647\\nlong a=__LINE__;\\nlong b=__LINE__;\\nlong c=__LINE__;\\n"
-		 "int main(void){return (a==2147483647L&&b==2147483648L&&c==2147483649L)?0:1;}\\n' > {W}/ln.c && "
+		 "printf '#line 2147483647\\nlong long a=__LINE__;\\nlong long b=__LINE__;\\nlong long c=__LINE__;\\n"
+		 "int main(void){return (a==2147483647LL&&b==2147483648LL&&c==2147483649LL)?0:1;}\\n' > {W}/ln.c && "
 		 "{MCC} -B{B} -I{I} -w -run {W}/ln.c && echo OK",
 		 "OK\n"},
 
@@ -570,6 +570,14 @@ static const cli_case_t cli_cases[] = {
 		 "{W}/cl.exe; run=$?; "
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=100\n"},
+
+		{"asm_data_directives_widths", "",
+		 "printf '.data\\n.globl base\\nbase:\\n.hword 0x1234\\n.value 0x5678\\n.2byte 0xABCD\\n.4byte 0xDEADBEEF\\n.8byte 0x1122334455667788\\n.xword 0x99AABBCCDDEEFF11\\n.globl endp\\nendp:\\n' > {W}/dd.s && "
+		 "printf '#include <string.h>\\nextern unsigned char base[] __asm__(\"base\");\\nextern unsigned char endp[] __asm__(\"endp\");\\nint main(void){ unsigned short h,v,t; unsigned int f; unsigned long long e,x; memcpy(&h,base+0,2); memcpy(&v,base+2,2); memcpy(&t,base+4,2); memcpy(&f,base+6,4); memcpy(&e,base+10,8); memcpy(&x,base+18,8); if((endp-base)!=26) return 100; if(h!=0x1234) return 101; if(v!=0x5678) return 102; if(t!=0xabcd) return 103; if(f!=0xdeadbeefU) return 104; if(e!=0x1122334455667788ULL) return 105; if(x!=0x99aabbccddeeff11ULL) return 106; return 42; }\\n' > {W}/dd.c && "
+		 "{MCC} -B{B} {W}/dd.s {W}/dd.c -o {W}/dd.exe 2>{W}/dd.err; link=$?; "
+		 "{W}/dd.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=42\n"},
 
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
