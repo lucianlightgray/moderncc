@@ -700,6 +700,20 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=42\n"},
 
+		{"pragma_pack_aligned_member_align", "os=Darwin",
+		 "printf '#pragma pack(8)\\nstruct A { char c; int x __attribute__((aligned(2))); };\\n"
+		 "struct B { char c; int x __attribute__((aligned(16))); };\\n#pragma pack(2)\\n"
+		 "struct C { char c; int x __attribute__((aligned(1))); };\\n#pragma pack()\\n"
+		 "struct D { char c; int x __attribute__((packed, aligned(2))); };\\n"
+		 "int main(void){ if (_Alignof(struct A)!=4 || sizeof(struct A)!=8) return 1; "
+		 "if (_Alignof(struct B)!=8 || sizeof(struct B)!=16) return 2; "
+		 "if (_Alignof(struct C)!=2 || sizeof(struct C)!=6) return 3; "
+		 "if (_Alignof(struct D)!=2 || sizeof(struct D)!=6) return 4; return 42; }\\n' > {W}/pk.c && "
+		 "{MCC} -B{B} {W}/pk.c -o {W}/pk.exe 2>{W}/pk.err; link=$?; "
+		 "{W}/pk.exe; run=$?; "
+		 "printf 'link=%s run=%s\\n' $link $run",
+		 "link=0 run=42\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

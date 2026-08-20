@@ -7271,11 +7271,11 @@ static void struct_layout(CType *type, AttributeDef *ad) { MCC_TRACE("enter\n");
 				if (pragma_pack < align)
 					{ MCC_TRACE("br\n"); align = pragma_pack; }
 				if (pcc && pragma_pack < a)
-					{ MCC_TRACE("br\n"); a = 0; }
+					{ MCC_TRACE("br\n"); a = pragma_pack; }
 			}
 		}
-		if (a && (a > align || f->a.type_aligned || packed || f->a.packed ||
-							ad->a.packed || pragma_pack))
+		if (a && (a > align || f->a.type_aligned ||
+							(!pcc && (packed || f->a.packed || ad->a.packed || pragma_pack))))
 			{ MCC_TRACE("br\n"); align = a; }
 
 		if (type->ref->type.t == VT_UNION) { MCC_TRACE("br\n");
