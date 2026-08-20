@@ -3266,7 +3266,11 @@ again:
 		{ MCC_TRACE("br\n"); return -1; }
 	dprintf("found Mach-O at %d\n", machofs);
 	buf2 = load_data(fd, machofs + sizeof(struct mach_header_64), mh.sizeofcmds);
-	for (i = 0, lc = buf2; i < mh.ncmds; i++) { MCC_TRACE("br\n");
+	for (i = 0, lc = buf2; buf2 && i < (int)mh.ncmds; i++) { MCC_TRACE("br\n");
+		if ((char *)lc + sizeof *lc > (char *)buf2 + mh.sizeofcmds ||
+				lc->cmdsize < sizeof *lc ||
+				lc->cmdsize > mh.sizeofcmds - (uint32_t)((char *)lc - (char *)buf2))
+			{ MCC_TRACE("br\n"); break; }
 		dprintf("lc %2d: 0x%08x\n", i, lc->cmd);
 		switch (lc->cmd) { MCC_TRACE("br\n");
 		case LC_SYMTAB: {
@@ -3311,13 +3315,18 @@ again:
 	if (mcc_add_dllref(s1, soname, lev)->found)
 		{ MCC_TRACE("br\n"); goto the_end; }
 
-	if (!nsyms || !nextdef)
-		{ MCC_TRACE("br\n"); mcc_warning("%s doesn't export any symbols?", filename); }
+	if (!symtab || !strtab || !nsyms || !nextdef ||
+			(uint64_t)iextdef + nextdef > nsyms) { MCC_TRACE("br\n");
+		mcc_warning("%s doesn't export any symbols?", filename);
+		goto the_end;
+	}
 
 	dprintf("symbols (exported):\n");
 	dprintf("    n: typ sec   desc              value name\n");
-	for (i = iextdef; i < iextdef + nextdef; i++) { MCC_TRACE("br\n");
+	for (i = iextdef; i < (int)(iextdef + nextdef); i++) { MCC_TRACE("br\n");
 		struct nlist_64 *sym = symtab + i;
+		if (sym->n_strx >= strsize)
+			{ MCC_TRACE("br\n"); continue; }
 		dprintf("%5d: %3d %3d 0x%04x 0x%016lx %s\n",
 						i, sym->n_type, sym->n_sect, sym->n_desc, (long)sym->n_value,
 						strtab + sym->n_strx);

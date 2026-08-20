@@ -1714,7 +1714,11 @@ found:
 		{ MCC_TRACE("br\n"); goto the_end; }
 	k = ied.NumberOfNames;
 	if (k) { MCC_TRACE("br\n");
+		if ((unsigned)k > 0x0fffffffu)
+			{ MCC_TRACE("br\n"); goto the_end; }
 		namep = mcc_malloc(l = k * sizeof *namep);
+		if (!namep)
+			{ MCC_TRACE("br\n"); goto the_end; }
 		if (!read_mem(fd, ied.AddressOfNames - ref, namep, l))
 			{ MCC_TRACE("br\n"); goto the_end; }
 		for (i = l = 0; i < k; ++i) { MCC_TRACE("br\n");
