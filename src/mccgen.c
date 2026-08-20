@@ -506,6 +506,7 @@ static CType complex_operand_real_type(SValue *v);
 #ifdef MCC_TARGET_X86_64
 void x86_64_vec16_packed_op(SValue *res, SValue *lhs, SValue *rhs, int op, int is_double);
 void x86_64_vec16_packed_iop(SValue *res, SValue *lhs, SValue *rhs, int op, int esz);
+void x86_64_vec16_packed_fcmp(SValue *res, SValue *op1, SValue *op2, int imm, int is_double);
 #endif
 static void gen_vector_op(int op);
 static int vector_nelem(CType *type);
@@ -8519,6 +8520,27 @@ static void gen_vector_op(int op) { MCC_TRACE("enter\n");
 	vector_local(&rt, &res);
 
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
+	if (cmp && mcc_state && mcc_state->optimize >= 1) { MCC_TRACE("br\n");
+		int ebt = vector_elem_type(&vt)->t & VT_BTYPE;
+		int is_double = ebt == VT_DOUBLE;
+		if ((is_double && n == 2) || (ebt == VT_FLOAT && n == 4)) { MCC_TRACE("br\n");
+			int imm = -1, swap = 0;
+			switch (op) { MCC_TRACE("br\n");
+			case TOK_EQ: imm = 0; break;
+			case TOK_NE: imm = 4; break;
+			case TOK_LT: imm = 1; break;
+			case TOK_LE: imm = 2; break;
+			case TOK_GT: imm = 1; swap = 1; break;
+			case TOK_GE: imm = 2; swap = 1; break;
+			}
+			if (imm >= 0) { MCC_TRACE("br\n");
+				x86_64_vec16_packed_fcmp(&res, swap ? &rhs : &lhs,
+																 swap ? &lhs : &rhs, imm, is_double);
+				vpushv(&res);
+				return;
+			}
+		}
+	}
 	if (!cmp && mcc_state && mcc_state->optimize >= 1) { MCC_TRACE("br\n");
 		int ebt = vector_elem_type(&vt)->t & VT_BTYPE;
 		int is_double = ebt == VT_DOUBLE;

@@ -1381,6 +1381,31 @@ void x86_64_vec16_packed_iop(SValue *res, SValue *lhs, SValue *rhs, int op, int 
 	ast_pinned_regs &= ~((uint64_t)1 << r2);
 }
 
+void x86_64_vec16_packed_fcmp(SValue *res, SValue *op1, SValue *op2, int imm, int is_double) { MCC_TRACE("enter\n");
+	int r1, r2;
+
+	r1 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r1;
+	r2 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r2;
+
+	x86_64_vec16_move(r1, op1, 0);
+	x86_64_vec16_move(r2, op2, 0);
+
+	if (is_double)
+		{ MCC_TRACE("br\n"); o(0x66); }
+	sse_rex(r1, r2);
+	o(0x0f);
+	o(0xc2);
+	o(0xc0 + REG_VALUE(r1) * 8 + REG_VALUE(r2));
+	g(imm);
+
+	x86_64_vec16_move(r1, res, 1);
+
+	ast_pinned_regs &= ~((uint64_t)1 << r1);
+	ast_pinned_regs &= ~((uint64_t)1 << r2);
+}
+
 static X86_64_Mode classify_x86_64_arg(CType *ty, CType *ret, int *psize, int *palign, int *reg_count) { MCC_TRACE("enter\n");
 	X86_64_Mode mode;
 	int size, align, ret_t = 0;
