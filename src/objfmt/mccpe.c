@@ -1983,6 +1983,24 @@ typedef struct _mcc_coff_rel {
 #define IMAGE_REL_ARM64_SECREL_HIGH12A 0x000A
 #define IMAGE_REL_ARM64_SECREL_LOW12L 0x000B
 #endif
+#ifndef IMAGE_REL_ARM_ABSOLUTE
+#define IMAGE_REL_ARM_ABSOLUTE 0x0000
+#endif
+#ifndef IMAGE_REL_ARM_ADDR32
+#define IMAGE_REL_ARM_ADDR32 0x0001
+#endif
+#ifndef IMAGE_REL_ARM_ADDR32NB
+#define IMAGE_REL_ARM_ADDR32NB 0x0002
+#endif
+#ifndef IMAGE_REL_ARM_BRANCH24
+#define IMAGE_REL_ARM_BRANCH24 0x0003
+#endif
+#ifndef IMAGE_REL_ARM_REL32
+#define IMAGE_REL_ARM_REL32 0x000A
+#endif
+#ifndef IMAGE_REL_ARM_SECREL
+#define IMAGE_REL_ARM_SECREL 0x000F
+#endif
 
 static unsigned coff_rd16(const unsigned char *p) { MCC_TRACE("enter\n");
 	return p[0] | (p[1] << 8);
@@ -2133,6 +2151,18 @@ static int coff_emit_reloc(int etype, unsigned char *fld, addr_t addend) { MCC_T
 	case R_AARCH64_TLSLE_ADD_TPREL_HI12: write32le(fld, (read32le(fld) & ~((uint32_t)0xfff << 10)) | ((((uint32_t)addend >> 12) & 0xfff) << 10)); return IMAGE_REL_ARM64_SECREL_HIGH12A;
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
 	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC: write32le(fld, (read32le(fld) & ~((uint32_t)0xfff << 10)) | (((uint32_t)addend & 0xfff) << 10)); return IMAGE_REL_ARM64_SECREL_LOW12A;
+	default: return -1;
+	}
+#elif defined MCC_TARGET_ARM
+	(void)addend;
+	switch (etype) { MCC_TRACE("br\n");
+	case R_ARM_ABS32: return IMAGE_REL_ARM_ADDR32;
+	case R_ARM_REL32: return IMAGE_REL_ARM_REL32;
+	case R_ARM_RELATIVE: return IMAGE_REL_ARM_ADDR32NB;
+	case R_ARM_PC24:
+	case R_ARM_CALL:
+	case R_ARM_JUMP24: return IMAGE_REL_ARM_BRANCH24;
+	case R_ARM_TLS_LE32: return IMAGE_REL_ARM_SECREL;
 	default: return -1;
 	}
 #else
