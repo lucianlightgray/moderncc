@@ -2043,7 +2043,7 @@ void mccjit_set_search_budget(unsigned long secs) { MCC_TRACE("enter\n");
 	mccjit_search_budget_baked_s = secs;
 }
 
-#if defined(_WIN32)
+#if MCC_HOST_WIN32
 /* No-op ucrt invalid-parameter handler + installer, linked into PE embed-JIT
  * programs (and mcc's own -run). ucrt printf/scanf fastfail (0xC0000409) on an
  * invalid parameter; this no-op handler makes them tolerate it, as mingw's CRT
