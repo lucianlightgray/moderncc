@@ -1448,10 +1448,22 @@
 	#define __builtin_stdc_bit_ceil(x) (__mcc_gwide(x) \
 	? __mcc_wbitceil(x) \
 	: ((__typeof__(x))__mcc_gbitceil((__mcc_gu_t)(x), __mcc_gprec(x))))
-	#define __builtin_stdc_rotate_left(x, n) \
-	((__typeof__(x))__mcc_grot((__mcc_gu_t)(x), __mcc_gprec(x), (__mcc_llong_t)(n), 1))
-	#define __builtin_stdc_rotate_right(x, n) \
-	((__typeof__(x))__mcc_grot((__mcc_gu_t)(x), __mcc_gprec(x), (__mcc_llong_t)(n), 0))
+	#define __mcc_wrotl(x, n) (__extension__ ({ \
+	int __mcc_rp = (int)__mcc_gprec(x); \
+	int __mcc_rn = (int)(((__mcc_llong_t)(n) % __mcc_rp + __mcc_rp) % __mcc_rp); \
+	__mcc_rn == 0 ? (x) \
+	: (__typeof__(x))(((x) << __mcc_rn) | ((x) >> (__mcc_rp - __mcc_rn))); }))
+	#define __mcc_wrotr(x, n) (__extension__ ({ \
+	int __mcc_rp = (int)__mcc_gprec(x); \
+	int __mcc_rn = (int)(((__mcc_llong_t)(n) % __mcc_rp + __mcc_rp) % __mcc_rp); \
+	__mcc_rn == 0 ? (x) \
+	: (__typeof__(x))(((x) >> __mcc_rn) | ((x) << (__mcc_rp - __mcc_rn))); }))
+	#define __builtin_stdc_rotate_left(x, n) (__mcc_gwide(x) \
+	? __mcc_wrotl(x, n) \
+	: ((__typeof__(x))__mcc_grot((__mcc_gu_t)(x), __mcc_gprec(x), (__mcc_llong_t)(n), 1)))
+	#define __builtin_stdc_rotate_right(x, n) (__mcc_gwide(x) \
+	? __mcc_wrotr(x, n) \
+	: ((__typeof__(x))__mcc_grot((__mcc_gu_t)(x), __mcc_gprec(x), (__mcc_llong_t)(n), 0)))
 
 	#define __builtin_isinf_sign(x) __extension__ ({ __typeof__(x) __mcc_iv = (x); \
 	__builtin_isinf(__mcc_iv) ? (__builtin_signbit(__mcc_iv) ? -1 : 1) : 0; })

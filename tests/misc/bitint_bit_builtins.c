@@ -61,6 +61,13 @@ int main(void) {
 	if (__builtin_stdc_bit_ceil((unsigned _BitInt(200))1) != 1) return 74;
 	if (__builtin_stdc_bit_floor(zz) != ((unsigned _BitInt(512))1 << 502)) return 75;
 	if (__builtin_stdc_bit_ceil(zz) != ((unsigned _BitInt(512))1 << 502)) return 76;
+	if (__builtin_stdc_rotate_left(w, 10) != ((unsigned _BitInt(200))1 << 160)) return 80;
+	if (__builtin_stdc_rotate_left(w, 60) != ((unsigned _BitInt(200))1 << 10)) return 81;
+	if (__builtin_stdc_rotate_right(w, 10) != ((unsigned _BitInt(200))1 << 140)) return 82;
+	if (__builtin_stdc_rotate_left(w, 200) != w) return 83;
+	if (__builtin_stdc_rotate_left(w, 0) != w) return 84;
+	if (__builtin_stdc_rotate_left(zz, 20) != ((unsigned _BitInt(512))1 << 10)) return 85;
+	if (__builtin_stdc_rotate_right(zz, 20) != ((unsigned _BitInt(512))1 << 482)) return 86;
 	if (__builtin_stdc_leading_ones(w) != 0) return 30;
 	if (__builtin_stdc_trailing_ones(w) != 0) return 31;
 	if (__builtin_stdc_first_leading_one(w) != 50) return 32;
