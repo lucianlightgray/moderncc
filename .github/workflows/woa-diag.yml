@@ -43,7 +43,8 @@ jobs:
       - name: quick view (float128 + integer_promotion)
         if: always()
         run: |
-          echo "===== ctest ====="; cat diag-out/03-ctest.txt 2>/dev/null | tail -80 || true
+          echo "===== FULL exec suite (arm64-Windows) ====="; cat diag-out/06-exec-fails.txt 2>/dev/null || true
+          echo "===== ctest (2 subjects) ====="; cat diag-out/03-ctest.txt 2>/dev/null | tail -40 || true
           echo "===== float128 mcc run ====="; cat diag-out/float128-11-mcc-run.txt 2>/dev/null || true
           echo "===== float128 clang run ====="; cat diag-out/float128-21-clang-run.txt 2>/dev/null || true
           echo "===== integer_promotion mcc run ====="; cat diag-out/integer_promotion-11-mcc-run.txt 2>/dev/null || true
