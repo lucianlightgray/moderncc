@@ -743,6 +743,19 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'compile=%s warns=%s run=%s\\n' $crc $warns $run",
 		 "compile=0 warns=0 run=42\n"},
 
+		{"macho_bundle_output", "os=Darwin",
+		 "printf 'int plugin_answer(void){return 42;}\\n' > {W}/plg.c && "
+		 "{MCC} -B{B} -bundle {W}/plg.c -o {W}/plg.bundle 2>{W}/plg.err; brc=$?; "
+		 "ftb=$(otool -hv {W}/plg.bundle 2>/dev/null | grep -c BUNDLE); "
+		 "idc=$(otool -l {W}/plg.bundle 2>/dev/null | grep -c LC_ID_DYLIB); "
+		 "printf '#include <dlfcn.h>\\n#include <stdio.h>\\n"
+		 "int main(int c,char**v){ void*h=dlopen(v[1],2); if(!h)return 2; "
+		 "int(*f)(void)=(int(*)(void))dlsym(h,\"plugin_answer\"); if(!f)return 3; "
+		 "return f()==42?42:1; }\\n' > {W}/host.c && "
+		 "{MCC} -B{B} {W}/host.c -o {W}/host 2>>{W}/plg.err; {W}/host {W}/plg.bundle; drc=$?; "
+		 "printf 'bundle=%s isbundle=%s idcmd=%s dlrun=%s\\n' $brc $ftb $idc $drc",
+		 "bundle=0 isbundle=1 idcmd=0 dlrun=42\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

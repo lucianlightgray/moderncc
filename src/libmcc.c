@@ -2197,6 +2197,7 @@ enum {
 	MCC_OPTION_std,
 	MCC_OPTION_ansi,
 	MCC_OPTION_shared,
+	MCC_OPTION_bundle,
 	MCC_OPTION_soname,
 	MCC_OPTION_o,
 	MCC_OPTION_r,
@@ -2327,6 +2328,7 @@ static const MCCOption mcc_options[] = {
 		{"std", MCC_OPTION_std, MCC_OPTION_HAS_ARG | MCC_OPTION_NOSEP},
 		{"ansi", MCC_OPTION_ansi, 0},
 		{"shared", MCC_OPTION_shared, 0},
+		{"bundle", MCC_OPTION_bundle, 0},
 		{"soname", MCC_OPTION_soname, MCC_OPTION_HAS_ARG},
 		{"o", MCC_OPTION_o, MCC_OPTION_HAS_ARG},
 		{"pthread", MCC_OPTION_pthread, 0},
@@ -3078,6 +3080,10 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			s->std_strict_ansi = (unsigned char)strict_iso;
 		} break;
 		case MCC_OPTION_shared:
+			x = MCC_OUTPUT_DLL;
+			goto set_output_type;
+		case MCC_OPTION_bundle:
+			s->macho_bundle = 1;
 			x = MCC_OUTPUT_DLL;
 			goto set_output_type;
 		case MCC_OPTION_soname:

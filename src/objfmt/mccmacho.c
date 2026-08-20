@@ -14,6 +14,7 @@
 #define MH_EXECUTE (0x2)
 #define MH_DYLDLINK (0x4)
 #define MH_DYLIB (0x6)
+#define MH_BUNDLE (0x8)
 #define MH_PIE (0x200000)
 #define MH_HAS_TLV_DESCRIPTORS (0x800000)
 
@@ -1928,7 +1929,7 @@ static void collect_sections(MCCState *s1, struct macho *mo, const char *filenam
 					{ MCC_TRACE("br\n"); mo->segment[sk] = mo->nseg - 1; } }
 		} }
 
-	if (s1->output_type != MCC_OUTPUT_EXE) { MCC_TRACE("br\n");
+	if (s1->output_type != MCC_OUTPUT_EXE && !s1->macho_bundle) { MCC_TRACE("br\n");
 		const char *name = s1->install_name ? s1->install_name : filename;
 		i = (sizeof(*dylib) + strlen(name) + 1 + 7) & -8;
 		dylib = add_lc(mo, LC_ID_DYLIB, i);
@@ -2210,7 +2211,7 @@ static void macho_write(MCCState *s1, struct macho *mo, FILE *fp) { MCC_TRACE("e
 		mo->mh.mh.filetype = MH_EXECUTE;
 		mo->mh.mh.flags = MH_DYLDLINK | MH_PIE;
 	} else { MCC_TRACE("br\n");
-		mo->mh.mh.filetype = MH_DYLIB;
+		mo->mh.mh.filetype = s1->macho_bundle ? MH_BUNDLE : MH_DYLIB;
 		mo->mh.mh.flags = MH_DYLDLINK;
 	}
 	if (mo->has_tlv)

@@ -988,6 +988,8 @@ struct MCCState {
 #endif
 #endif
 
+	char macho_bundle;
+
 #if defined MCC_TARGET_MACHO
 	char *install_name;
 	uint32_t compatibility_version;
