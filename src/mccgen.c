@@ -508,6 +508,7 @@ void x86_64_vec16_packed_op(SValue *res, SValue *lhs, SValue *rhs, int op, int i
 void x86_64_vec16_packed_iop(SValue *res, SValue *lhs, SValue *rhs, int op, int esz);
 void x86_64_vec16_packed_fcmp(SValue *res, SValue *op1, SValue *op2, int imm, int is_double);
 void x86_64_vec16_packed_icmp(SValue *res, SValue *op1, SValue *op2, int opc, int negate);
+void x86_64_vec16_imul32(SValue *res, SValue *op1, SValue *op2);
 #endif
 static void gen_vector_op(int op);
 static int vector_nelem(CType *type);
@@ -8637,6 +8638,11 @@ static void gen_vector_op(int op) { MCC_TRACE("enter\n");
 														 op == '|' || op == '^' ||
 														 (op == '*' && iesz == 2))) { MCC_TRACE("br\n");
 				x86_64_vec16_packed_iop(&res, &lhs, &rhs, op, iesz);
+				vpushv(&res);
+				return;
+			}
+			if (op == '*' && iesz == 4 && n == 4) { MCC_TRACE("br\n");
+				x86_64_vec16_imul32(&res, &lhs, &rhs);
 				vpushv(&res);
 				return;
 			}

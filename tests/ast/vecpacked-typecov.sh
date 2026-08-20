@@ -21,7 +21,7 @@ fi
 
 mkdir -p "$WORK"
 src=$SRCDIR/tests/misc/vecpacked_subject.c
-gold="10 31 96 20 -2147483648 0 -1 0 0"
+gold="10 31 96 20 1660 -2147483648 0 -1 0 0"
 
 # x86_64-only: the packed fast-paths are MCC_TARGET_X86_64 && !MCC_TARGET_PE.
 case $("$MCC" -dumpmachine 2>/dev/null) in
@@ -48,7 +48,7 @@ fi
 
 "$MCC" -O1 -c "$src" -o "$WORK/r1.o" >/dev/null 2>&1
 missing=""
-for insn in addps mulpd paddd pand cmpltps pcmpgtd; do
+for insn in addps mulpd paddd pand pmuludq punpckldq cmpltps pcmpgtd; do
 	if ! objdump -d "$WORK/r1.o" 2>/dev/null | grep -qw "$insn"; then
 		missing="$missing $insn"
 	fi

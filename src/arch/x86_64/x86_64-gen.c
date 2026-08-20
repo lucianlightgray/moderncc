@@ -1382,6 +1382,40 @@ void x86_64_vec16_packed_iop(SValue *res, SValue *lhs, SValue *rhs, int op, int 
 	ast_pinned_regs &= ~((uint64_t)1 << r2);
 }
 
+void x86_64_vec16_imul32(SValue *res, SValue *op1, SValue *op2) { MCC_TRACE("enter\n");
+	int r1, r2, r3, a, b, c;
+
+	r1 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r1;
+	r2 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r2;
+	r3 = get_reg(MCC_RC_FLOAT);
+	ast_pinned_regs |= (uint64_t)1 << r3;
+
+	x86_64_vec16_move(r1, op1, 0);
+	x86_64_vec16_move(r2, op2, 0);
+	a = REG_VALUE(r1);
+	b = REG_VALUE(r2);
+	c = REG_VALUE(r3);
+
+	sse_rex(r3, r1);
+	o(0x280f);
+	o(0xc0 | (c << 3) | a);
+	o(0x66); sse_rex(0, r1); o(0x730f); o(0xd0 | a); g(32);
+	o(0x66); sse_rex(r3, r2); o(0xf40f); o(0xc0 | (c << 3) | b);
+	o(0x66); sse_rex(0, r2); o(0x730f); o(0xd0 | b); g(32);
+	o(0x66); sse_rex(r1, r2); o(0xf40f); o(0xc0 | (a << 3) | b);
+	o(0x66); sse_rex(r3, r3); o(0x700f); o(0xc0 | (c << 3) | c); g(8);
+	o(0x66); sse_rex(r1, r1); o(0x700f); o(0xc0 | (a << 3) | a); g(8);
+	o(0x66); sse_rex(r3, r1); o(0x620f); o(0xc0 | (c << 3) | a);
+
+	x86_64_vec16_move(r3, res, 1);
+
+	ast_pinned_regs &= ~((uint64_t)1 << r1);
+	ast_pinned_regs &= ~((uint64_t)1 << r2);
+	ast_pinned_regs &= ~((uint64_t)1 << r3);
+}
+
 void x86_64_vec16_packed_fcmp(SValue *res, SValue *op1, SValue *op2, int imm, int is_double) { MCC_TRACE("enter\n");
 	int r1, r2;
 
