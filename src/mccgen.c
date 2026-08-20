@@ -318,6 +318,7 @@ static int tag_redef_parse;
 
 static int vm_type_probe;
 static int constant_p_depth;
+static int constant_p_saw_comma;
 static int auto_type_allowed;
 static CType *auto_type_capture;
 static int auto_type_captured;
@@ -13377,7 +13378,7 @@ static int foldstr_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	int i, kind = -1, need, av0, av1;
 	int64_t res;
 
-	if (!CONST_WANTED || NOEVAL_WANTED)
+	if ((!CONST_WANTED || NOEVAL_WANTED) && !constant_p_depth)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (mcc_state->nobuiltin || mcc_state->freestanding)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -14168,21 +14169,19 @@ tok_next:
 		}
 		rir_hook_builtin_complex_end();
 	} break;
-	case TOK_builtin_constant_p:
-		next();
-		skip('(');
+	case TOK_builtin_constant_p: {
+		int saved_saw_comma = constant_p_saw_comma;
+		constant_p_saw_comma = 0;
 		constant_p_depth++;
-		nocode_wanted += CONST_WANTED_BIT;
-		expr_eq();
-		nocode_wanted -= CONST_WANTED_BIT;
+		parse_builtin_params(1, "e");
 		constant_p_depth--;
-		skip(')');
 		n = 1;
-		if ((vtop->r & (VT_VALMASK | VT_LVAL)) != VT_CONST || ((vtop->r & VT_SYM) && vtop->sym->a.addrtaken))
+		if ((vtop->r & (VT_VALMASK | VT_LVAL)) != VT_CONST || ((vtop->r & VT_SYM) && vtop->sym->a.addrtaken) || constant_p_saw_comma)
 			{ MCC_TRACE("br\n"); n = 0; }
+		constant_p_saw_comma = saved_saw_comma;
 		vtop--;
 		vpushi(n);
-		break;
+	} break;
 	case TOK_mcc_overflow_p_const: {
 		int code, na, nb, neg, tsig, W, aok, bok, ov, al, wide;
 		uint64_t alo, ahi, blo, bhi, ma, mb, tmax, m;
@@ -15527,7 +15526,7 @@ tok_next:
 
 			p = NULL;
 			int foldstr_matsave = -1;
-			if (CONST_WANTED && !NOEVAL_WANTED && callee_tok &&
+			if (((CONST_WANTED && !NOEVAL_WANTED) || constant_p_depth) && callee_tok &&
 					foldstr_name_kind(get_tok_str(callee_tok, NULL)) >= 0) { MCC_TRACE("br\n");
 				foldstr_matsave = nocode_wanted;
 				nocode_wanted |= DATA_ONLY_WANTED;
@@ -16203,9 +16202,11 @@ ST_FUNC void gexpr(void) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); vtop->r |= VT_NONLVAL; }
 		}
 
-		if ((vtop->r & VT_VALMASK) == VT_CONST && nocode_wanted && (!CONST_WANTED || constant_p_depth))
+		if ((vtop->r & VT_VALMASK) == VT_CONST && nocode_wanted && !CONST_WANTED)
 			{ MCC_TRACE("br\n"); if (vtop->type.t != VT_VOID && (vtop->type.t & VT_BTYPE) != VT_STRUCT)
 				{ MCC_TRACE("br\n"); gv(MCC_RC_TYPE(vtop->type.t)); } }
+		if (constant_p_depth)
+			{ MCC_TRACE("br\n"); constant_p_saw_comma = 1; }
 	}
 }
 
