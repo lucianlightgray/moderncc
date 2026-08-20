@@ -8516,7 +8516,7 @@ static void gen_vector_op(int op) { MCC_TRACE("enter\n");
 	}
 	vector_local(&rt, &res);
 
-#ifdef MCC_TARGET_X86_64
+#if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 	if (!cmp && mcc_state && mcc_state->optimize >= 1) { MCC_TRACE("br\n");
 		int ebt = vector_elem_type(&vt)->t & VT_BTYPE;
 		int is_double = ebt == VT_DOUBLE;
@@ -18900,7 +18900,7 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		}
 	} else { MCC_TRACE("br\n");
 		sec = ad->section;
-		if (sec && !(type->t & VT_CONSTANT))
+		if (sec && sec != rodata_section && !(type->t & VT_CONSTANT))
 			{ MCC_TRACE("br\n"); sec->sh_flags |= SHF_WRITE; }
 		if (!sec) { MCC_TRACE("br\n");
 			CType *tp = type;
