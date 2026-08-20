@@ -4433,6 +4433,14 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/licm-typecov" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120)
 
+            add_test(NAME "ast/vecpacked-typecov"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/vecpacked-typecov.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_CURRENT_BINARY_DIR}/vecpacked-typecov")
+            set_tests_properties("ast/vecpacked-typecov" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120 SKIP_RETURN_CODE 77)
+
             add_test(NAME "ast/pre-typecov"
                 COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/pre-typecov.sh"
                         "$<TARGET_FILE:mcc>"
