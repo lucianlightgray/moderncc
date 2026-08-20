@@ -13890,7 +13890,9 @@ tok_next:
 			if (!(type.t & VT_VLA) && !is_vla_struct(&type) &&
 					type_size(&type, &align) < 0 &&
 					!((type.t & (VT_ARRAY | VT_VLA)) && mcc_state->cversion >= 202400))
-				{ MCC_TRACE("br\n"); mcc_error("'sizeof' applied to an incomplete type"); }
+				{ MCC_TRACE("br\n"); char itbuf[256]; CType itt = type; itt.t &= ~VT_STORAGE;
+					type_to_str(itbuf, sizeof itbuf, &itt, NULL);
+					mcc_error("'sizeof' applied to an incomplete type '%s'", itbuf); }
 			vpush_type_size(&type, &align);
 			gen_cast_s(VT_SIZE_T);
 		} else { MCC_TRACE("br\n");
@@ -13901,7 +13903,9 @@ tok_next:
 				type_size(&et, &align);
 			} else if (type_size(&type, &align) < 0 &&
 					!((type.t & (VT_ARRAY | VT_VLA)) && mcc_state->cversion >= 202400))
-				{ MCC_TRACE("br\n"); mcc_error("'_Alignof' applied to an incomplete type"); }
+				{ MCC_TRACE("br\n"); char itbuf[256]; CType itt = type; itt.t &= ~VT_STORAGE;
+					type_to_str(itbuf, sizeof itbuf, &itt, NULL);
+					mcc_error("'_Alignof' applied to an incomplete type '%s'", itbuf); }
 			s = NULL;
 			if (vtop[1].r & VT_SYM)
 				{ MCC_TRACE("br\n"); s = vtop[1].sym; }
