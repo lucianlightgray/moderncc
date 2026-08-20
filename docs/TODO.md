@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T05:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T05:25Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:35Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T07:45Z |
 
@@ -235,7 +235,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
       REF: INVESTIGATIONS.md#r28-memcmp-fold | DEPS: T-mac-30104
 - [ ] T-mac-30179 [S] Fix: [LOW cluster] efficiency/cosmetic — (1) `__sync_synchronize()` emulated via seq_cst __atomic_fetch_add on a stack volatile int (`mccdefs.h:387-389`) → `bl __atomic_fetch_add_4` not an inline `dmb ish` (correct, just a call+stack access); (2) extended-type inf/nan/huge_val builtins — **_Float16 part DONE (win-x64, 74f9d331): `__builtin_inff16`/`__builtin_huge_valf16`/`__builtin_nanf16` added** (3 DEF_TOKENs + the inf/nan handler routes to a VT_FLOAT16 const cv.i=0x7c00/0x7e00; matches gcc, exec 8483/8483, TDD cli/builtin_f16_inf_nan; DETAILS#t-mac-30179-f16-builtins). RESIDUAL: the `__float128` variants (`__builtin_nanf128`/`__builtin_infq`/`__builtin_huge_valq`) are NOT win-doable — `__float128` errors "not supported on this target" on x86_64 (arm64/riscv64-only) → for a lin/mac session; (3) `__FLT128_MAX__` predef also NOT win-relevant (no __float128 on win); (4) C23 `bool b; b++;` no -Wbool-operation (clang also silent → matches an oracle).
-      OWNER: — | STATE: OPEN | SHA: 321d4733 | TS: 2026-08-18T16:00Z
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 321d4733 | TS: 2026-08-20T05:25Z
       REF: INVESTIGATIONS.md#r28-low-cluster | DEPS: —
 - [ ] T-mac-30162 [S] Fix: [MED, link correctness] `#pragma weak` — **CORE DONE (5519d195, 2026-08-19T19:14Z): `#pragma weak <sym>` now marks the symbol STB_WEAK** (pragma_parse records the name in mcc_state->pragma_weak_syms; update_storage maps it to STB_WEAK; verified nm W + strong-override-wins link; zero o0 drift, treegate 100%, cell diag.pragma-weak). RESIDUAL: the `= alias` form + pragma-after-definition. Original: `#pragma weak wsym` leaves wsym STRONG (nm: mcc `D _wsym` vs clang/gcc `weak external`); `#pragma weak alias = target` dropped entirely (no alias symbol). No handler in pragma_parse (`mccpp.c:2807`). Dup-symbol link errors / missing weak-override. Clusters w/ T-mac-30135 weak/weakref attr. Fix: weak pragma handler marking the sym weak (reuse a.weak) + weak-alias to target.
       OWNER: — | STATE: OPEN | SHA: 75fa28a3 | TS: 2026-08-18T14:45Z
