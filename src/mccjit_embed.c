@@ -2055,7 +2055,7 @@ typedef void (*mccjit_iph_t)(const unsigned short *, const unsigned short *,
 		                     unsigned long long);
 extern mccjit_iph_t _set_invalid_parameter_handler(mccjit_iph_t);
 static void mccjit_noop_iph(const unsigned short *a, const unsigned short *b,
-			        const unsigned short *c, unsigned int d, unsigned long long e) {
+			        const unsigned short *c, unsigned int d, unsigned long long e) { MCC_TRACE("enter\n");
 	(void)a; (void)b; (void)c; (void)d; (void)e;
 }
 void mccjit_win_crt_compat(void) { MCC_TRACE("enter\n");
