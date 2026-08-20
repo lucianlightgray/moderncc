@@ -2130,6 +2130,9 @@ static int coff_emit_reloc(int etype, unsigned char *fld, addr_t addend) { MCC_T
 	case R_AARCH64_ADR_PREL_PG_HI21: return IMAGE_REL_ARM64_PAGEBASE_REL21;
 	case R_AARCH64_ADD_ABS_LO12_NC: return IMAGE_REL_ARM64_PAGEOFFSET_12A;
 	case R_AARCH64_LDST64_ABS_LO12_NC: return IMAGE_REL_ARM64_PAGEOFFSET_12L;
+	case R_AARCH64_TLSLE_ADD_TPREL_HI12: write32le(fld, (read32le(fld) & ~((uint32_t)0xfff << 10)) | ((((uint32_t)addend >> 12) & 0xfff) << 10)); return IMAGE_REL_ARM64_SECREL_HIGH12A;
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC: write32le(fld, (read32le(fld) & ~((uint32_t)0xfff << 10)) | (((uint32_t)addend & 0xfff) << 10)); return IMAGE_REL_ARM64_SECREL_LOW12A;
 	default: return -1;
 	}
 #else

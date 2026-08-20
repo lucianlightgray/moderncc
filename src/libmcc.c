@@ -1357,7 +1357,7 @@ LIBMCCAPI int mcc_set_output_type(MCCState *s, int output_type) { MCC_TRACE("ent
 	if (output_type == MCC_OUTPUT_OBJ || output_type == MCC_OUTPUT_ASM) { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
 		if (output_type == MCC_OUTPUT_OBJ) { MCC_TRACE("br\n");
-#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_I386
+#if defined MCC_TARGET_X86_64 || defined MCC_TARGET_I386 || defined MCC_TARGET_ARM64
 			if (!s->output_format_explicit)
 				{ MCC_TRACE("br\n"); s->output_format = MCC_OUTPUT_FORMAT_COFF; }
 			else if (s->output_format == MCC_OUTPUT_FORMAT_BINARY)

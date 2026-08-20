@@ -7,8 +7,10 @@ byte-diffing the arm64-PE mcc's emission against the proven-correct native-arm64
 
 Why this works
 --------------
-* mcc always emits ELF *relocatable objects* even for the PE target (only the
-  final linked exe is PE). So `mcc-arm64-win32 -c -o x.o x.c` and
+* mcc can emit an ELF *relocatable object* even for the PE target (only the
+  final linked exe is PE). arm64-win32 now defaults `-c` to COFF (T-win-50005),
+  so this harness forces the PE compiler back to ELF with `-Wl,-oformat=pe-arm64`;
+  then `mcc-arm64-win32 -c -Wl,-oformat=pe-arm64 -o x.o x.c` and
   `mcc-arm64 -c -o x.o x.c` both produce ELF64/EM_AARCH64 objects that can be
   parsed identically and disassembled with capstone (CS_ARCH_ARM64/CS_MODE_ARM).
 * The arm64 ELF codegen path is exercised on real silicon by the native
@@ -368,7 +370,9 @@ def diff_source(src, mcc_elf, mcc_pe, cflags, keep, verbose):
         eobj = os.path.join(td, "elf.o")
         pobj = os.path.join(td, "pe.o")
         compile_obj(mcc_elf, src, eobj, cflags)
-        compile_obj(mcc_pe, src, pobj, cflags)
+        # arm64-win32 now defaults `-c` to COFF (T-win-50005), so force the PE
+        # target back to an ELF relocatable object to keep the ELF-vs-ELF oracle.
+        compile_obj(mcc_pe, src, pobj, cflags + ["-Wl,-oformat=pe-arm64"])
         if keep:
             base = os.path.splitext(os.path.basename(src))[0]
             import shutil
