@@ -9463,6 +9463,12 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_FLOAT128:
 		case TOK_FLOAT128X:
 #ifdef MCC_HAVE_FLOAT128
+#if MCC_LDOUBLE_SIZE == 16 && !defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_I386)
+			if ((t & VT_BTYPE) == VT_LDOUBLE) { MCC_TRACE("br\n");
+				next();
+				typespec_found = 1;
+				break; }
+#endif
 			u = VT_FLOAT128;
 			goto basic_type;
 #else
