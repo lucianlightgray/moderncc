@@ -18873,6 +18873,8 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 		}
 	} else { MCC_TRACE("br\n");
 		sec = ad->section;
+		if (sec && !(type->t & VT_CONSTANT))
+			{ MCC_TRACE("br\n"); sec->sh_flags |= SHF_WRITE; }
 		if (!sec) { MCC_TRACE("br\n");
 			CType *tp = type;
 			while ((tp->t & (VT_BTYPE | VT_ARRAY)) == (VT_PTR | VT_ARRAY))

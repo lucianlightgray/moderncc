@@ -756,6 +756,12 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'bundle=%s isbundle=%s idcmd=%s dlrun=%s\\n' $brc $ftb $idc $drc",
 		 "bundle=0 isbundle=1 idcmd=0 dlrun=42\n"},
 
+		{"macho_custom_writable_section", "os=Darwin",
+		 "printf '__attribute__((section(\"__DATA,mine\"))) int gv=0;\\nint main(void){gv=99;return gv;}\\n' > {W}/csec.c && "
+		 "{MCC} -B{B} -I{I} {W}/csec.c -o {W}/csec && {W}/csec; echo aot=$?; "
+		 "{MCC} -B{B} -I{I} -run {W}/csec.c; echo run=$?",
+		 "aot=99\nrun=99\n"},
+
 		{"macho_dylib_no_internal_exports", "os=Darwin",
 		 "printf 'int pubfn(void){return 7;}\\n' > {W}/vs.c && "
 		 "{MCC} -B{B} -shared {W}/vs.c -o {W}/vs.dylib 2>{W}/vs.err; src=$?; "
