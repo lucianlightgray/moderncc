@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30261   | 2026-08-20T13:50Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10441   | 2026-08-20T13:44Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10441   | 2026-08-20T14:19Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50038   | 2026-08-20T13:49Z |
 
 ## Contracts — blocking, highest priority
@@ -104,10 +104,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-lin-10425 [S] optimizer: `__m128d`/GNU-vector packed codegen + `_mm_rsqrt_ps` — mcc has no VT_VECTOR and scalarizes vector types (nbody8i: 0 packed SSE vs gcc rsqrtps/mulpd/divpd), the specific ~2x unlock for the 11-15x nbody8i gap. HIGH difficulty (new machinery). Child of T-lin-10420.
       OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
       REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
-
-- [ ] T-lin-10440 [S] optimizer: the AST inliner has NO profitability model and is net-negative on divsd-bound loops — give it a JIT-wall-clock-measured profit gate. `ast_inline_run` (src/mccast.c:11303), gated `MCC_OPT_INLINE_FUNCTIONS`=LEVEL(2) (src/mccopt.h:119), inlines every graftable single-return scalar callee unconditionally. It WINS when the callee owns the expensive op (spectral_norm_barrier `eval_A` returns `1.0/d` → -O2 104.7→61.6 ms, ~1.7×) but LOSES when the callee is cheap int math feeding a call-site division (spectral_norm_forkjoin `A()` int, `v[j]/A(i,j)`): inline ON -O2 = 164 ms vs inline OFF (`MCC_AST_INLINE_LIMIT=0`) = 109 ms (≈-O0), at FEWER instructions (7.76B vs 9.92B) — IPC halves 4.99→2.46. NOT spills (static stack-mov 138 vs 141); a scheduling/critical-path stall in the enlarged divsd-bound loop. **Profit = WALL-CLOCK, and per user must be determined by JIT-re-running the code at runtime (compile candidate loop both ways, execute, keep inline only if measured wall-clock improves) — NOT a static AOT instruction-count heuristic (insn-count is inverted here). Lean on the embed-JIT infra (src/mccjit_embed.c); ties to T-lin-10410 (JIT-inline).** Interim static guard if JIT-measure is too big a first step: decline inlining into a loop that already holds a long-latency op (div/sqrt/call) the inline does not eliminate. o0-safe (inliner is optimize>=2; -O0 byte-identical). MUST pass exec + exec-replay + rir-coverage + o0-baseline AND re-measure wall-clock on both kernels (barrier stays ~1.7× up, forkjoin stops regressing). Child of T-lin-10420. **BOX-FACT logged in REF:** the x86_64 cmake-def/mcc was STALE at first run (built before the inliner rebuild) — rebuild the local target's mcc after any compiler-source change before benchmarking.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 5aab92bb | TS: 2026-08-20T13:44Z
-      REF: DETAILS.md#t-lin-10440-inliner-jit-profitability | DEPS: —
 
 
 - [ ] T-mac-30257 [S] Fix: [LOW-MED, diagnostic] `-Wsequence-point` intra-expression read-vs-write (part a of the former T-mac-30111) — warn on `a[i]=i++`, `x=i+i++` (clang/gcc do; mcc under-reports). **PRIOR ATTEMPT REVERTED (74cd7fc3):** the flat `seqp` `(Sym,off)` event model cannot distinguish a read that belongs to the `++` codegen from a separate program read, so a `scalar_storage_order` member post-increment `x.u++` (byte-swap load-modify-store → reads=2/mods=1) false-positives vs clang (broke exec/sso + exec/loop_cond_effects fleet-wide). Needs a real per-subexpression sequencing model, not just enabling read events. Part-b (write-write inter-arg, win 5eecf861) stays landed. See DETAILS#t-mac-30111-part-a-reverted.
