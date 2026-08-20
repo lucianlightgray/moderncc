@@ -141,9 +141,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 90f28bdc | TS: 2026-08-20T14:35Z
       REF: DETAILS.md#t-lin-10441-optimizer-type-completeness | DEPS: —
 
-- [ ] T-lin-10442 [S] mcc self-miscompiles `unary_nested` at -O2 → the chronic `selfhost-output-parity-O2` fleet red (stage-1 mcc mis-tracks labels: `struct_init.c` `&&l_bad` range-designated computed-goto → "label 'l_bad' used but not defined"). ROOT-CAUSED + scripted repro/bisection: MCC_AST_OPT_LIMIT binary-search pins the 621st optimized function = `unary_nested`; MCC_AST_OPT_LIMIT=0 fixes it but NO single `-fno-<pass>` does (optimize+re-emission as a whole, or the ROI/search machinery — a `-fno` that doesn't suppress the ROI sf[] count is a candidate second bug). NEXT: diff unary_nested's re-emitted -O2 body vs -O0, find the dropped label/goto-target/`&&`-address edge. Focused-session (self-compile loop). NOT any lin type-completeness work (pre-existing >=a61c62da). Verify: selfhost-output-parity-O2 mismatches 1→0.
-      OWNER: — | STATE: OPEN | SHA: 40d24007 | TS: 2026-08-20T17:45Z
-      REF: DETAILS.md#t-lin-10442-unary-nested-o2-selfmiscompile | DEPS: —
 
 - [ ] T-lin-10443 [S] `-fno-<strategy>` AST-optimizer flags are structurally INERT — most strategies (bfold/ident/cprop/cse/licm/dse/sccp/jt/tco/cload, ast_strategies[] mccast.c:17996) are gated by `sg_templates`(ast_templates_env), not their own MCC_OPT flag, and `do_<pass>` is driven by strategy fire-counts not the flags. So -fno-tree-dse/-fno-gcse/-fno-tree-loop-im/etc. do nothing (verified dse=1 with/without); flagsweep passes vacuously (only checks parse). Give each strategy a per-flag gate + make flagsweep assert a flag takes EFFECT (count drops). Medium-risk, o0-neutral (default all-on). NOT urgent (debug/usability gap, not a miscompile).
       OWNER: — | STATE: OPEN | SHA: 9dc62d61 | TS: 2026-08-20T18:15Z
