@@ -1744,6 +1744,8 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 					if (mac) { MCC_TRACE("br\n");
 						asm_macro_expand(s1, mac, global);
 					} else { MCC_TRACE("br\n");
+						if (get_tok_str(opcode, NULL)[0] == '.')
+							{ MCC_TRACE("br\n"); mcc_error("unknown directive"); }
 						asm_opcode(s1, opcode);
 					}
 				}

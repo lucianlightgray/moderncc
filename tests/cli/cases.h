@@ -1840,6 +1840,11 @@ static const cli_case_t cli_cases[] = {
 		 "{W}/stdbit && echo DONE",
 		 "STDBIT_OK\nDONE\n"},
 
+		{"asm_unknown_directive", "",
+		 "printf '.text\\n.foobardir 1, 2\\n' > {W}/ud.s && "
+		 "{MCC} -B{B} -I{I} -c {W}/ud.s -o {W}/ud.o 2>&1 | grep -o 'unknown directive' ; echo END",
+		 "unknown directive\nEND\n"},
+
 		{"xlinker_accepted", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/xl.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/xl.c -o {W}/xl.o -Xlinker -Bsymbolic && echo XLINKER_OK",
