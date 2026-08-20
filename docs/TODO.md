@@ -115,9 +115,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
 
 
-- [ ] T-lin-10445 [S] IVOPTS POINTER strength-reduction un-gate — `ast_ivsr_ptr_run` (mccast.c:13853, base+i*stride→ptr+=stride, the nbody bodies+i*56 shape) is DEV+LEVEL(6)-gated (mccopt.h:131); drop DEV → LEVEL(2)/(3). Bounded one-loop-shape existing strategy. Verify [VB] incl exec-replay+rir-coverage + nbody imul→add + selfhost-jit. MEDIUM. Child of T-lin-10423.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: f082e7a4 | TS: 2026-08-20T19:05Z
-      REF: DETAILS.md#t-lin-10420-child-decomposition | DEPS: —
 
 - [ ] T-lin-10446 [S] INVESTIGATE the -O4 nbody2 regression (146 vs 143 @ -O3) — root-cause which LEVEL(4) row regresses it; gates T-lin-10447 (any LEVEL4→3 promote inherits it). Pure investigation. Child of T-lin-10424.
       OWNER: — | STATE: OPEN | SHA: e3350673 | TS: 2026-08-20T18:30Z
