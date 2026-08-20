@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T04:45Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:20Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:30Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T07:30Z |
 
 ## Contracts — blocking, highest priority
@@ -149,9 +149,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-lin-10400 [S] Build a "% of slices executed on GPU" (device-execution-fraction) metric on the `ast_ladder_gpu_report` dispatches/rungs signal + slicerun/gpuconform funnel — the number T-lin-10398 needs (only lowerability/byte-faithfulness is banked today)
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
       REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
-- [ ] T-lin-10431 [S] GPU-coverage strategy 1 cont'd: dispatch the corner-sweep + observed-tuples ladder fallbacks to GPU (explicit-tuple dispatch). Extract the emit+alloc+mcc_gpu_run2+compare core of `ast_ladder_gpu_run` (src/mccast.c) into a helper taking a pre-built `tin`+ntuple; add a tuple entry point; wire `ast_eval_ladder_corner_sweep`/`ast_eval_ladder_observed` (src/ast_eval_slice.h:2239/2268) to build their tuple arrays + dispatch (host eval stays fallback). Low-risk (same emitter/dispatch as T-lin-10401's verified const path). Verify: gpu/*-parity green + dispatch delta on full_language.c. Child of T-lin-10399.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: bf40ca16 | TS: 2026-08-20T04:20Z
-      REF: DETAILS.md#t-lin-10401-gpu-const-dispatch | DEPS: —
 - [ ] T-lin-10402 [S] GPU-coverage strategy 2 [MED risk]: lift the oracle float refusal (mccast.c:18706/18713) guarded on `mcc_gpu_f64()` — the emitter already has f64; unlocks the FP slice category
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-18T14:35Z
       REF: DETAILS.md#t-lin-10399-gpu-slice-research-findings | DEPS: —
