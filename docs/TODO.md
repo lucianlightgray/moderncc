@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30259   | 2026-08-20T05:45Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10432   | 2026-08-20T04:35Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50038   | 2026-08-20T12:28Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50038   | 2026-08-20T12:33Z |
 
 ## Contracts — blocking, highest priority
 
@@ -450,9 +450,9 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-mac-30030 [S] Investigate: long-double self-host determinism hole — folding uses HOST long double (`mccgen.c:4019`), mcc's own `parse_number` depends on it (`mccpp.c:3379`), `LDOUBLE_WORDS` host-derived; no gate catches a STABLE stage-0→stage-1 divergence, `selftest.c` has no float coverage; self-host face of T-mac-30029
       OWNER: — | STATE: OPEN | SHA: 8b0abb63 | TS: 2026-08-17T20:40Z
       REF: INVESTIGATIONS.md#longdouble-selfhost-determinism | DEPS: —
-- [ ] T-mac-30027 [S] Investigate: driver/CLI option semantics — `-imacros` is a wrong silent alias of `-include` (`libmcc.c:3070`), `-fstack-protector` help understates targets (`mcc.c:150`), plain `char` unsigned on x86/i386 (undoc ABI deviation), Mach-O `-undefined dynamic_lookup`/`-flat_namespace` silently ignored, several parsed-but-undocumented options
-      OWNER: — | STATE: OPEN | SHA: 85483b94 | TS: 2026-08-17T20:20Z
-      REF: INVESTIGATIONS.md#driver-cli-semantics | DEPS: —
+- [ ] T-mac-30027 [S] Investigate: driver/CLI option semantics — RE-SCOPED (win-x64 disposition): `char` unsigned on x86_64/i386 = **NON-BUG** (per-target correct, matches gcc; only ARM/arm64-Linux/riscv64 define `MCC_CHAR_IS_UNSIGNED` per their ABIs — do NOT flip x86, it's already signed, and touching the default would break the ARM/riscv ABI + force a re-bank); `-imacros` = **ALREADY FIXED** (T-mac-30218). REMAINING (mac-scoped): Mach-O `-flat_namespace`/`-two_levelnamespace`/`-undefined <treatment>` accepted-and-silently-ignored (`-undefined dynamic_lookup` a no-op) — adjacent to T-mac-30028; plus cosmetic `-fstack-protector` help understates targets (canaries emit on ALL arches) + omits `-fstack-protector-strong`; plus undocumented-option docs.
+      OWNER: — | STATE: OPEN | SHA: 79bf668e | TS: 2026-08-20T12:33Z
+      REF: DETAILS.md#t-mac-30027-disposition-2026-08-20 | DEPS: —
 - [ ] T-mac-30025 [S] Investigate: multithreaded libmcc/JIT reentrancy — per-`MccjitCounterState` lock doesn't cover the process-global JIT scratch it reads (`mccjit_embed.c:361/1191/1665`); `MCC_GPU_LOCK` no-op on Windows; diag ring-buffer publish-before-fill (single-threaded reentry verified clean)
       OWNER: — | STATE: OPEN | SHA: 9cf26f48 | TS: 2026-08-17T20:14Z
       REF: INVESTIGATIONS.md#libmcc-reentrancy | DEPS: —
