@@ -15004,7 +15004,7 @@ tok_next:
 				int sv_astact = ast_active, sv_riract = rir_active;
 				int sv_astrepl = ast_replaying, sv_rc2 = rir_c2_active;
 				int sv_vn = (int)(vtop - vstack + 1), sv_lr[4];
-				int sv_tok;
+				int sv_tok, sv_ircap;
 				CValue sv_tokc;
 				ast_locrec_snapshot(sv_lr);
 				skip_or_save_block(&chk);
@@ -15022,11 +15022,13 @@ tok_next:
 				rir_active = 0;
 				ast_replaying = 0;
 				rir_c2_active = 0;
+				sv_ircap = ast_ircap_suspend();
 				expr_eq();
 				/* only type-checking: don't validate the block terminator
 				 * (end_macro discards any remainder); expr_eq has already
 				 * diagnosed the association's constraints. */
 				end_macro();
+				ast_ircap_resume(sv_ircap);
 				tok = sv_tok;
 				tokc = sv_tokc;
 				vtop = vstack + sv_vn - 1;

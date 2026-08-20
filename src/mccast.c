@@ -2644,6 +2644,13 @@ static void ir_cap_reset(void);
 static int ir_cap_active;
 static void ir_cap_gap(void);
 
+int ast_ircap_suspend(void) { MCC_TRACE("enter\n");
+	int prev = ir_cap_active;
+	ir_cap_active = 0;
+	return prev;
+}
+void ast_ircap_resume(int prev) { MCC_TRACE("enter\n"); ir_cap_active = prev; }
+
 void ast_fconst_reuse_disable(int off) { MCC_TRACE("enter\n"); ast_fconst_reuse_off = off; }
 
 int ast_fconst_reuse(int cplx, const unsigned char *key) { MCC_TRACE("enter\n");

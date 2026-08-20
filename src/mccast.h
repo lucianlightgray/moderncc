@@ -197,6 +197,8 @@ int ast_alloc_loc(int size, int align);
 int ast_alloc_temp_loc(int size, int align);
 void ast_locrec_snapshot(int out[4]);
 void ast_locrec_restore(const int in[4]);
+int ast_ircap_suspend(void);
+void ast_ircap_resume(int prev);
 int ast_ltemp_overlaps(int lo, int sz);
 #define AST_FCONST_KEY 36
 int ast_fconst_reuse(int cplx, const unsigned char *key);
