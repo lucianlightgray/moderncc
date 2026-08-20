@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T00:07Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T23:10Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10418   | 2026-08-19T23:25Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50034   | 2026-08-19T23:34Z |
 
 ## Contracts — blocking, highest priority
@@ -56,10 +56,8 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
       REF: DETAILS.md#t-lin-10007-parse-float128-float128-28-cells | DEPS: —
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
-- [ ] T-mac-30074 [S] Fix: [MED] lone `\r` (classic-Mac line ending) treated as whitespace not a line terminator — a `#define` after a lone `\r` is emitted as text (macro undefined) and a `//` comment swallows the rest of the file. Treat a lone `\r` (not `\r\n`) as a newline in the main lexer (line_num++/BOL), keeping the CH_EOB/chunk-boundary path unchanged to avoid CRLF regression.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: (30074) | TS: 2026-08-19T23:20Z
-      REF: DETAILS.md#t-mac-30074-lone-cr | DEPS: —
 
+- SESSION WRAP (lin-x64, 2026-08-19T23:25Z, user "wrap up"): **T-mac-30074 [S] DONE+ARCHIVED** (code 615998d1 / docs 898228be) — lone `\r` (classic-Mac line ending) now terminates a line (main lexer `line_num++`/BOL + `parse_line_comment` stops at `\r`), so `#define`/`//` after a lone `\r` work; `\r\n` and `\n` unregressed via a CH_EOB-safe guard (mcc streams in IO_BUF_SIZE chunks). o0-neutral; exec/replay 737 + o0-baseline green, no EOF/loop regression; oracle-verified vs gcc; TDD diag/cr-line-ending (runtime-generated `\r`, anti-vacuous). Residual: lone `\r` exactly at a chunk boundary keeps pre-fix behavior. **SESSION TOTAL: 8 tasks DONE+ARCHIVED** (T-win-50032 clz/ctz RED-greened, T-mac-30138, T-mac-30145, T-lin-10395, T-lin-10417 deadlock-fix, T-mac-30060 non-bug, T-mac-30167 alignof-packed, T-mac-30074 lone-CR) + **T-mac-30158 ctor-priority ELF slice** (Mach-O→mac) + minted T-lin-10416 + retired the redundant exec-search-threads family + fixed a docs/refs red + found 2 bugs in mac's -Wsign-compare (mac fixed both). No active lin claims except T-mac-30158 (ELF done, Mach-O TTL-resumable for mac). Tree clean, HEAD pushed.
 
 - SESSION (lin-x64, 2026-08-19T23:10Z): **T-mac-30167 [S] DONE+ARCHIVED** (code 61e35b42 / docs 4f650d77) — `_Alignof` of a `__attribute__((packed))` struct member now returns its reduced alignment (1), not the natural type align. struct packed recorded on the type; member-access sets an effective-align hint (MCCState.gen_member_align); `_Alignof` applies it only when the result is still an lvalue (so p.x+1/&p.x/ternary/comma fall back to type align, matching gcc); sizeof + codegen untouched. o0-neutral (o0-baseline+KP + exec/replay 737 green); oracle-verified vs gcc across 11 cases; TDD diag/alignof-packed-member, anti-vacuous. pragma_pack(N) members = documented residual. Also FIXED a fleet docs/refs red: peer T-mac-30142 DETAILS section lacked its `<a id>` tag (added it). COLLAB: mac fixed both -Wsign-compare edge bugs I flagged (6d622fc8, my combtype-gate suggestion landed). No active lin claims. Tree clean, HEAD pushed.
 
