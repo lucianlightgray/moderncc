@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30261   | 2026-08-20T17:05Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10442   | 2026-08-20T17:10Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10443   | 2026-08-20T17:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50041   | 2026-08-20T16:15Z |
 
 ## Contracts — blocking, highest priority
@@ -116,6 +116,10 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
 - [ ] T-lin-10441 [S] optimizer TYPE-COMPLETENESS (do FIRST, before algorithm tuning; per user 2026-08-20): make every optimizer pass handle EVERY VT type — bool/byte/short/int/long/float/double/ldouble/__int128(VT_QLONG/QFLOAT)/__float128/`_BitInt`(bs.bp)/void.func-skip; vector(128/256/512) is T-lin-10425. Audit each `ast_*_run`/strategy for `is_float`/btype/`ast_bad_type` bailouts that drop float/wide/128 programs, extend to all types, keep o0-neutral (passes are O2+), verify exec+exec-replay+o0-baseline + benchmark parity per fix. Child of T-lin-10420.
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 90f28bdc | TS: 2026-08-20T14:35Z
       REF: DETAILS.md#t-lin-10441-optimizer-type-completeness | DEPS: —
+
+- [ ] T-lin-10442 [S] mcc self-miscompiles `unary_nested` at -O2 → the chronic `selfhost-output-parity-O2` fleet red (stage-1 mcc mis-tracks labels: `struct_init.c` `&&l_bad` range-designated computed-goto → "label 'l_bad' used but not defined"). ROOT-CAUSED + scripted repro/bisection: MCC_AST_OPT_LIMIT binary-search pins the 621st optimized function = `unary_nested`; MCC_AST_OPT_LIMIT=0 fixes it but NO single `-fno-<pass>` does (optimize+re-emission as a whole, or the ROI/search machinery — a `-fno` that doesn't suppress the ROI sf[] count is a candidate second bug). NEXT: diff unary_nested's re-emitted -O2 body vs -O0, find the dropped label/goto-target/`&&`-address edge. Focused-session (self-compile loop). NOT any lin type-completeness work (pre-existing >=a61c62da). Verify: selfhost-output-parity-O2 mismatches 1→0.
+      OWNER: — | STATE: OPEN | SHA: 40d24007 | TS: 2026-08-20T17:45Z
+      REF: DETAILS.md#t-lin-10442-unary-nested-o2-selfmiscompile | DEPS: —
 
 
 - [ ] T-mac-30257 [S] Fix: [LOW-MED, diagnostic] `-Wsequence-point` intra-expression read-vs-write (part a of the former T-mac-30111) — warn on `a[i]=i++`, `x=i+i++` (clang/gcc do; mcc under-reports). **PRIOR ATTEMPT REVERTED (74cd7fc3):** the flat `seqp` `(Sym,off)` event model cannot distinguish a read that belongs to the `++` codegen from a separate program read, so a `scalar_storage_order` member post-increment `x.u++` (byte-swap load-modify-store → reads=2/mods=1) false-positives vs clang (broke exec/sso + exec/loop_cond_effects fleet-wide). Needs a real per-subexpression sequencing model, not just enabling read events. Part-b (write-write inter-arg, win 5eecf861) stays landed. See DETAILS#t-mac-30111-part-a-reverted.
