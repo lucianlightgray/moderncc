@@ -861,9 +861,18 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -w -O1 -c {W}/be.c -o {W}/beC.o && "
 		 "printf 'int g;\\nint f(void){ if (!!(g==0)) return 1; return 2; }\\n' > {W}/be.c && "
 		 "{MCC} -B{B} -I{I} -w -O1 -c {W}/be.c -o {W}/beB.o && "
-		 "{ cmp {W}/beA.o {W}/beB.o > /dev/null 2>&1 && echo expect=NEUTRAL || echo expect=COSTS; }; "
-		 "{ cmp {W}/beC.o {W}/beB.o > /dev/null 2>&1 && echo prob=NEUTRAL || echo prob=COSTS; }; echo END",
-		 "expect=COSTS\nprob=COSTS\nEND\n"},
+		 /* Assert NO materialization bloat (the invariant this test guards --
+		  * __builtin_expect{,_with_probability} must not emit the wrapped
+		  * comparison as extra code) via OBJECT SIZE, not byte-identity. Byte
+		  * identity also flips on legitimate, backend-dependent block-layout
+		  * reordering from the branch hint (present on some targets, absent on
+		  * win-x64 where mcc matches win-gcc's identical -O1 output) -- size is
+		  * layout-invariant, so this stays portable while still catching a
+		  * materialized comparison (which would enlarge .text). */
+		 "a=$(wc -c < {W}/beA.o); b=$(wc -c < {W}/beB.o); c=$(wc -c < {W}/beC.o); "
+		 "{ [ \"$a\" -eq \"$b\" ] && echo expect=nobloat || echo expect=BLOAT; }; "
+		 "{ [ \"$c\" -eq \"$b\" ] && echo prob=nobloat || echo prob=BLOAT; }; echo END",
+		 "expect=nobloat\nprob=nobloat\nEND\n"},
 
 		{"builtin_inline_mem_and_retaddr", "",
 		 "printf 'int main(void){ char a[8]={0}, b[8]={1,2,3,4,5,6,7,8}, c[8], d[4];"
