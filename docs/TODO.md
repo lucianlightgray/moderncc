@@ -10,7 +10,9 @@
 
 ## Contracts — blocking, highest priority
 
-_Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b328a85a), T-lin-10427 (gated MCC_COOP_MT primitives, 87b49371), **T-lin-10428 (M:N core, 50da1e68 — both spectral_norm kernels ~3.7x toward native under mcc-coop-mn)**. Remaining coop children in Open: T-lin-10429 (TLS safety — see its note: 10428's non-migrating design largely moots the hazard) and T-lin-10430 [X]win (Win32 multi-worker); both DEPS on 10428 now satisfied._
+- **FLEET RED (mac-owned) — 4 gates down from mac's 9c897e4a (T-mac-30175 `__builtin_constant_p` const-fold).** full_language.c fails to compile at -O1 (`tests/diff/parts/s7_1.h:54: error: initializer element is not constant`; -O0 fine), breaking `emit-map-full-language`, `gpu/always-gpu-parity-full-language`, `ast/inv-faithful`, `ast/inv-faithful-known-positive`. Bisected conclusively (lin, worktree): f63ef601 clean → 9c897e4a broken; suspect hunk is the gexpr `(!CONST_WANTED || constant_p_depth)` change (forces gv() materialization of a const during a static-init -O1 const-eval). Repro: `mcc -O1 -c -I. -DCC_NAME=CC_gcc tests/diff/full_language.c`. FYI'd mac-arm64 (twice; their session may have restarted). NOT lin-fixed — it's mac's const-fold change + expertise; reverting the gexpr hunk would break T-mac-30175's `__builtin_constant_p((1,7))->0` comma rule. Owner: mac-arm64.
+
+_Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b328a85a), T-lin-10427 (gated MCC_COOP_MT primitives, 87b49371), **T-lin-10428 (M:N core, 50da1e68 — both spectral_norm kernels ~3.7x toward native under mcc-coop-mn)**. Remaining coop children in Open: T-lin-10429 (TLS safety — see its note: 10428's non-migrating design largely moots the hazard) and T-lin-10430 [X]win (Win32 multi-worker); both DEPS on 10428 now satisfied._
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
