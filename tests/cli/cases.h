@@ -774,6 +774,16 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s cur=%s compat=%s\\n' $rc $cur $cmp",
 		 "link=0 cur=1 compat=1\n"},
 
+		{"run_atexit_order_and_reentrant", "os=Darwin",
+		 "printf '#include <stdio.h>\\n#include <stdlib.h>\\n"
+		 "__attribute__((destructor)) static void dt(void){puts(\"dtor\");}\\n"
+		 "static void late(void){puts(\"late\");}\\nstatic void a1(void){puts(\"a1\");}\\n"
+		 "static void a2(void){puts(\"a2\"); atexit(late);}\\n"
+		 "int main(void){atexit(a1);atexit(a2);return 0;}\\n' > {W}/rr.c && "
+		 "{MCC} -B{B} -run {W}/rr.c > {W}/rr.out 2>{W}/rr.err; "
+		 "printf 'out=%s\\n' \"$(tr '\\n' ',' < {W}/rr.out)\"",
+		 "out=a2,late,a1,dtor,\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

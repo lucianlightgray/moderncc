@@ -27,9 +27,10 @@ static void *rt_exitarg[32];
 static int __rt_nr_exit;
 
 void __run_on_exit(int ret) {
-	int n = __rt_nr_exit;
-	while (n)
-		--n, ((void (*)(int, void *))rt_exitfunc[n])(ret, rt_exitarg[n]);
+	while (__rt_nr_exit) {
+		int n = --__rt_nr_exit;
+		((void (*)(int, void *))rt_exitfunc[n])(ret, rt_exitarg[n]);
+	}
 }
 
 int on_exit(void *function, void *arg) {
