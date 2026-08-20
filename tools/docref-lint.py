@@ -219,7 +219,7 @@ def check_doc(root, doc, files, dirs, cache, allow, cited, mutate, gated=True):
 
 
 ANCHOR_DEF = re.compile(r'<a id="([^"]+)"></a>')
-ANCHOR_REF = re.compile(r'DETAILS\.md#([a-z0-9][a-z0-9-]*)')
+ANCHOR_REF = re.compile(r'DETAILS\.md#([A-Za-z0-9][A-Za-z0-9_-]*)')
 
 
 CONFLICT = re.compile(r"^(?:<<<<<<< |>>>>>>> |=======$)")
