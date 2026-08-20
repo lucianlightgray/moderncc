@@ -651,6 +651,66 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 		}
 		break;
 	}
+	case TOK_ASMDIR_octa: { MCC_TRACE("br\n");
+		next();
+		for (;;) { MCC_TRACE("br\n");
+			uint8_t buf[16];
+			const char *p;
+			int i, neg = 0, base = 10;
+			memset(buf, 0, sizeof buf);
+			if (tok == '-' || tok == '+') { MCC_TRACE("br\n");
+				neg = (tok == '-');
+				next();
+			}
+			if (tok != TOK_PPNUM)
+				{ MCC_TRACE("br\n"); expect("128 bit constant"); }
+			p = tokc.str.data;
+			if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
+				{ MCC_TRACE("br\n"); base = 16; p += 2; }
+			else if (p[0] == '0' && (p[1] == 'b' || p[1] == 'B'))
+				{ MCC_TRACE("br\n"); base = 2; p += 2; }
+			else if (p[0] == '0' && p[1] != '\0')
+				{ MCC_TRACE("br\n"); base = 8; p += 1; }
+			for (; *p; p++) { MCC_TRACE("br\n");
+				int d, carry;
+				if (*p >= '0' && *p <= '9')
+					d = *p - '0';
+				else if (*p >= 'a' && *p <= 'f')
+					d = *p - 'a' + 10;
+				else if (*p >= 'A' && *p <= 'F')
+					d = *p - 'A' + 10;
+				else
+					{ MCC_TRACE("br\n"); mcc_error("128 bit constant"); d = 0; }
+				if (d >= base)
+					{ MCC_TRACE("br\n"); mcc_error("128 bit constant"); }
+				carry = d;
+				for (i = 0; i < 16; i++) { MCC_TRACE("br\n");
+					int v = buf[i] * base + carry;
+					buf[i] = (uint8_t)v;
+					carry = v >> 8;
+				}
+			}
+			if (neg) { MCC_TRACE("br\n");
+				int carry = 1;
+				for (i = 0; i < 16; i++) { MCC_TRACE("br\n");
+					int v = (uint8_t)~buf[i] + carry;
+					buf[i] = (uint8_t)v;
+					carry = v >> 8;
+				}
+			}
+			next();
+			if (sec->sh_type != SHT_NOBITS) { MCC_TRACE("br\n");
+				for (i = 0; i < 16; i++)
+					{ MCC_TRACE("br\n"); g(buf[i]); }
+			} else { MCC_TRACE("br\n");
+				ind += 16;
+			}
+			if (tok != ',')
+				{ MCC_TRACE("br\n"); break; }
+			next();
+		}
+		break;
+	}
 	case TOK_ASMDIR_byte:
 		size = 1;
 		goto asm_data;
@@ -1420,23 +1480,36 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 				goto redo;
 			}
 		} else if (tok >= TOK_IDENT) { MCC_TRACE("br\n");
+			const char *nm = get_tok_str(tok, NULL);
+			int dc = 0;
 #if MCC_EH_FRAME
-			if (!strncmp(get_tok_str(tok, NULL), ".cfi_", 5)) { MCC_TRACE("br\n");
+			if (!strncmp(nm, ".cfi_", 5)) { MCC_TRACE("br\n");
 				asm_parse_cfi_directive(s1);
 				goto cfi_done;
 			}
 #endif
-			opcode = tok;
-			next();
-			if (tok == ':') { MCC_TRACE("br\n");
-				asm_new_label(s1, opcode, 0);
-				next();
-				goto redo;
-			} else if (tok == '=') { MCC_TRACE("br\n");
-				set_symbol(s1, opcode);
-				goto redo;
+			if (!strcmp(nm, ".dc.b"))
+				dc = TOK_ASMDIR_byte;
+			else if (!strcmp(nm, ".dc.w") || !strcmp(nm, ".dc"))
+				dc = TOK_ASMDIR_2byte;
+			else if (!strcmp(nm, ".dc.l"))
+				dc = TOK_ASMDIR_4byte;
+			if (dc) { MCC_TRACE("br\n");
+				tok = dc;
+				asm_parse_directive(s1, global);
 			} else { MCC_TRACE("br\n");
-				asm_opcode(s1, opcode);
+				opcode = tok;
+				next();
+				if (tok == ':') { MCC_TRACE("br\n");
+					asm_new_label(s1, opcode, 0);
+					next();
+					goto redo;
+				} else if (tok == '=') { MCC_TRACE("br\n");
+					set_symbol(s1, opcode);
+					goto redo;
+				} else { MCC_TRACE("br\n");
+					asm_opcode(s1, opcode);
+				}
 			}
 		}
 #if MCC_EH_FRAME
