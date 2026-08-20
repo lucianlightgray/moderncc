@@ -725,6 +725,16 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'link=%s run=%s\\n' $link $run",
 		 "link=0 run=42\n"},
 
+		{"stmt_expr_void_when_last_not_expr", "",
+		 "printf 'int f(int x){return x;}\\nint main(void){ int r=({ f(1); f(40); }); "
+		 "return r+2==42?42:1; }\\n' > {W}/seg.c && "
+		 "{MCC} -B{B} {W}/seg.c -o {W}/seg.exe 2>{W}/seg.err; {W}/seg.exe; good=$?; "
+		 "printf 'int g(int x){return x;}\\nint h(void){ int r=({ g(1); {int z=5;} }); "
+		 "return r; }\\n' > {W}/seb.c && "
+		 "{MCC} -B{B} -c {W}/seb.c -o {W}/seb.o 2>{W}/seb.err; bad=$?; "
+		 "printf 'good=%s bad_rejected=%s\\n' $good $bad",
+		 "good=42 bad_rejected=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

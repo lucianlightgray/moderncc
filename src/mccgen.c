@@ -17125,13 +17125,21 @@ again:
 		{
 			int seen_stmt = 0;
 			while (tok != '}') { MCC_TRACE("br\n");
+				if ((flags & (STMT_EXPR | STMT_COMPOUND)) == STMT_EXPR) { MCC_TRACE("br\n");
+					vpop();
+					vpushi(0);
+					vtop->type.t = VT_VOID;
+				}
 				if (seen_stmt && mcc_state->cversion < 199901 &&
 						tok_starts_declspec())
 					{ MCC_TRACE("br\n"); mcc_pedantic("mixed declarations and code are a "
 											 "C99 feature"); }
 				decl(VT_LOCAL);
 				if (tok != '}') { MCC_TRACE("br\n");
-					block(flags | STMT_COMPOUND);
+					int subflags = flags | STMT_COMPOUND;
+					if (flags & STMT_COMPOUND)
+						{ MCC_TRACE("br\n"); subflags &= ~STMT_EXPR; }
+					block(subflags);
 					seen_stmt = 1;
 				}
 			}
