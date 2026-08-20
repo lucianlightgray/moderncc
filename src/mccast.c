@@ -8103,6 +8103,12 @@ static int ast_ident_common(int t1, int t2) { MCC_TRACE("enter\n");
 	int fb1 = ast_float_rank(t1 & VT_BTYPE), fb2 = ast_float_rank(t2 & VT_BTYPE);
 	if (fb1 || fb2)
 		{ MCC_TRACE("br\n"); return (fb1 >= fb2 ? t1 : t2) & VT_BTYPE; }
+	if ((t1 & VT_BTYPE) == VT_INT128 || (t2 & VT_BTYPE) == VT_INT128) { MCC_TRACE("br\n");
+		if ((t1 & (VT_BTYPE | VT_UNSIGNED)) == (VT_INT128 | VT_UNSIGNED) ||
+				(t2 & (VT_BTYPE | VT_UNSIGNED)) == (VT_INT128 | VT_UNSIGNED))
+			{ MCC_TRACE("br\n"); return VT_INT128 | VT_UNSIGNED; }
+		return VT_INT128;
+	}
 	if ((t1 & VT_BTYPE) == VT_LLONG || (t2 & VT_BTYPE) == VT_LLONG) { MCC_TRACE("br\n");
 		if ((t1 & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED) ||
 				(t2 & (VT_BTYPE | VT_UNSIGNED)) == (VT_LLONG | VT_UNSIGNED))
@@ -8177,7 +8183,7 @@ static int ast_ident_etype(AstArena *a, AstLocal n, int *tt, uint64_t *ref) { MC
 		if (!ast_ident_etype(a, ast_child(a, n, 0), &t1, &r1))
 			{ MCC_TRACE("br\n"); return 0; }
 		if (op == TOK_SHL || op == TOK_SHR || op == TOK_SAR) { MCC_TRACE("br\n");
-			if (!ast_ident_intt(t1))
+			if (!ast_ident_intt(t1) && (t1 & VT_BTYPE) != VT_INT128)
 				{ MCC_TRACE("br\n"); return 0; }
 			*tt = ast_ident_common(t1, t1);
 			*ref = 0;
@@ -8220,7 +8226,8 @@ static int ast_ident_etype(AstArena *a, AstLocal n, int *tt, uint64_t *ref) { MC
 			*ref = 0;
 			return 1;
 		}
-		if (!ast_ident_intt(t1) || !ast_ident_intt(t2))
+		if ((!ast_ident_intt(t1) && (t1 & VT_BTYPE) != VT_INT128) ||
+				(!ast_ident_intt(t2) && (t2 & VT_BTYPE) != VT_INT128))
 			{ MCC_TRACE("br\n"); return 0; }
 		*tt = ast_ident_common(t1, t2);
 		*ref = 0;
