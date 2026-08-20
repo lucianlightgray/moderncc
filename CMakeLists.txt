@@ -4416,6 +4416,14 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_BINARY_DIR}/dse-typecov")
             set_tests_properties("ast/dse-typecov" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120)
+
+            add_test(NAME "ast/cse-typecov"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/cse-typecov.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_CURRENT_BINARY_DIR}/cse-typecov")
+            set_tests_properties("ast/cse-typecov" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120)
         else()
             if(MCC_TARGETOS STREQUAL "Darwin")
                 set(_osxhp_why "osx/headers-parse's --min-files floor is measured by the Linux-host mcc parsing runtime/osx/include; a native Darwin mcc reads different type sizes and compiles a smaller corpus subset than that host, so the floor is host-specific and the cell is scoped to the host that banks it")
