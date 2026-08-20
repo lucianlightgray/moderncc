@@ -14,6 +14,13 @@ static float scse(float a, float b)
 	return x + y;
 }
 
+static long pcse(char *base, long n)
+{
+	char *x = base + n;
+	char *y = base + n;
+	return (x - base) + (y - base);
+}
+
 static int icse(int a, int b)
 {
 	int x = a * b - a;
@@ -23,6 +30,8 @@ static int icse(int a, int b)
 
 int main(void)
 {
-	printf("%.1f %.1f %d\n", dcse(3, 4), (double)scse(3, 4), icse(3, 4));
+	char buf[16];
+	printf("%.1f %.1f %ld %d\n", dcse(3, 4), (double)scse(3, 4), pcse(buf, 5),
+				 icse(3, 4));
 	return 0;
 }

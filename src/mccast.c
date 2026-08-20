@@ -16702,7 +16702,8 @@ static void ast_cse_block(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 						!ast_tco_reads_off(a, val, off) &&
 						ast_ident_etype(a, val, &et, &er) && ast_cse_scalar(et) &&
 						(et & (VT_BTYPE | VT_UNSIGNED)) == (tt & (VT_BTYPE | VT_UNSIGNED)) &&
-						er == ast_type_ref(a, lval)) { MCC_TRACE("br\n");
+						(er == ast_type_ref(a, lval) ||
+						 (et & VT_BTYPE) == VT_PTR)) { MCC_TRACE("br\n");
 					ast_cse_expr[ast_cse_n] = val;
 					ast_cse_ref[ast_cse_n] = lval;
 					ast_cse_off[ast_cse_n] = off;
@@ -16802,7 +16803,8 @@ static void ast_cse_stmts(AstArena *a, AstLocal bb) { MCC_TRACE("enter\n");
 						!ast_tco_reads_off(a, val, off) &&
 						ast_ident_etype(a, val, &et, &er) && ast_cse_scalar(et) &&
 						(et & (VT_BTYPE | VT_UNSIGNED)) == (tt & (VT_BTYPE | VT_UNSIGNED)) &&
-						er == ast_type_ref(a, lval)) { MCC_TRACE("br\n");
+						(er == ast_type_ref(a, lval) ||
+						 (et & VT_BTYPE) == VT_PTR)) { MCC_TRACE("br\n");
 					ast_cse_expr[ast_cse_n] = val;
 					ast_cse_ref[ast_cse_n] = lval;
 					ast_cse_off[ast_cse_n] = off;
