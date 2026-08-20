@@ -233,6 +233,9 @@
 #if defined __linux__ && (defined __arm__ || defined __aarch64__)
 	#define __WCHAR_MAX__ 0xffffffffU
 	#define __WCHAR_MIN__ 0U
+#elif defined _WIN32
+	#define __WCHAR_MAX__ 0xffff
+	#define __WCHAR_MIN__ 0
 #else
 	#define __WCHAR_MAX__ 0x7fffffff
 	#define __WCHAR_MIN__ (-__WCHAR_MAX__ - 1)

@@ -98,10 +98,10 @@ typedef unsigned long long uintmax_t;
 #define SIG_ATOMIC_MIN INT32_MIN
 #define SIG_ATOMIC_MAX INT32_MAX
 #ifndef WCHAR_MIN
-#define WCHAR_MIN INT32_MIN
+#define WCHAR_MIN __WCHAR_MIN__
 #endif
 #ifndef WCHAR_MAX
-#define WCHAR_MAX INT32_MAX
+#define WCHAR_MAX __WCHAR_MAX__
 #endif
 #ifndef WINT_MIN
 #define WINT_MIN 0
