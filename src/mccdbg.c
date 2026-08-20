@@ -97,6 +97,7 @@ static const struct
 #define DWARF_ABBREV_CONST_TYPE 27
 #define DWARF_ABBREV_VOLATILE_TYPE 28
 #define DWARF_ABBREV_UNSPECIFIED_TYPE 29
+#define DWARF_ABBREV_ATOMIC_TYPE 30
 
 static const unsigned char dwarf_abbrev_init[] = {
 		DWARF_ABBREV_COMPILE_UNIT, DW_TAG_compile_unit, 1,
@@ -283,6 +284,9 @@ static const unsigned char dwarf_abbrev_init[] = {
 		0, 0,
 		DWARF_ABBREV_UNSPECIFIED_TYPE, DW_TAG_unspecified_type, 0,
 		DW_AT_name, DW_FORM_strp,
+		0, 0,
+		DWARF_ABBREV_ATOMIC_TYPE, DW_TAG_atomic_type, 0,
+		DW_AT_type, DW_FORM_ref4,
 		0, 0,
 		0};
 
@@ -2375,7 +2379,7 @@ static int stabs_struct_find(MCCState *s1, Sym *t, int *p_id) { MCC_TRACE("enter
 }
 
 static int remove_type_info(int type) { MCC_TRACE("enter\n");
-	type &= ~(VT_STORAGE | VT_CONSTANT | VT_VOLATILE | VT_VLA);
+	type &= ~(VT_STORAGE | VT_CONSTANT | VT_VOLATILE | VT_VLA | VT_ATOMIC_BIT);
 	if ((type & VT_BTYPE) != VT_BYTE)
 		{ MCC_TRACE("br\n"); type &= ~VT_DEFSIGN; }
 	if (!(type & VT_BITFIELD) && (type & VT_STRUCT_MASK) > VT_ENUM)
@@ -2682,16 +2686,18 @@ static int mcc_get_dwarf_info(MCCState *s1, Sym *s) { MCC_TRACE("enter\n");
 	e = NULL;
 	t = s;
 	for (;;) { MCC_TRACE("br\n");
-		int qi;
-		for (qi = 0; qi < 2; qi++) { MCC_TRACE("br\n");
-			int qbit = qi == 0 ? VT_CONSTANT : VT_VOLATILE;
-			if (!(t->type.t & qbit))
-				{ MCC_TRACE("br\n"); continue; }
+		int quals[2], nq = 0, qk;
+		if (t->type.t & VT_CONSTANT)
+			{ MCC_TRACE("br\n"); quals[nq++] = DWARF_ABBREV_CONST_TYPE; }
+		if (t->type.t & VT_ATOMIC_BIT)
+			{ MCC_TRACE("br\n"); quals[nq++] = DWARF_ABBREV_ATOMIC_TYPE; }
+		else if (t->type.t & VT_VOLATILE)
+			{ MCC_TRACE("br\n"); quals[nq++] = DWARF_ABBREV_VOLATILE_TYPE; }
+		for (qk = 0; qk < nq; qk++) { MCC_TRACE("br\n");
 			i = dwarf_info_section->data_offset;
 			if (retval == debug_type)
 				{ MCC_TRACE("br\n"); retval = i; }
-			dwarf_data1(dwarf_info_section,
-									qi == 0 ? DWARF_ABBREV_CONST_TYPE : DWARF_ABBREV_VOLATILE_TYPE);
+			dwarf_data1(dwarf_info_section, quals[qk]);
 			if (last_pos != -1) { MCC_TRACE("br\n");
 				mcc_debug_check_forw(s1, e, last_pos);
 				write32le(dwarf_info_section->data + last_pos,

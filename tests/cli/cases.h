@@ -833,6 +833,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'compile=%s unspec=%s voidbase=%s verify=%s\\n' $rc $uns $voidbase $ver",
 		 "compile=0 unspec=1 voidbase=0 verify=1\n"},
 
+		{"dwarf_atomic_type", "os=Darwin",
+		 "printf '_Atomic int ai;\\nint main(void){return ai;}\\n' > {W}/at.c && "
+		 "{MCC} -B{B} -g -c {W}/at.c -o {W}/at.o 2>{W}/at.err; rc=$?; "
+		 "atom=$(dwarfdump {W}/at.o 2>/dev/null | grep -c 'DW_TAG_atomic_type'); "
+		 "ver=$(dwarfdump --verify {W}/at.o 2>&1 | grep -c 'No errors'); "
+		 "printf 'compile=%s atomic=%s verify=%s\\n' $rc $atom $ver",
+		 "compile=0 atomic=1 verify=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "
