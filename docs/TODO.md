@@ -117,7 +117,7 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: T-lin-10428
 
 - [ ] T-lin-10422 [S] optimizer quick win: promote-locals selection/bailout (ast_plan_promotion, src/mccast.c:4592). Narrow the function-wide `has_landor` bailout (:4637) to fire only when the &&/||/cond-store references a promotion candidate (collect candidates before the bailout), and bias `cweight` (:4642) toward loop-body references so induction vars + invariant base pointers pin into registers first. o0-safe (gated optimize>=2). MUST pass exec + exec-replay (record==replay faithfulness) + rir-coverage + o0-baseline before DONE. Evidence: a cold &&-if inflates a hot loop ~36%. Child of T-lin-10420.
-      OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
+      OWNER: lin-x64 | STATE: CLAIMED | SHA: d6bafe42 | TS: 2026-08-20T04:06Z
       REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
 
 - [ ] T-lin-10423 [S] optimizer: IVOPTS strength reduction — `MCC_OPT_IVOPTS` is nominally on at -O1 but inert (nbody2/8i/nsieve recompute `imul $stride` every iteration instead of pointer `+=stride`). Make derived per-iteration address math a strength-reduced induction. MED-HIGH difficulty; o0-safe. Child of T-lin-10420.
