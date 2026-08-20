@@ -43,6 +43,16 @@ int main(void) {
 	if (__builtin_clzg(x) != 55) return 26;
 	if (__builtin_ctzg(x) != 200) return 27;
 	if (__builtin_popcountg(x) != 1) return 28;
+	unsigned _BitInt(300) y = ((unsigned _BitInt(300))1 << 290) | 7;
+	unsigned _BitInt(512) zz = (unsigned _BitInt(512))1 << 502;
+	if (__builtin_clzg(y) != 9) return 60;
+	if (__builtin_ctzg(y) != 0) return 61;
+	if (__builtin_popcountg(y) != 4) return 62;
+	if (__builtin_stdc_bit_width(y) != 291) return 63;
+	if (__builtin_clzg(zz) != 9) return 64;
+	if (__builtin_ctzg(zz) != 502) return 65;
+	if (__builtin_popcountg(zz) != 1) return 66;
+	if (__builtin_bitprecisionof(zz) != 512) return 67;
 	if (__builtin_stdc_leading_ones(w) != 0) return 30;
 	if (__builtin_stdc_trailing_ones(w) != 0) return 31;
 	if (__builtin_stdc_first_leading_one(w) != 50) return 32;

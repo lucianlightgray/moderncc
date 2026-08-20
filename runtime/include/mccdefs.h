@@ -1345,7 +1345,7 @@
 
 	#define __mcc_gprec(x) (__builtin_bitprecisionof(x))
 	#define __mcc_gsel(_1, _2, __mcc_gn, ...) __mcc_gn
-	#define __mcc_gwide(x) (__mcc_gprec(x) > __MCC_GBITS && __mcc_gprec(x) <= 256)
+	#define __mcc_gwide(x) (__mcc_gprec(x) > __MCC_GBITS && (__MCC_GBITS >= 128 || __mcc_gprec(x) <= 256))
 	#define __mcc_wpop(x) (__extension__ ({ \
 	_Pragma("GCC diagnostic push") \
 	_Pragma("GCC diagnostic ignored \"-Wshift-count-overflow\"") \
