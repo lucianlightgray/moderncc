@@ -3568,7 +3568,19 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 			{ MCC_TRACE("br\n"); cstr_ccat(outstr, c); }
 		else { MCC_TRACE("br\n");
 #ifdef MCC_TARGET_PE
-			if (c < 0x10000) { MCC_TRACE("br\n");
+			if (prefix == 'U') { MCC_TRACE("br\n");
+				/* char32_t is 32-bit on every target, PE included: store the
+				 * full code point as one 4-byte unit with no UTF-16 surrogate
+				 * split, so a hex-escape surrogate value stays independent and
+				 * an astral code point needs no recombine downstream. Storing
+				 * it as a 16-bit surrogate pair (as u"" requires) is lossy: a
+				 * split astral char and two separate hex-escape units become
+				 * indistinguishable (T-mac-30244 PE path). */
+				cstr_ccat(outstr, c & 0xff);
+				cstr_ccat(outstr, (c >> 8) & 0xff);
+				cstr_ccat(outstr, (c >> 16) & 0xff);
+				cstr_ccat(outstr, (c >> 24) & 0xff);
+			} else if (c < 0x10000) { MCC_TRACE("br\n");
 				cstr_wccat(outstr, c);
 			} else { MCC_TRACE("br\n");
 				c -= 0x10000;
@@ -3582,6 +3594,15 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 	}
 	if (!is_long)
 		{ MCC_TRACE("br\n"); cstr_ccat(outstr, '\0'); }
+#ifdef MCC_TARGET_PE
+	else if (prefix == 'U') { MCC_TRACE("br\n");
+		/* 4-byte char32_t NUL to match the 32-bit units stored above */
+		cstr_ccat(outstr, 0);
+		cstr_ccat(outstr, 0);
+		cstr_ccat(outstr, 0);
+		cstr_ccat(outstr, 0);
+	}
+#endif
 	else
 		{ MCC_TRACE("br\n"); cstr_wccat(outstr, '\0'); }
 }
@@ -3615,8 +3636,11 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 			{ MCC_TRACE("br\n"); tok = TOK_LCHAR, char_size = sizeof(nwchar_t); }
 		if (prefix == 'u')
 			{ MCC_TRACE("br\n"); tok = TOK_U16CHAR; }
-		else if (prefix == 'U')
-			{ MCC_TRACE("br\n"); tok = TOK_U32CHAR; }
+		else if (prefix == 'U') { MCC_TRACE("br\n"); tok = TOK_U32CHAR;
+#ifdef MCC_TARGET_PE
+			char_size = 4;   /* char32_t units are 32-bit on PE too */
+#endif
+		}
 		else if (prefix == '8')
 			{ MCC_TRACE("br\n"); tok = TOK_U8CHAR; }
 		n = tokcstr.size / char_size - 1;
@@ -3627,6 +3651,13 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 		if (prefix == 'U') { MCC_TRACE("br\n");
 			int nchars = 0;
 			for (c = i = 0; i < n; ++i) { MCC_TRACE("br\n");
+#ifdef MCC_TARGET_PE
+				/* char32_t units are stored full-width (32-bit) on PE, so read them
+				 * directly with no UTF-16 surrogate recombine: a hex-escape surrogate
+				 * value is an independent unit (T-mac-30244 PE path). */
+				c = (int)((uint32_t *)tokcstr.data)[i];
+				nchars++;
+#else
 				unsigned int u = (unsigned int)((nwchar_t *)tokcstr.data)[i];
 				if (u >= 0xD800 && u <= 0xDBFF && i + 1 < n) { MCC_TRACE("br\n");
 					unsigned int lo = (unsigned int)((nwchar_t *)tokcstr.data)[i + 1] & 0xFFFFu;
@@ -3637,6 +3668,7 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 				}
 				c = (int)u;
 				nchars++;
+#endif
 			}
 			if (nchars > 1)
 				{ MCC_TRACE("br\n"); mcc_warning("multi-character character constant"); }
@@ -3681,31 +3713,36 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 		tokc.str.data = tokcstr.data;
 		tok = TOK_U16STR;
 	} else if (prefix == 'U') { MCC_TRACE("br\n");
-		int i, ncp = tokcstr.size / sizeof(nwchar_t);
-		nwchar_t *cps = mcc_malloc((ncp ? ncp : 1) * sizeof(nwchar_t));
-		memcpy(cps, tokcstr.data, ncp * sizeof(nwchar_t));
+#ifdef MCC_TARGET_PE
+		/* char32_t units are stored full-width (32-bit) on PE (T-mac-30244 PE
+		 * path): copy each 4-byte unit out as one code point, with no UTF-16
+		 * surrogate recombine, so a hex-escape surrogate stays independent. */
+		int i, ncp = tokcstr.size / 4;
+		uint32_t *cps = mcc_malloc((ncp ? ncp : 1) * 4);
+		memcpy(cps, tokcstr.data, ncp * 4);
 		cstr_reset(&tokcstr);
 		for (i = 0; i < ncp; i++) { MCC_TRACE("br\n");
-			unsigned int cp = (unsigned int)cps[i] & 0xFFFFFFFFu;
-#ifdef MCC_TARGET_PE
-			/* On PE the wide buffer holds 16-bit UTF-16 code units, so a
-			 * supplementary-plane code point was stored as a surrogate pair;
-			 * recombine it into a single char32_t code point (mirrors the
-			 * U'' character-constant path above). */
-			if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < ncp) { MCC_TRACE("br\n");
-				unsigned int lo = (unsigned int)cps[i + 1] & 0xFFFFu;
-				if (lo >= 0xDC00 && lo <= 0xDFFF) { MCC_TRACE("br\n");
-					cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-					i++;
-				}
-			}
-#endif
+			unsigned int cp = cps[i];
 			cstr_ccat(&tokcstr, cp & 0xff);
 			cstr_ccat(&tokcstr, (cp >> 8) & 0xff);
 			cstr_ccat(&tokcstr, (cp >> 16) & 0xff);
 			cstr_ccat(&tokcstr, (cp >> 24) & 0xff);
 		}
 		mcc_free(cps);
+#else
+		int i, ncp = tokcstr.size / sizeof(nwchar_t);
+		nwchar_t *cps = mcc_malloc((ncp ? ncp : 1) * sizeof(nwchar_t));
+		memcpy(cps, tokcstr.data, ncp * sizeof(nwchar_t));
+		cstr_reset(&tokcstr);
+		for (i = 0; i < ncp; i++) { MCC_TRACE("br\n");
+			unsigned int cp = (unsigned int)cps[i] & 0xFFFFFFFFu;
+			cstr_ccat(&tokcstr, cp & 0xff);
+			cstr_ccat(&tokcstr, (cp >> 8) & 0xff);
+			cstr_ccat(&tokcstr, (cp >> 16) & 0xff);
+			cstr_ccat(&tokcstr, (cp >> 24) & 0xff);
+		}
+		mcc_free(cps);
+#endif
 		tokc.str.size = tokcstr.size;
 		tokc.str.data = tokcstr.data;
 		tok = TOK_U32STR;
