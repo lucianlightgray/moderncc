@@ -5,12 +5,12 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T03:35Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T02:50Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T03:08Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T04:45Z |
 
 ## Contracts — blocking, highest priority
 
-_Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z (SHA b328a85a). Its dependents T-lin-10428/10429/10430 remain in Open, now with DEP T-lin-10426 satisfied (10428 still also waits on T-lin-10427)._
+_Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z (SHA b328a85a) and T-lin-10427 (gated MCC_COOP_MT thread-safe primitives) DONE+ARCHIVED 2026-08-20T03:08Z (SHA 87b49371). **T-lin-10428 [S] (coop M:N core) is now fully unblocked** — both its DEPS (10426, 10427) are DONE; it is the next coop-track slice in the Open zone._
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 - AGENT-DRIVEN BATCH (mac-arm64, 2026-08-20T02:55Z, /goal + user "use agents to find slices and implement fixes"): dispatched 6 parallel READ-ONLY investigation agents (one per surveyed task), each reproduced the bug vs clang/gcc-16, found the cleanest standable slice, and returned an exact edit-map + verification; then implemented the winners serially with full gates. **6 [S] fixes DONE+ARCHIVED** — each TDD + anti-vacuous + o0-neutral (ast/o0-baseline arm64-osx byte-identical throughout): (1) **T-mac-30095** array-bound-behind-pointer redecl propagation (25d6eaa9); (2)+(3) **T-mac-30236 + T-mac-30154** __LINE__ past INT_MAX int64 widen — closed both dups (6be53836, re-banked fmt/census-bank); (4) **T-mac-30134** arm64 register-asm physical→codegen treg miscompile — `register long v asm("x19"/"x20"/"x28"/"x30")` bound the wrong reg (c365cc39); (5) **T-mac-30105** arm64 CAS drops the failure memory-order — added `cbnz w4` acquire branch to text path + hand-encoded __MCC__ twin, disasm-verified (70b734e5); (6) **T-mac-30111** -Wsequence-point intra-expression read-vs-write (`a[i]=i++`, `x=i+i++`) + fixed a latent `?:`-flush FP (a787b065). **T-mac-30158 (Mach-O ctor/dtor AOT priority): NOT landed — a VERIFIED 4-edit fix is banked ready-to-apply at DETAILS#t-mac-30158-macho-ctor-priority-fix-ready** (agent built+confirmed a patched mcc vs clang; premise corrected — ctor-only was already fine, real bugs are ctor+dtor ctor-order + all dtor-order); a focused future mac turn drops it in. **PRE-EXISTING fleet red confirmed + FYI'd:** `cli/builtin_expect_is_code_neutral` RED on main (arm64-only, reproduced stashed-pristine) — lin owns it (T-mac-30131 gen_cast on arm64). Recovered early-turn from the autostash-pop-on-Sessions-table trap (pushed markers in 8d06fc9c → repaired forward 0b8a4394, no history rewrite); switched to commit-docs-first-then-rebase for the rest. All pushed, tree clean, HEAD on origin/main, no active mac claims.
@@ -105,9 +105,6 @@ _Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z
 
 ## Open — claimable
 
-- [ ] T-lin-10427 [S] coop M:N slice 2 — make the coop `<threads.h>` primitives thread-safe (prereq for multiple workers): atomic `once_flag` init (preserve T-lin-10421 `__once_flag_defined` guard), lock the run-queue + `__mcc_all` + wake-scan (`mcc_coop_threads.h:322-430`), real `mtx_t`/`cnd_t` (today rely on cooperative non-preemption), locked tss-key allocator + per-worker/locked zombie freelist. Testable single-threaded (c11_threads_coop* goldens stay green). Independent of the pool. Child of T-lin-10419.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 695eb8c6 | TS: 2026-08-20T02:55Z
-      REF: DETAILS.md#t-lin-10419-coop-mn-findings-phasing | DEPS: —
 
 - [ ] T-lin-10428 [S] coop M:N slice 3 — the M:N core: per-worker `__mcc_cur`, fiber<->worker context-swap glue (worker OS stack is the scheduler ctx), submit fibers to the T-lin-10426 pool, park/unpark on mtx/cnd/join. Gate default-off/opt-in (T-lin-10417 precedent). Verify: tests/benchmarks/spectral_norm_* coop wall-clock drops toward native on multi-core + a many-fiber stress test only passing under true M:N. Child of T-lin-10419.
       OWNER: — | STATE: OPEN | SHA: 695eb8c6 | TS: 2026-08-20T02:11Z
