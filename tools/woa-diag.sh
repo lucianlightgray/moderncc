@@ -86,6 +86,14 @@ if [ -n "$DIS" ] && [ -f "$OUT/i256probe.o" ]; then
   "$DIS" -d "$OUT/i256probe.o" > "$OUT/34-i256probe-disasm.txt" 2>&1 || true
 fi
 # disasm the REAL runtime int256.c (__mcc_i256_from_f64 + w256_from_double_mag)
+# does the int256 neg-conv repro break under optimization? (runtime is built -O2)
+for opt in -O0 -O1 -O2; do
+  "$MCC" $RT $opt "$S/tools/woa-int256-probe.c" -o "$OUT/i256probe$opt.exe" 2>/dev/null
+  if [ -x "$OUT/i256probe$opt.exe" ]; then
+    echo "== probe $opt =="; "$OUT/i256probe$opt.exe" 2>&1 | grep -E 'repro fromf'
+  fi
+done > "$OUT/35-i256probe-optlevels.txt" 2>&1 || true
+
 "$MCC" $RT -c "$S/runtime/lib/int256.c" -o "$OUT/int256-rt.o" 2>/dev/null || true
 if [ -n "$DIS" ] && [ -f "$OUT/int256-rt.o" ]; then
   "$DIS" -d "$OUT/int256-rt.o" > "$OUT/40-int256-rt-disasm.txt" 2>&1 || true
