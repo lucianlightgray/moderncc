@@ -11295,7 +11295,11 @@ static int ast_inline_pass_simple(struct AstInlineFn *e) { MCC_TRACE("enter\n");
 			int r = ast_op(a, d);
 			if ((r & VT_VALMASK) != VT_LOCAL || (r & VT_SYM))
 				{ MCC_TRACE("br\n"); return 0; }
-			if (ast_inline_local_init(a, (int)(int64_t)ast_ival(a, d)) == AST_NONE)
+			int doff = (int)(int64_t)ast_ival(a, d);
+			for (int pi = 0; pi < e->nparams; pi++)
+				{ MCC_TRACE("br\n"); if (e->param_off[pi] == doff)
+					{ MCC_TRACE("br\n"); return 0; } }
+			if (ast_inline_local_init(a, doff) == AST_NONE)
 				{ MCC_TRACE("br\n"); return 0; }
 			AstLocal rhs = ast_next_sib(a, d);
 			if (rhs == AST_NONE || !ast_inline_expr_ok(a, e, rhs))
