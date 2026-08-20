@@ -765,6 +765,15 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'shared=%s pub=%s internal=%s\\n' $src $pub $intern",
 		 "shared=0 pub=1 internal=0\n"},
 
+		{"macho_wl_dylib_version", "os=Darwin",
+		 "printf 'int f(void){return 1;}\\n' > {W}/cv.c && "
+		 "{MCC} -B{B} -shared -Wl,-current_version,2.3.4 -Wl,-compatibility_version,5.6.7 "
+		 "-Wl,-install_name,@rpath/x.dylib {W}/cv.c -o {W}/cv.dylib 2>{W}/cv.err; rc=$?; "
+		 "cur=$(otool -l {W}/cv.dylib 2>/dev/null | grep -c 'current version 2.3.4'); "
+		 "cmp=$(otool -l {W}/cv.dylib 2>/dev/null | grep -c 'compatibility version 5.6.7'); "
+		 "printf 'link=%s cur=%s compat=%s\\n' $rc $cur $cmp",
+		 "link=0 cur=1 compat=1\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

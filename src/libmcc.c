@@ -1994,6 +1994,10 @@ succ:
 	return 1;
 }
 
+#if defined MCC_TARGET_MACHO
+static uint32_t parse_version(MCCState *s1, const char *version);
+#endif
+
 static void args_parser_add_file(MCCState *s, const char *filename, int filetype);
 
 #ifdef MCC_TARGET_PE
@@ -2081,6 +2085,12 @@ static int mcc_set_linker(MCCState *s, const char *optarg) { MCC_TRACE("enter\n"
 		} else if (link_option(&o, "version-script=|version_script=")) { MCC_TRACE("br\n");
 			mcc_set_str(&s->version_script, o.arg);
 			ignoring = 1;
+#if defined MCC_TARGET_MACHO
+		} else if (link_option(&o, "current_version=")) { MCC_TRACE("br\n");
+			s->current_version = parse_version(s, o.arg);
+		} else if (link_option(&o, "compatibility_version=")) { MCC_TRACE("br\n");
+			s->compatibility_version = parse_version(s, o.arg);
+#endif
 		} else if (link_option(&o, "znodelete")) { MCC_TRACE("br\n");
 			s->znodelete = 1;
 #ifdef MCC_TARGET_PE
