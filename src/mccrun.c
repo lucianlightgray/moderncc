@@ -457,19 +457,36 @@ static void tls_finalize_macho(MCCState *s1) { MCC_TRACE("enter\n");
 static void tls_setup_linux(MCCState *s1) { MCC_TRACE("enter\n");
 	int i;
 	int have_tls = 0;
-	unsigned long total = 0;
+	addr_t base = (addr_t)-1;
+	unsigned long span = 0;
 
 	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+		if ((s->sh_flags & SHF_TLS) && ssz && s->sh_addr < base)
+			{ MCC_TRACE("br\n"); base = s->sh_addr; }
+	}
+	/* Guard on the TRUE slab extent the seeder writes / the runtime accesses:
+	 * max (sh_addr - base) + section size over all TLS sections (incl. the
+	 * inter-section alignment gaps and .tbss). Summing data_offset (the old
+	 * `total`) ignores those gaps, so a gapped span > slab with sum < slab
+	 * would pass the guard and then OOB `mcc_jit_tls_slab` (T-mac-30024). */
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
 		if (!(s->sh_flags & SHF_TLS))
 			{ MCC_TRACE("br\n"); continue; }
 		have_tls = 1;
-		total += s->data_offset;
+		if (ssz) { MCC_TRACE("br\n");
+			unsigned long end = (unsigned long)(s->sh_addr - base) + ssz;
+			if (end > span)
+				{ MCC_TRACE("br\n"); span = end; }
+		}
 	}
 	if (!have_tls)
 		{ MCC_TRACE("br\n"); return; }
-	if (total > host_run_tls_slab_size()) { MCC_TRACE("br\n");
-		mcc_error_noabort("mccrun: TLS size %lu exceeds -run slab", total);
+	if (span > host_run_tls_slab_size()) { MCC_TRACE("br\n");
+		mcc_error_noabort("mccrun: TLS size %lu exceeds -run slab", span);
 		return;
 	}
 	s1->run_tls_slab_tpoff = host_run_tls_slab_tpoff();
@@ -560,19 +577,36 @@ static void tls_seed_linux(MCCState *s1) { MCC_TRACE("enter\n");
 static void tls_setup_pe(MCCState *s1) { MCC_TRACE("enter\n");
 	int i;
 	int have_tls = 0;
-	unsigned long total = 0;
+	addr_t base = (addr_t)-1;
+	unsigned long span = 0;
 
 	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
 		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
+		if ((s->sh_flags & SHF_TLS) && ssz && s->sh_addr < base)
+			{ MCC_TRACE("br\n"); base = s->sh_addr; }
+	}
+	/* Guard on the TRUE slab extent the seeder writes / the runtime accesses:
+	 * max (sh_addr - base) + section size over all TLS sections (incl. the
+	 * inter-section alignment gaps and .tbss). Summing data_offset (the old
+	 * `total`) ignores those gaps, so a gapped span > slab with sum < slab
+	 * would pass the guard and then OOB `mcc_jit_tls_slab` (T-mac-30024). */
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		Section *s = s1->sections[i];
+		addr_t ssz = s->sh_size ? s->sh_size : s->data_offset;
 		if (!(s->sh_flags & SHF_TLS))
 			{ MCC_TRACE("br\n"); continue; }
 		have_tls = 1;
-		total += s->data_offset;
+		if (ssz) { MCC_TRACE("br\n");
+			unsigned long end = (unsigned long)(s->sh_addr - base) + ssz;
+			if (end > span)
+				{ MCC_TRACE("br\n"); span = end; }
+		}
 	}
 	if (!have_tls)
 		{ MCC_TRACE("br\n"); return; }
-	if (total > host_run_tls_slab_size()) { MCC_TRACE("br\n");
-		mcc_error_noabort("mccrun: TLS size %lu exceeds -run slab", total);
+	if (span > host_run_tls_slab_size()) { MCC_TRACE("br\n");
+		mcc_error_noabort("mccrun: TLS size %lu exceeds -run slab", span);
 		return;
 	}
 	s1->run_tls_slab_tpoff = host_run_tls_slab_tpoff();
