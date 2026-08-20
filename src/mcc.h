@@ -739,6 +739,7 @@ struct MCCState {
 	unsigned char warn_none;
 	unsigned char warn_all;
 	unsigned char warn_error;
+	unsigned char warn_main;
 	unsigned char warn_write_strings;
 	unsigned char warn_unsupported;
 	unsigned char warn_unsupported_option;

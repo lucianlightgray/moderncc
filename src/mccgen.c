@@ -19303,6 +19303,9 @@ static void gen_function(Sym *sym, int ctor_prio) {
 	}
 	func_old = sym->type.ref->f.func_type == FUNC_OLD;
 	func_naked = sym->a.naked;
+	if (!mcc_state->freestanding && !strcmp(funcname, "main")
+			&& (func_vt.t & VT_BTYPE) != VT_INT)
+		{ MCC_TRACE("br\n"); mcc_warning_c(warn_main)("return type of 'main' is not 'int'"); }
 	cur_func_noreturn = sym->type.ref->f.func_noreturn;
 	cur_func_inline_extern =
 			(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC);

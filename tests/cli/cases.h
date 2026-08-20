@@ -1138,6 +1138,14 @@ static const cli_case_t cli_cases[] = {
 		 "grep -oE 'left shift count is negative'; echo END",
 		 "left shift count >= width of type\nleft shift count is negative\nright shift count >= width of type\nleft shift count is negative\nEND\n"},
 
+		{"wmain_return_type", "",
+		 "printf 'void main(void){}\\n' > {W}/wm.c && "
+		 "{MCC} -B{B} -I{I} -Wall -c {W}/wm.c -o {W}/wm.o 2>&1 | grep -oE \"return type of .main. is not .int.\"; "
+		 "{MCC} -B{B} -I{I} -Wall -Wno-main -c {W}/wm.c -o {W}/wm.o 2>&1 | grep -oE 'return type'; "
+		 "{MCC} -B{B} -I{I} -c {W}/wm.c -o {W}/wm.o 2>&1 | grep -oE 'return type'; "
+		 "printf 'int main(void){return 0;}\\n' > {W}/wmi.c && {MCC} -B{B} -I{I} -Wall -c {W}/wmi.c -o {W}/wmi.o 2>&1 | grep -oE 'return type'; echo END",
+		 "return type of 'main' is not 'int'\nEND\n"},
+
 	{"div_by_zero_warnings", "",
 		 "printf 'int f(void){ return 5/0; }\\nint g(void){ return 5%%0; }\\nint main(void){return 0;}\\n' > {W}/dz.c && "
 		 "{MCC} -B{B} -I{I} -c {W}/dz.c -o {W}/dz.o 2>&1 | grep -oE 'division by zero'; "

@@ -2433,6 +2433,7 @@ typedef struct FlagDef {
 static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_all), WD_ALL, "all"},
 		{offsetof(MCCState, warn_error), 0, "error"},
+		{offsetof(MCCState, warn_main), WD_ALL, "main"},
 		{offsetof(MCCState, warn_write_strings), 0, "write-strings"},
 		{offsetof(MCCState, warn_unsupported), 0, "unsupported"},
 		{offsetof(MCCState, warn_attributes), 0, "attributes"},
