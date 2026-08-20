@@ -5,6 +5,14 @@ typedef struct
 
 static const cli_case_t cli_cases[] = {
 
+		{"wsequence_point_readwrite", "",
+		 "printf 'void g(int *a,int i,int x){ a[i]=i++; x=i+i++; (void)a;(void)x; }\\n' > {W}/sprw.c && "
+		 "printf 'void h(int i,int x){ i=i+1; i=i+i; i+=i; x=i; (void)x; }\\n' > {W}/sprc.c && "
+		 "{ {MCC} -B{B} -I{I} -Wsequence-point -c {W}/sprw.c -o {W}/sprw.o 2>&1; "
+		 "{MCC} -B{B} -I{I} -Wsequence-point -c {W}/sprc.c -o {W}/sprc.o 2>&1 && echo CLEAN_OK; } | "
+		 "grep -oE \"operation on 'i' may be undefined|CLEAN_OK\" | sort | uniq -c | sed 's/^ *//'",
+		 "1 CLEAN_OK\n2 operation on 'i' may be undefined\n"},
+
 		{"arm64_register_asm_local_binds_physical_reg", "cpu=arm64",
 		 "printf 'int main(void){\\n"
 		 "register long a asm(\"x19\")=0x11; register long b asm(\"x20\")=0x22;\\n"
