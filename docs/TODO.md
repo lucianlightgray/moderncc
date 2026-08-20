@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T04:30Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T04:02Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T04:15Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T06:35Z |
 
 ## Contracts — blocking, highest priority
@@ -132,9 +132,6 @@ _Empty — coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic M
       OWNER: — | STATE: OPEN | SHA: d6bafe42 | TS: 2026-08-20T02:05Z
       REF: DETAILS.md#t-lin-10420-optimizer-parity-findings | DEPS: —
 
-- [ ] T-lin-10418 [S] riscv64 glibc `<stdio.h>` blocked by `_Float128` keyword/typedef collision — any riscv64 program reaching `bits/floatn.h` fails `too many basic types` on `typedef long double _Float128;` (mcc advertises `__GNUC__ 4` so glibc typedefs it, and mcc treats `_Float128` as a distinct keyword; riscv64 `long double` is modelled 64-bit vs lp64d 128-bit quad). Blocks the whole riscv64 glibc exec-conformance tier. Fix: stop advertising a distinct `_Float128` keyword on riscv64 (or predefine the float128 feature macros) so the glibc typedef is benign — verify with a trivial `#include <stdio.h>` compile + a `qemu-riscv64` run against `vendor/gentoo-stage3-riscv64-glibc`. Surfaced by T-lin-10412.
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: f6676667 | TS: 2026-08-20T04:10Z
-      REF: DETAILS.md#t-lin-10418-riscv64-float128-stdio-blocker | DEPS: —
 
 - [ ] T-mac-30257 [S] Fix: [LOW-MED, diagnostic] `-Wsequence-point` intra-expression read-vs-write (part a of the former T-mac-30111) — warn on `a[i]=i++`, `x=i+i++` (clang/gcc do; mcc under-reports). **PRIOR ATTEMPT REVERTED (74cd7fc3):** the flat `seqp` `(Sym,off)` event model cannot distinguish a read that belongs to the `++` codegen from a separate program read, so a `scalar_storage_order` member post-increment `x.u++` (byte-swap load-modify-store → reads=2/mods=1) false-positives vs clang (broke exec/sso + exec/loop_cond_effects fleet-wide). Needs a real per-subexpression sequencing model, not just enabling read events. Part-b (write-write inter-arg, win 5eecf861) stays landed. See DETAILS#t-mac-30111-part-a-reverted.
       OWNER: — | STATE: OPEN | SHA: 74cd7fc3 | TS: 2026-08-20T03:15Z
