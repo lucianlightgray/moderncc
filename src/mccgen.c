@@ -15837,6 +15837,7 @@ static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 		if (c != 1) { MCC_TRACE("br\n");
 			gen_cast(&type);
 			if (islv) { MCC_TRACE("br\n");
+				bitint_deconst();
 				mk_pointer(&vtop->type);
 				gaddrof();
 			}
@@ -15861,6 +15862,7 @@ static void expr_cond_nested(void) { MCC_TRACE("enter\n");
 			rir_hook_ternary_pick();
 			gen_cast(&type);
 			if (islv) { MCC_TRACE("br\n");
+				bitint_deconst();
 				mk_pointer(&vtop->type);
 				gaddrof();
 			}
