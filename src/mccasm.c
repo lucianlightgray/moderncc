@@ -18,6 +18,7 @@ typedef struct AsmMacro {
 	struct AsmMacro *next;
 } AsmMacro;
 static AsmMacro *asm_macros;
+static int asm_standalone;
 
 static AsmMacro *asm_macro_find(int name) { MCC_TRACE("enter\n");
 	AsmMacro *m;
@@ -543,6 +544,8 @@ static void use_section1(MCCState *s1, Section *sec) { MCC_TRACE("enter\n");
 	cur_text_section->data_offset = ind;
 	cur_text_section = sec;
 	ind = cur_text_section->data_offset;
+	if (asm_standalone && sec->asm_base < 0)
+		{ MCC_TRACE("br\n"); sec->asm_base = ind; }
 }
 
 static void use_section(MCCState *s1, const char *name) { MCC_TRACE("enter\n");
@@ -657,9 +660,11 @@ static void asm_parse_directive(MCCState *s1, int global) { MCC_TRACE("enter\n")
 			tok1 = TOK_ASMDIR_align;
 		}
 		if (tok1 == TOK_ASMDIR_align || tok1 == TOK_ASMDIR_balign) { MCC_TRACE("br\n");
+			int ab;
 			if (n <= 0 || (n & (n - 1)) != 0)
 				{ MCC_TRACE("br\n"); mcc_error("alignment must be a positive power of two"); }
-			offset = (ind + n - 1) & -n;
+			ab = (asm_standalone && sec->asm_base >= 0) ? sec->asm_base : 0;
+			offset = ab + ((((ind - ab) + n - 1) & -n));
 			size = offset - ind;
 			if (sec->sh_addralign < n)
 				{ MCC_TRACE("br\n"); sec->sh_addralign = n; }
@@ -1755,10 +1760,16 @@ static int mcc_assemble_internal(MCCState *s1, int do_preprocess, int global) { 
 }
 
 ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess) { MCC_TRACE("enter\n");
-	int ret;
+	int ret, i;
 	mcc_debug_start(s1);
+	for (i = 1; i < s1->nb_sections; i++) { MCC_TRACE("br\n");
+		s1->sections[i]->asm_base = -1;
+	}
+	asm_standalone = 1;
 	cur_text_section = text_section;
 	ind = cur_text_section->data_offset;
+	if (cur_text_section->asm_base < 0)
+		{ MCC_TRACE("br\n"); cur_text_section->asm_base = ind; }
 	nocode_wanted = 0;
 #if MCC_EH_FRAME
 	asm_cfi.active = 0;
@@ -1768,6 +1779,7 @@ ST_FUNC int mcc_assemble(MCCState *s1, int do_preprocess) { MCC_TRACE("enter\n")
 	ret = mcc_assemble_internal(s1, do_preprocess, 1);
 	asm_macros_free();
 	cur_text_section->data_offset = ind;
+	asm_standalone = 0;
 #if MCC_EH_FRAME
 	if (asm_cfi.active)
 		{ MCC_TRACE("br\n"); mcc_error_noabort("open .cfi_startproc at end of file"); }

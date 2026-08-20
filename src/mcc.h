@@ -409,6 +409,7 @@ typedef struct Section {
 	addr_t sh_addr;
 	unsigned long sh_offset;
 	int nb_hashed_syms;
+	int asm_base;
 	struct Section *link;
 	struct Section *reloc;
 	struct Section *hash;
