@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T03:00Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30258   | 2026-08-20T03:15Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10431   | 2026-08-20T02:50Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T04:05Z |
 
@@ -141,9 +141,9 @@ _Empty — T-lin-10426 (generic MccPool extract) DONE+ARCHIVED 2026-08-20T02:48Z
       OWNER: — | STATE: OPEN | SHA: f6676667 | TS: 2026-08-20T01:06Z
       REF: DETAILS.md#t-lin-10418-riscv64-float128-stdio-blocker | DEPS: —
 
-- [ ] T-mac-30158 [S] Fix: [MED] constructor/destructor priority — **ELF slice DONE (c9ceca6c, lin-x64); Mach-O AOT residual only.** Re-OPENed from lin's zone 2026-08-20T00:45Z (lin cannot DoD-verify Mach-O natively). Remaining = `__mod_init_func`/`__mod_term_func` AOT priority ordering + a new AOT test cell; mac investigated deep (attempt reverted) and fully mapped the fix: make `reorder_ctor_array` permute `prios[]` in sync (→ idempotent), then reorder the resolved data slots at mccmacho.c ~728/928, OR do a single pre-resolution reorder. o0-neutral.
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: c9ceca6c | TS: 2026-08-20T03:00Z
-      REF: DETAILS.md#t-mac-30158-macho-ctor-priority-fix-ready | DEPS: —
+- [ ] T-mac-30257 [S] Fix: [LOW-MED, diagnostic] `-Wsequence-point` intra-expression read-vs-write (part a of the former T-mac-30111) — warn on `a[i]=i++`, `x=i+i++` (clang/gcc do; mcc under-reports). **PRIOR ATTEMPT REVERTED (74cd7fc3):** the flat `seqp` `(Sym,off)` event model cannot distinguish a read that belongs to the `++` codegen from a separate program read, so a `scalar_storage_order` member post-increment `x.u++` (byte-swap load-modify-store → reads=2/mods=1) false-positives vs clang (broke exec/sso + exec/loop_cond_effects fleet-wide). Needs a real per-subexpression sequencing model, not just enabling read events. Part-b (write-write inter-arg, win 5eecf861) stays landed. See DETAILS#t-mac-30111-part-a-reverted.
+      OWNER: — | STATE: OPEN | SHA: 74cd7fc3 | TS: 2026-08-20T03:15Z
+      REF: DETAILS.md#t-mac-30111-part-a-reverted | DEPS: —
 
 - [ ] T-lin-10416 [S] Re-bank the stale x86_64-win32 / x86_64-osx (and i386/arm/arm64-win32) o0-baseline boards — a `cmake-cross measurable` CHECK shows `atomic_inlang_rmw.c`/`atomic_ptr.c`/`feature_macros.c` drifting on ALL `*-win32` keys + `codeopt.c` on x86_64-osx (compiler drift landed after the 2e762ccf fleet re-bank; native x86_64 board is current). Needs an EXEC run of the drifted objects per key (win32 under wine, x86_64-osx on a mac) before re-banking — a lin session cannot exec-verify these. win owns the `*-win32` keys; mac owns x86_64-osx.
       OWNER: — | STATE: OPEN | SHA: a67481f1 | TS: 2026-08-19T22:05Z
