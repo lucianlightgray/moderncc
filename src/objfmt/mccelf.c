@@ -3419,7 +3419,7 @@ ST_FUNC ssize_t full_read(int fd, void *buf, size_t count) { MCC_TRACE("enter\n"
 ST_FUNC void *load_data(int fd, unsigned long file_offset, unsigned long size) { MCC_TRACE("enter\n");
 	void *data;
 
-	data = mcc_malloc(size);
+	data = mcc_mallocz(size);
 	mcc_fd_lseek(fd, file_offset, SEEK_SET);
 	full_read(fd, data, size);
 	return data;
