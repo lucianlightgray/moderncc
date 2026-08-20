@@ -1345,7 +1345,7 @@
 
 	#define __mcc_gprec(x) (__builtin_bitprecisionof(x))
 	#define __mcc_gsel(_1, _2, __mcc_gn, ...) __mcc_gn
-	#define __mcc_gwide(x) (__mcc_gprec(x) > __MCC_GBITS && (__MCC_GBITS >= 128 || __mcc_gprec(x) <= 256))
+	#define __mcc_gwide(x) (__mcc_gprec(x) > __MCC_GBITS)
 	#define __mcc_wpop(x) (__extension__ ({ \
 	_Pragma("GCC diagnostic push") \
 	_Pragma("GCC diagnostic ignored \"-Wshift-count-overflow\"") \
@@ -1442,10 +1442,10 @@
 	#define __builtin_stdc_has_single_bit(x) ((_Bool)(__builtin_popcountg(x) == 1))
 	#define __builtin_stdc_bit_width(x) \
 	((unsigned int)(__mcc_gprec(x) - __mcc_clzg1(x)))
-	#define __builtin_stdc_bit_floor(x) ((__MCC_GBITS >= 128 && __mcc_gwide(x)) \
+	#define __builtin_stdc_bit_floor(x) (__mcc_gwide(x) \
 	? __mcc_wbitfloor(x) \
 	: ((__typeof__(x))__mcc_gbitfloor((__mcc_gu_t)(x), __mcc_gprec(x))))
-	#define __builtin_stdc_bit_ceil(x) ((__MCC_GBITS >= 128 && __mcc_gwide(x)) \
+	#define __builtin_stdc_bit_ceil(x) (__mcc_gwide(x) \
 	? __mcc_wbitceil(x) \
 	: ((__typeof__(x))__mcc_gbitceil((__mcc_gu_t)(x), __mcc_gprec(x))))
 	#define __builtin_stdc_rotate_left(x, n) \
