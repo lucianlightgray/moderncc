@@ -2,7 +2,7 @@
  "accepted": 165,
  "accepted_with_s": 108,
  "literal_fmt_sites": {
-  "fprintf": 427,
+  "fprintf": 424,
   "printf": 458,
   "snprintf": 187,
   "sprintf": 2
@@ -20,7 +20,7 @@
   "mccgpu.c": 40,
   "mcchost.c": 26,
   "mccircap.c": 2,
-  "mccjit_embed.c": 488,
+  "mccjit_embed.c": 485,
   "mccjit_intent.c": 2,
   "mccpp.c": 68,
   "mccrir.c": 68,
@@ -34,7 +34,7 @@
  "refused_float": 1,
  "refused_ptr": 2,
  "sites": {
-  "fprintf": 431,
+  "fprintf": 428,
   "printf": 460,
   "snprintf": 196,
   "sprintf": 2,
