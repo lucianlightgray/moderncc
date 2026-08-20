@@ -1389,6 +1389,14 @@
 	#define __builtin_popcountg(x) \
 	(__mcc_gwide(x) ? __mcc_wpop(x) : __mcc_gpop((__mcc_gu_t)(x)))
 	#define __builtin_parityg(x) (__builtin_popcountg(x) & 1)
+	#define __mcc_wbitfloor(x) (__extension__ ({ \
+	unsigned int __mcc_bwf = (unsigned int)__builtin_stdc_bit_width(x); \
+	__mcc_bwf == 0u ? (__typeof__(x))0 \
+	: ((__typeof__(x))1 << (__mcc_bwf - 1u)); }))
+	#define __mcc_wbitceil(x) (__extension__ ({ \
+	unsigned int __mcc_bwc = (unsigned int)__builtin_stdc_bit_width(x); \
+	unsigned int __mcc_shc = (unsigned int)__builtin_stdc_bit_width((x) - 1); \
+	__mcc_bwc <= 1u ? (__typeof__(x))1 : ((__typeof__(x))1 << __mcc_shc); }))
 	#define __builtin_bswapg(x) \
 	((__typeof__(x))__mcc_gbswap((__mcc_gu_t)(x), (int)sizeof(x)))
 
@@ -1434,10 +1442,12 @@
 	#define __builtin_stdc_has_single_bit(x) ((_Bool)(__builtin_popcountg(x) == 1))
 	#define __builtin_stdc_bit_width(x) \
 	((unsigned int)(__mcc_gprec(x) - __mcc_clzg1(x)))
-	#define __builtin_stdc_bit_floor(x) \
-	((__typeof__(x))__mcc_gbitfloor((__mcc_gu_t)(x), __mcc_gprec(x)))
-	#define __builtin_stdc_bit_ceil(x) \
-	((__typeof__(x))__mcc_gbitceil((__mcc_gu_t)(x), __mcc_gprec(x)))
+	#define __builtin_stdc_bit_floor(x) ((__MCC_GBITS >= 128 && __mcc_gwide(x)) \
+	? __mcc_wbitfloor(x) \
+	: ((__typeof__(x))__mcc_gbitfloor((__mcc_gu_t)(x), __mcc_gprec(x))))
+	#define __builtin_stdc_bit_ceil(x) ((__MCC_GBITS >= 128 && __mcc_gwide(x)) \
+	? __mcc_wbitceil(x) \
+	: ((__typeof__(x))__mcc_gbitceil((__mcc_gu_t)(x), __mcc_gprec(x))))
 	#define __builtin_stdc_rotate_left(x, n) \
 	((__typeof__(x))__mcc_grot((__mcc_gu_t)(x), __mcc_gprec(x), (__mcc_llong_t)(n), 1))
 	#define __builtin_stdc_rotate_right(x, n) \

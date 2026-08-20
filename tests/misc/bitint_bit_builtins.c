@@ -53,6 +53,14 @@ int main(void) {
 	if (__builtin_ctzg(zz) != 502) return 65;
 	if (__builtin_popcountg(zz) != 1) return 66;
 	if (__builtin_bitprecisionof(zz) != 512) return 67;
+	unsigned _BitInt(200) nb = ((unsigned _BitInt(200))3 << 148);
+	if (__builtin_stdc_bit_floor(nb) != ((unsigned _BitInt(200))1 << 149)) return 70;
+	if (__builtin_stdc_bit_ceil(nb) != ((unsigned _BitInt(200))1 << 150)) return 71;
+	if (__builtin_stdc_bit_floor((unsigned _BitInt(200))0) != 0) return 72;
+	if (__builtin_stdc_bit_ceil((unsigned _BitInt(200))0) != 1) return 73;
+	if (__builtin_stdc_bit_ceil((unsigned _BitInt(200))1) != 1) return 74;
+	if (__builtin_stdc_bit_floor(zz) != ((unsigned _BitInt(512))1 << 502)) return 75;
+	if (__builtin_stdc_bit_ceil(zz) != ((unsigned _BitInt(512))1 << 502)) return 76;
 	if (__builtin_stdc_leading_ones(w) != 0) return 30;
 	if (__builtin_stdc_trailing_ones(w) != 0) return 31;
 	if (__builtin_stdc_first_leading_one(w) != 50) return 32;
