@@ -861,6 +861,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -w -c {W}/pv.c -o {W}/pv.o 2>&1 | grep -oE 'visibility attribute not supported'; echo END",
 		 "protected visibility attribute not supported in this configuration; ignored\nEND\n"},
 
+		{"attr_warn_unused_result_on_nonfunction", "",
+		 "printf 'int __attribute__((warn_unused_result)) v;\\nint (*fp)(void) __attribute__((warn_unused_result));\\nint f(void) __attribute__((warn_unused_result));\\nint main(void){return 0;}\\n' > {W}/wur.c && "
+		 "{MCC} -B{B} -c {W}/wur.c -o {W}/wur.o 2>&1 | grep -oE 'only applies to function types'; "
+		 "{MCC} -B{B} -Wno-attributes -c {W}/wur.c -o {W}/wur.o 2>&1 | grep -oE 'only applies to function types'; echo END",
+		 "only applies to function types\nEND\n"},
+
 		{"preprocess_system_header_flag", "",
 		 "mkdir -p {W}/sysh && printf 'int sysfn(void);\\n' > {W}/sysh/sf.h && "
 		 "printf 'int userfn(void);\\n' > {W}/uh.h && "

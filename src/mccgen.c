@@ -19756,6 +19756,15 @@ static int decl(int l) {
 			type = btype;
 			ad = adbase;
 			type_decl(&type, &ad, &v, l == VT_CMP ? TYPE_DIRECT | TYPE_PARAM : TYPE_DIRECT);
+			if (ad.a.warn_unused_result) { MCC_TRACE("br\n");
+				int wur_isfunc = (type.t & VT_BTYPE) == VT_FUNC;
+				if (!wur_isfunc && (type.t & VT_BTYPE) == VT_PTR
+						&& (pointed_type(&type)->t & VT_BTYPE) == VT_FUNC)
+					{ MCC_TRACE("br\n"); wur_isfunc = 1; }
+				if (!wur_isfunc)
+					{ MCC_TRACE("br\n"); mcc_warning_c(warn_attributes)(
+						"'warn_unused_result' attribute only applies to function types"); }
+			}
 			gnu_ei = 0;
 			if (ad.auto_type) { MCC_TRACE("br\n");
 				const char *akw = ad.auto_type == 2 ? "auto" : "__auto_type";
