@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T02:25Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30257   | 2026-08-20T02:35Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10422   | 2026-08-20T01:48Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50035   | 2026-08-20T03:00Z |
 
@@ -309,9 +309,6 @@ _Empty — T-lin-10001 [C] DONE+ARCHIVED 2026-08-19T13:47Z (cooperative <threads
 - [ ] T-mac-30112 [S] Fix: [LOW cluster] **(1) DONE (c1803825, 2026-08-19T18:13Z)** — `objsec-reject-malformed` macOS false-FAIL fixed: gated the GNU-`ar` "/" symbol-table nsyms OOB case to GNU-format archives (detect member0 name; skip with a note on BSD/mach-o where the GNU `mcc_load_alacarte` path isn't exercised), valid-archive no-false-reject still runs both. objsec-reject-malformed now green on mac, Linux GNU path unchanged. (Task confirmed the BSD reader `mcc_load_alacarte_bsd` is already bounded — no security gap.) RESIDUAL: (2) `-run` binds undefined externals to mcc-internal globals via `RTLD_DEFAULT` (`mccrun.c:797`/`mcchost.c:1462`) while AOT errors (`mccmacho.c:2549`); contrived (prefixed globals) but a run-vs-AOT soundness split — restrict -run resolution to a libc set. (3) GPU host-pointer import works on Vulkan, refused-with-reason on Metal (`mccgpu.c:3129-3138` vs `:833-846`; guarded, likely intended).
       OWNER: — | STATE: OPEN | SHA: 635b850a | TS: 2026-08-18T05:30Z
       REF: INVESTIGATIONS.md#r20-low-cluster | DEPS: —
-- [ ] T-mac-30105 [S] Fix: [LOW-MED] arm64 `compare_exchange` ignores the FAILURE memory order → missing acquire on a failed CAS — `parse_atomic` passes both orders (`mccgen.c:10170`, call `:10378-10382`) but arm64 runtime CAS helpers branch on SUCCESS (w3) only (`runtime/lib/atomic.c` `:1510/1567/1622/1677` + __MCC__ twins), never failure (w4); `compare_exchange_strong_explicit(p,&e,d,relaxed,acquire)` → failed-CAS reload lacks acquire. x86_64 TSO-correct, riscv64 over-strong. arm64-only, esoteric (inverted order pair); compound-assign/`__sync_*` seq_cst unaffected. NB corrects Round-8 claim riscv branches (it's unconditional seq_cst). Fix: ordered path when EITHER w3 or w4 non-relaxed.
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: c81ce7c4 | TS: 2026-08-20T02:25Z
-      REF: INVESTIGATIONS.md#r19-arm64-cas-failorder | DEPS: —
 - [ ] T-mac-30106 [S] Fix: [LOW cluster] (1) float→(u)int32 out-of-range/NaN CONST-fold wraps host 64-bit cast while codegen saturates (`mccgen.c:5451-5461`; `(int)1e30f`→fold -1/runtime INT_MAX; host-dependent → determinism smell). (2) `gen_opif` non-finite bail backwards + `ieee_finite(double)` called w/ long double (`mccgen.c:4064/983`; latent on x86 80-bit host). (3) DWARF register-param described at home stack slot whole-fn, no loclist (`mccdbg.c:2828-2832`). (4) DWARF static-local at CU scope; `_Complex` as anon struct not DW_ATE_complex_float; no const/volatile/restrict/_Atomic qualifier DIEs (`mccdbg.c:2880/2506-2600`; fidelity). (5) x86_64 -O2 promotion prologue over-saves/dups callee regs (`mccast.c:2853`; quality). (6) x86_64 struct-assign forward `rep movs` vs memmove elsewhere → overlap UB backend split (`x86_64-gen.c:3254-3280`; info).
       OWNER: — | STATE: OPEN | SHA: c81ce7c4 | TS: 2026-08-18T05:00Z
       REF: INVESTIGATIONS.md#r19-low-cluster | DEPS: —
