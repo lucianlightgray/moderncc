@@ -32,6 +32,8 @@ typedef struct MccPool {
 	int quit_seen;
 	int verbose;
 	const char *name;
+	const char *cap_label;
+	const char *cap_macro;
 	void *(*job_begin)(void);
 	void (*job_end)(void *token);
 	void (*tick_lock)(void);
@@ -123,8 +125,10 @@ static int mcc_pool_start(MccPool *p, unsigned long workers) { MCC_TRACE("enter\
 		if (want > MCC_POOL_MAX) { MCC_TRACE("br\n");
 			fprintf(stderr,
 							"mcc: %s worker pool capped at %d (requested %d); raise "
-							"MCC_POOL_MAX to ask for more\n",
-							p->name ? p->name : "generic", MCC_POOL_MAX, want);
+							"%s to ask for more\n",
+							p->cap_label ? p->cap_label : (p->name ? p->name : "generic"),
+							MCC_POOL_MAX, want,
+							p->cap_macro ? p->cap_macro : "MCC_POOL_MAX");
 			want = MCC_POOL_MAX;
 		}
 		p->started = 1;

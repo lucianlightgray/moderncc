@@ -1495,6 +1495,8 @@ static int mccjit_pool_start(unsigned long workers) { MCC_TRACE("enter\n");
 	mccjit_pool.job_end = mccjit_pool_qsbr_end;
 	mccjit_pool.tick_lock = mccjit_pool_swap_lock;
 	mccjit_pool.tick_unlock = mccjit_pool_swap_unlock;
+	mccjit_pool.cap_label = "JIT";
+	mccjit_pool.cap_macro = "MCCJIT_POOL_MAX";
 	mccjit_pool.verbose = mcc_env_on("MCC_JIT_VERBOSE");
 	return mcc_pool_start(&mccjit_pool, workers);
 }
