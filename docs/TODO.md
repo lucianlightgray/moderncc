@@ -130,7 +130,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 - [ ] T-lin-10471 [S] OPTIMIZER GAP: general GVN (global value numbering) beyond the existing CSE/PRE. Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10472 [S] OPTIMIZER GAP (TRACTABLE): SHIP SRA/SROA — `tree-sra`/`tree-sroa`/`tree-sroa-params` are IMPLEMENTED but disposition OFF at every level (mccopt.h:99-101). Wire to a level (verify-first vs o0-baseline), add optfire `sra`/`sroa` counter rows + exec correctness. REF: DETAILS.md#t-lin-10468-optimizer-gaps
-      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 2c670e0dc | TS: 2026-08-21T15:44Z | DEPS: —
 - [ ] T-lin-10473 [S] OPTIMIZER GAP: interprocedural const-prop / dead-arg elimination / function specialization+cloning (AOT; mcc only has JIT-side specfold). Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10474 [S] OPTIMIZER GAP: escape-analysis → heap-to-stack allocation + ALLOCATION SINKING (LuaJIT SINK / Julia / Dart style; the reachable high-value novel opt for AOT C per T-lin-10467 langs-11-20). REF: DETAILS.md#t-lin-10467-langs-11-20
