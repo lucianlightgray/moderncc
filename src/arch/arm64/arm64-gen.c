@@ -1067,13 +1067,14 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 
 		int macho_named = 0;
 #if defined(MCC_TARGET_MACHO)
-		macho_named = !variadic;
+		macho_named = !variadic || i < variadic;
 #endif
 
 #if defined(MCC_TARGET_MACHO)
 		if (variadic && i == variadic) { MCC_TRACE("br\n");
 			nx = 8;
 			nv = 8;
+			ns = (ns + 7) & ~7UL;
 		}
 
 #elif defined(MCC_TARGET_PE)
@@ -1329,7 +1330,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				gv(MCC_RC_INT);
 				int st_sz = 3;
 #if defined(MCC_TARGET_MACHO)
-				if (!variadic) { MCC_TRACE("br\n");
+				if (!variadic || i <= var_nb_arg) { MCC_TRACE("br\n");
 					int st_al, st_b = type_size(&vtop[0].type, &st_al);
 					if (st_b == 1) { MCC_TRACE("br\n"); st_sz = 0; }
 					else if (st_b == 2) { MCC_TRACE("br\n"); st_sz = 1; }
@@ -1553,6 +1554,11 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 #endif
 
 	arm64_func_va_list_stack = arm64_pcs(var_nb_arg, n, t, a);
+
+#if defined(MCC_TARGET_MACHO)
+	if (variadic)
+		{ MCC_TRACE("br\n"); arm64_func_va_list_stack = (arm64_func_va_list_stack + 7) & ~7UL; }
+#endif
 
 #ifdef MCC_TARGET_PE
 	if (variadic)

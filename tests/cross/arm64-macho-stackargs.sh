@@ -25,6 +25,17 @@ rm -rf "$WORK"
 mkdir -p "$WORK"
 
 cat >"$WORK/callee.c" <<'EOF'
+#include <stdarg.h>
+long vfn(long a1, long a2, long a3, long a4, long a5, long a6, long a7, long a8,
+				 char c, int cnt, ...) {
+	va_list ap;
+	long sum = 0;
+	va_start(ap, cnt);
+	for (int i = 0; i < cnt; i++)
+		sum += va_arg(ap, int);
+	va_end(ap);
+	return (long)c * 100000 + (long)cnt * 1000 + sum;
+}
 long mix(long a1, long a2, long a3, long a4, long a5, long a6, long a7, long a8,
 				 char c, short s, int i, char c2, long l) {
 	return (long)c + (long)s * 10 + (long)i * 100 + (long)c2 * 1000 + l * 10000;
@@ -54,6 +65,7 @@ long ints(long, long, long, long, long, long, long, long, int, int, int, int, in
 double flts(double, double, double, double, double, double, double, double, float, double, float);
 long shorts(long, long, long, long, long, long, long, long, short, short, short, short);
 long chars(long, long, long, long, long, long, long, long, char, char, char, char, int);
+long vfn(long, long, long, long, long, long, long, long, char, int, ...);
 
 #ifndef DELTA
 #define DELTA 0
@@ -76,6 +88,9 @@ int main(void) {
 
 	long r5 = chars(1, 2, 3, 4, 5, 6, 7, 8, (char)2, (char)3, (char)4, (char)5, 6);
 	bad += (r5 != 65432 + DELTA);
+
+	long r6 = vfn(1, 2, 3, 4, 5, 6, 7, 8, (char)9, 3, 10, 20, 30);
+	bad += (r6 != 903060 + DELTA);
 
 	return bad;
 }
