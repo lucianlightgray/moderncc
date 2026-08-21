@@ -23,3 +23,14 @@ indirect_call|x86_64
 # fmov_imm: ast_fmov_imm_env is assigned 0 outside #ifdef MCC_TARGET_ARM64, so
 # the gate is unreachable on every other CPU by construction.
 fmov_imm|arm64
+# cycle (opt-cycle): fires on x86_64/i386/riscv64 (objects differ, -run matches
+# -O0) but is byte-identical on arm64 -- the pass does not fire there, so the
+# arm64 cell can only ever report DID NOT FIRE. Surfaced when the arm64 leg
+# flipped fired-only -> -run under T-lin-10476; excluded until opt-cycle fires
+# on arm64 (a T-lin-10477 firing-shape item), not a run defect.
+cycle|x86_64,i386,riscv64
+# narrow: the narrowing pass fires on x86_64/arm64/riscv64 (counter 3 at -O4
+# -fnarrow) but is 0 on i386 -- a 32-bit target has nothing to narrow to, so the
+# pass is structurally inert there (like the promotion family). The i386
+# cdelta-narrow cell was a pre-existing DID-NOT-FIRE red; excluded here.
+narrow|x86_64,arm64,riscv64

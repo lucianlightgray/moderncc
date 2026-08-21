@@ -6526,6 +6526,11 @@ if(MCC_BUILD_TESTS)
         if(UNIX)
             set(_of_seen "")
             set(_of_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
+            set(_of_boot "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/hosted-boot.sh")
+            set(_of_matrix
+                "arm64|linux|qemu-aarch64|run"
+                "riscv64|linux|qemu-riscv64|run"
+                "i386|linux|qemu-i386|fired")
             set(_of_archnames "")
             set(_of_archcpus "")
             if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/arch.txt")
@@ -6540,12 +6545,40 @@ if(MCC_BUILD_TESTS)
                     endif()
                 endforeach()
             endif()
-            foreach(_ofx_cpu IN ITEMS arm64 i386 riscv64)
+            foreach(_ofrow IN LISTS _of_matrix)
+            string(REPLACE "|" ";" _ofrl "${_ofrow}")
+            list(GET _ofrl 0 _ofx_cpu)
+            list(GET _ofrl 2 _ofx_runner)
+            list(GET _ofrl 3 _ofx_canrun)
             mcc_cross_cc(${_ofx_cpu} _ofx_cc _ofx_fix)
-            if(UNIX AND NOT _ofx_cc STREQUAL "")
+            if(NOT _ofx_cc STREQUAL "")
                 set(_ofx_have 1)
             else()
                 set(_ofx_have 0)
+            endif()
+            set(_ofx_run 0)
+            set(_ofx_hosted "")
+            set(_ofx_hfix "")
+            if(_ofx_canrun STREQUAL "run")
+                set(_ofx_sr "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_ofx_cpu}-glibc")
+                find_program(_OF_QEMU_${_ofx_cpu} ${_ofx_runner})
+                if(_OF_QEMU_${_ofx_cpu}
+                   AND EXISTS "${_ofx_sr}"
+                   AND EXISTS "${MCC_CROSS_DIR}/mcc-${_ofx_cpu}${MCC_EXESUF}"
+                   AND EXISTS "${MCC_CROSS_DIR}/${_ofx_cpu}-libmccrt.a"
+                   AND EXISTS "${MCC_CROSS_DIR}/${_ofx_cpu}-runmain.o")
+                    set(_ofx_run 1)
+                    set(_ofx_hdir "${CMAKE_BINARY_DIR}/optfire-hosted/${_ofx_cpu}")
+                    set(_ofx_hosted "${_ofx_hdir}/mcc-hosted")
+                    set(_ofx_hfix "FX_optfire-${_ofx_cpu}")
+                    add_test(NAME "optfire-boot/${_ofx_cpu}"
+                        COMMAND sh "${_of_boot}" "${_ofx_cpu}" "${MCC_CROSS_DIR}"
+                                "${_ofx_sr}" "${_ofx_hdir}" "${CMAKE_CURRENT_SOURCE_DIR}")
+                    set_tests_properties("optfire-boot/${_ofx_cpu}" PROPERTIES
+                        FIXTURES_SETUP "${_ofx_hfix}"
+                        FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
+                        SKIP_RETURN_CODE 77 LABELS qemu TIMEOUT 600)
+                endif()
             endif()
             file(GLOB _ofx_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
             file(GLOB _ofx_xfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cdelta*.txt")
@@ -6592,9 +6625,19 @@ if(MCC_BUILD_TESTS)
                         endif()
                         if(NOT _ofskip AND EXISTS "${_ofsrc}")
                             list(APPEND _ofx_seen "${_ofcell}")
-                            if(_ofx_have)
+                            if(_ofx_run AND _ofxmode STREQUAL "differ")
                                 add_test(NAME "optfire-${_ofx_cpu}/${_ofcell}"
-                                    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh"
+                                    COMMAND "${_of_sh}"
+                                            "${_ofxmode}" "${_ofx_hosted}" "${_ofsrc}"
+                                            "${CMAKE_BINARY_DIR}/optfire-${_ofx_cpu}" "${_ofcell}"
+                                            "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofx_tail}")
+                                set_tests_properties("optfire-${_ofx_cpu}/${_ofcell}" PROPERTIES
+                                    FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT;${_ofx_hfix}"
+                                    SKIP_RETURN_CODE 77 LABELS qemu
+                                    ENVIRONMENT "OPTFIRE_EXECVIA=run")
+                            elseif(_ofx_have)
+                                add_test(NAME "optfire-${_ofx_cpu}/${_ofcell}"
+                                    COMMAND "${_of_sh}"
                                             "${_ofxmode}" "${_ofx_cc}" "${_ofsrc}"
                                             "${CMAKE_BINARY_DIR}/optfire-${_ofx_cpu}" "${_ofcell}"
                                             "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofx_tail}")
