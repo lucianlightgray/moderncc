@@ -6734,6 +6734,11 @@ if(MCC_BUILD_TESTS)
                     "indistinguishable from a smaller suite")
             endif()
 
+            add_test(NAME "optfire/coverage-ledger"
+                COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/coverage-check.sh")
+            set_tests_properties("optfire/coverage-ledger" PROPERTIES
+                SKIP_RETURN_CODE 77 LABELS native)
+
             set(_fs_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/flagsweep.sh")
             set(_fs_py "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/cover3.py")
             set(_fs_tbl "${CMAKE_CURRENT_SOURCE_DIR}/src/mccopt.h")

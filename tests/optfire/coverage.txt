@@ -1,0 +1,108 @@
+# Optimizer coverage ledger (T-lin-10466) — the union optimization set of the
+# top-20 languages' production compilers (DETAILS#t-lin-10467-lang-opt-catalog,
+# 116 items, groups A-G) mapped onto mcc. For an AOT C compiler the completeness
+# checklist is items 1-51 (groups A local/peephole, B data-flow/global, C loop)
+# plus 71-84 (group E codegen); group D 52-70 is the IPO/LTO tier and F/G are
+# structurally out of scope (JIT / language-semantics-specific) but their AOT
+# analogs are gap-checked.
+#
+# Format: <id>|<optimization>|<status>|<evidence>
+#   covered  — a partial cell asserts the pass fires; evidence = cell name(s)
+#   partial  — mcc does a subset; evidence = cell(s) + why-partial note
+#   dev      — implemented but MCC_DEV-only (not on a shipped -O); evidence = cell
+#   base     — always-on base codegen, no on/off knob to assert; evidence = note
+#   gap      — standard opt with no mcc knob (or shipped OFF); evidence = task id
+#   oos      — structurally not applicable to AOT C; evidence = why
+# A cell token is an optfire row name (counters*/differs*/levels*/cdelta*/
+# defstate*.txt) OR a tests/cli/cases.h case name. coverage-check.sh verifies
+# every covered/partial/dev cell resolves and every gap names a real task.
+
+# --- Group A: local / peephole (1-12) ---
+1|const-fold|covered|bfold,bfold_minmax,bfold_round,bfold_sign,float128_static_init_const_fold,no_wrapv_folds_mul_div_by_same_constant
+2|const-prop|covered|cprop,cprop_join
+3|algebraic-simplify|covered|ident,ident_arith,ident_bit,ident_rel,ident_shift,ident_urange
+4|strength-reduction|partial|divmagic,ivsr,mul_const_lea_strength — general strength-reduction limited to div-magic + IV; see gap note in DETAILS#t-lin-10468-optimizer-gaps
+5|reassociation|covered|reassoc,reassoc_assoc,reassoc_muldist,reassoc_shlshr,reassoc_shrshl
+6|peephole-instcombine|covered|cvtsi2f_pxor_depbreak,u64_to_double_inline
+7|demanded-bits|covered|narrow,narrow_class0,narrow_class1,narrow_class2,narrow_class3
+8|redundant-cast-ext-elim|covered|narrow_elim,ident_conv
+9|local-dce|covered|dse,switch_deadcode_dce
+10|cfg-simplify|covered|jt
+11|super-instruction-fusion|base|combined into single insns by the machine peephole + isel; no separate knob (loop `fusion` is a different pass, see id 40)
+12|canonicalization|base|folded into ident/bfold normal forms; no standalone counter
+
+# --- Group B: data-flow / global (13-30) ---
+13|cse|covered|cse,cse_comm,cse_join
+14|gvn|gap|T-lin-10471
+15|pre|covered|pre,pre_below
+16|copy-prop|covered|cprop,cprop_join,call_window
+17|sccp|covered|sccp,sccp_fix
+18|vrp-range|covered|range,range_below
+19|adce|partial|dse,switch_deadcode_dce — aggressive DCE only via unread/dead-store + switch pruning
+20|dse|covered|dse,dse_call
+21|bdce|partial|narrow — bit-demand elimination via narrowing, no separate BDCE pass
+22|jump-threading|covered|jt
+23|sroa-mem2reg|gap|T-lin-10472
+24|null-check-elim|oos|C has no implicit null checks to eliminate
+25|bounds-range-check-elim|oos|C has no implicit bounds checks; explicit range work is id 18
+26|map-check-elim|oos|dynamic-language dictionary/shape check, N/A to C
+27|load-elim|covered|cse,licm — redundant load elimination via CSE + LICM
+28|dom-redundancy|covered|cse,pre — dominator-based redundancy folded into CSE/PRE
+29|type-inference|oos|C is statically typed; no inference pass
+30|store-to-load-forward|covered|call_window,storeval_callstore
+
+# --- Group C: loop (31-51) ---
+31|licm|covered|licm
+32|loop-unroll|gap|T-lin-10469
+33|loop-peel|gap|T-lin-10469
+34|loop-unswitch|gap|T-lin-10469
+35|ivopts|covered|ivsr,ivsr_ptr
+36|iv-strength-reduce|covered|ivsr
+37|loop-vectorize|gap|T-lin-10470
+38|slp-vectorize|gap|T-lin-10470
+39|loop-interchange|dev|interchange
+40|loop-fusion|dev|fusion
+41|loop-distribution|gap|T-lin-10470
+42|idiom-recognition|gap|T-lin-10469 — recognize memcpy/memset loops
+43|loop-versioning|dev|vlat
+44|loop-rotation|base|while/for lowered to rotated form at codegen; no on/off knob
+45|loop-tiling|dev|tile
+46|predictive-commoning|gap|T-lin-10471 — subsumes into GVN gap
+47|loop-cloning|gap|T-lin-10473 — function/loop cloning tracked with IPA specialization
+48|unroll-and-jam|gap|T-lin-10469
+49|loop-deletion|partial|dse — empty/dead loops removed only when body is dead-store-eliminated
+50|strip-mining|dev|tile — strip+tile share the blocking pass
+51|scev|base|scalar-evolution drives ivsr internally; no separate assertable counter
+
+# --- Group E: codegen (71-84) ---
+71|regalloc|covered|color,spill_share,regdisp
+72|isel|base|instruction selection is always-on base codegen
+73|scheduling|covered|sethi,sethi_leaf,sethi_nary — Sethi-Ullman evaluation ordering
+74|if-conversion-cmov|covered|select,select_below,abs
+75|block-layout|covered|builtin_expect_is_code_neutral,builtin_expect_side_effect
+76|tail-merge-dup|gap|T-lin-10471 — tail-duplication/sinking un-taskified, folded into GVN cleanup gap
+77|const-hoist|covered|merge_strings,zero_bss
+78|remat|base|constants re-materialized rather than spilled by the allocator; no knob
+79|switch-jumptable-lowering|covered|bf,jt,switch_duplicate_case
+80|stack-slot-color|covered|spill_share,spill_share_below
+81|shrink-wrap|base|prologue/epilogue placement is fixed in the backend; no shrink-wrap pass
+82|machine-peephole|covered|cvtsi2f_pxor_depbreak,mul_const_lea_strength,fmov_imm
+83|implicit-null-check-trap|oos|no implicit null derefs in C to trap-fold
+84|write-barrier-elision|oos|GC write barriers, N/A to C
+
+# --- Group D: interprocedural / LTO (52-70) — analogs gap-checked ---
+52|inlining|covered|inline,inline_pass,inline_capture,inline_void_discard
+53|mid-stack-inline|covered|argfwd
+54|tco|covered|tco,tco_ptr,tco_tern
+55|devirtualization|oos|C has no virtual dispatch; see id 70 TFA analog
+57|ipa-const-prop-specialize|gap|T-lin-10473
+58|monomorphization|oos|C has no generics
+59|escape-analysis-stack-alloc|gap|T-lin-10474
+61|lto-thinlto|gap|T-lin-10475 — whole-program scope
+64|dead-fn-global-elim|covered|unreferenced_static_inline_is_not_emitted
+70|tfa-devirt-treeshake|gap|T-lin-10475
+
+# --- MIX/MATCH: composition cells (T-lin-10466) ---
+M1|cse+dse compose|covered|mix_cse_dse,mix_cse_dse_b
+M2|licm+cse compose|covered|mix_licm_cse,mix_licm_cse_b
+M3|divmagic+ident compose|covered|mix_fold_divmagic,mix_fold_divmagic_b

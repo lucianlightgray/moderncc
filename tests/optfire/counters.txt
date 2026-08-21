@@ -26,3 +26,16 @@ sethi|-O4|sethi
 tco|-O2|tco
 inline|-O2|inline
 tco_tern|-O2|tco
+
+# MIX/MATCH (T-lin-10466): composed programs where several passes must fire on
+# ONE translation unit and the -On result still matches -O0. The counter mode
+# asserts one counter per cell, and a cell's source is src/<name>.c, so a second
+# counter on the SAME program is asserted through a <name>_b.c wrapper that just
+# #includes it -- an identical TU read for a different counter. mix_cse_dse:
+# cse+dse; mix_licm_cse: licm+cse; mix_fold_divmagic: divmagic+ident.
+mix_cse_dse|-O2|cse
+mix_cse_dse_b|-O2|dse
+mix_licm_cse|-O4|licm
+mix_licm_cse_b|-O4|cse
+mix_fold_divmagic|-O2|divmagic
+mix_fold_divmagic_b|-O2|ident
