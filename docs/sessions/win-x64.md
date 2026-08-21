@@ -5,6 +5,6 @@ Only win-x64 writes this file. Authoritative session state (replaces the shared
 the commit log; the `Last seen` below is advisory.
 
 Next ID: 50049
-Last seen: 2026-08-21T21:28Z
+Last seen: 2026-08-21T21:34Z
 Capabilities: x86_64-windows native (PE) · MSVC/cl + winlibs-ucrt mingw + scoop clang · WSL2 (x86_64-linux native validation) · gpu-vulkan (RTX 2060 — DEVICE-BLOCKED for fault tests without a game-off/TDR window) · NO x86_64-linux/macos native AOT · NO i386-toolchain · NO arm64-woa runner · NO rosetta/qemu
-STATUS: 2026-08-21T20:39Z -- T-win-50048 DONE+ARCHIVED (a070b93e): mcc __builtin_alloca(0) now returns a valid pointer (was NULL); runtime alloca.c jz-p3 fix, win 9037/9037 green, o0-neutral, cross-fleet x86_64/i386 (FYI'd lin/mac). This session: T-win-50045 (-fno-common) + T-win-50048 (alloca-0) DONE; T-win-50046 withdrawn (intended cl-conformance); T-win-50047 (pr23324 reg-alloc heisenbug) triaged, needs cdb. No active win claims. P1 T-lin-10478/win DEPS-blocked on T-lin-10476[C].
+STATUS: 2026-08-21T21:34Z -- P1 T-lin-10478/win DONE (86da969c): native x86_64-PE optfire -run leg LIVE, 46 differ cells fire+run-verify via mcc -run on PE (was 0). This session DONE: T-win-50045 (-fno-common), T-win-50048 (alloca-0), T-lin-10478/win (P1). Withdrawn: T-win-50046 (intended cl-conformance). Triaged: T-win-50047 (reg-alloc heisenbug, needs cdb). rev-2 migration complete. No active win claims. Parent T-lin-10478[P] open for lin/mac legs.
