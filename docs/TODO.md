@@ -73,7 +73,7 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
 - [ ] T-lin-10480 [S] P1/JIT breadth: wire the native-host-only ast typecov cells into the cross-run matrix, then widen past int-only — narrow/reassoc/sccp/range/ivsr/select/sroa/tco across short/_Bool/unsigned/float/double/long double/__int128/__float128/ptr/struct — and add the missing off-side `_below` level boundary for differ-only cells. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T17:38Z | DEPS: T-lin-10476[C]
 - [ ] T-lin-10469 [S] OPTIMIZER GAP: loop UNROLLING — no mcc knob exists (full/partial/runtime unroll). Add pass + `-funroll-loops` knob + optfire counter/cell. Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
-      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-21T20:34Z | DEPS: — | NOTE: P2 (highest available mission tier while P1 mac lanes DEPS-blocked on 10476[C]). Default-off `-funroll-loops` knob (gcc-aligned) → every slice inert-by-default (o0-neutral, self-host-safe). Hooks the existing loop-nest framework (ast_loopnest_build/ast_loop_find_iv/ast_loop_classify_bound, mccast.c:14011+) like ast_interchange_run. PARK-able if 10476[C] lands (pivot to 10478-mac, P1>P2).
 - [ ] T-lin-10470 [S] OPTIMIZER GAP: auto-VECTORIZATION / SLP — no mcc knob (loop + straight-line SIMD). Large; gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10471 [S] OPTIMIZER GAP: general GVN (global value numbering) beyond the existing CSE/PRE. Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
