@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30269   | 2026-08-21T17:27Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10476   | 2026-08-21T16:04Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50045   | 2026-08-21T17:21Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50046   | 2026-08-21T17:28Z |
 
 ## Contracts — blocking, highest priority
 
@@ -128,6 +128,8 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 
 ## Open — claimable
 
+- [ ] T-win-50045 [S] mcc accepts but IGNORES `-fno-common` — two TUs with a tentative def `int g;` coalesce under mcc even with `-fno-common`, where gcc-16 multi-defs. Flag is parsed (nocommon) + routes the section (mccgen.c:19543) but the linker's tentative-def coalescing overrides it. Minor (niche flag, accept-but-ignore); cross-target front-end/linker; win-verifiable + o0-neutral (default -fcommon unchanged). FIX + repro banked. REF: DETAILS.md#t-win-50045-fno-common-ignored
+      OWNER: — | STATE: OPEN | SHA: f263f3e2 | TS: 2026-08-21T17:28Z | DEPS: —
 - [ ] T-lin-10469 [S] OPTIMIZER GAP: loop UNROLLING — no mcc knob exists (full/partial/runtime unroll). Add pass + `-funroll-loops` knob + optfire counter/cell. Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10470 [S] OPTIMIZER GAP: auto-VECTORIZATION / SLP — no mcc knob (loop + straight-line SIMD). Large; gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
