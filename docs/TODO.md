@@ -14,7 +14,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
-_Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs/log/mac-arm64.md` (top entry = the current RESUME HANDOFF). Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1). **Current: 2026-08-21T21:57Z — T-lin-10478/mac leg DONE (13f5e8c77, P1 Mach-O -run coverage, 92/92); T-lin-10469 loop-unroll DONE+ARCHIVED (c5d075877); no active mac claims; 10489[X]mac still DEPS-blocked.**_
+_Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs/log/mac-arm64.md` (top entry = the current RESUME HANDOFF). Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1). **Current: 2026-08-21T22:26Z — T-lin-10479 oracle layering DONE+ARCHIVED (b56e84a3a, AOT-vs-JIT + clang differential on both mac legs); T-lin-10478/mac leg DONE (13f5e8c77); T-lin-10469 loop-unroll DONE+ARCHIVED (c5d075877); regstub-lint fixed (8cfb8751b); no active mac claims; 10489[X]mac still DEPS-blocked.**_
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -61,8 +61,6 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T17:38Z | DEPS: T-lin-10476[C]
   - [x] T-lin-10478/mac [P] P1/JIT Mach-O -run legs DONE (13f5e8c77) — optfire differ cells run-verified via mcc `-run` on optfire-arm64-osx (native) + optfire-x86_64-osx (Rosetta), 92/92 green; arch.txt pins respected, OS-qualified names, x64boot freshness fixture, gate-symmetric skips. Native optfire 149/149 unchanged. REF: DETAILS.md#t-lin-10478-mac-coverage
         OWNER: mac-arm64 | STATE: DONE | SHA: 13f5e8c77 | TS: 2026-08-21T21:57Z | DEPS: T-lin-10476[C]
-- [ ] T-lin-10479 [S] P1/JIT oracle layering: add an AOT-vs-JIT cross-check (mac `-run` uses the internal ELF relocator — distinct from Mach-O AOT) + a gcc/clang differential where an oracle exists (lin gcc-15, mac gcc-16+clang), atop the mandatory -O{n}==-O0 self-check. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 9320c8e62 | TS: 2026-08-21T22:14Z | DEPS: T-lin-10476[C] | NOTE: AOT-vs-JIT slice DONE (9320c8e62) — gated OPTFIRE_AOT in optfire.sh, enabled on both mac legs (92/92 green, native optfire 149/149 unchanged). RESIDUAL: gcc/clang differential + extend AOT-vs-JIT to lin qemu/win PE legs + make mandatory. DETAILS#t-lin-10479-aot-vs-jit
 - [ ] T-lin-10480 [S] P1/JIT breadth: wire the native-host-only ast typecov cells into the cross-run matrix, then widen past int-only — narrow/reassoc/sccp/range/ivsr/select/sroa/tco across short/_Bool/unsigned/float/double/long double/__int128/__float128/ptr/struct — and add the missing off-side `_below` level boundary for differ-only cells. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T17:38Z | DEPS: T-lin-10476[C]
 - [ ] T-mac-30291 [S] OPTIMIZER (P2): loop-unroll PARITY follow-up to T-lin-10469 (full-unroll DONE c5d075877) — add PARTIAL unroll (unroll-by-N + remainder loop) + RUNTIME unroll (non-const trip) + wider shapes (`i<=B`, `B>i`, stride≠1/negative, while/do-while op 2/4/8) + wire into an -O level for gcc/clang PARITY (first non-inert slice → owes a cross-fleet o0-rebank). REF: DETAILS.md#t-lin-10469-loop-unroll-done
