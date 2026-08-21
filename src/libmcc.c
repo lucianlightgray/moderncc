@@ -2460,6 +2460,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_parentheses), WD_ALL, "parentheses"},
 		{offsetof(MCCState, warn_switch), WD_ALL, "switch"},
 		{offsetof(MCCState, warn_implicit_fallthrough), 0, "implicit-fallthrough"},
+		{offsetof(MCCState, warn_override_init), 0, "override-init"},
 		{offsetof(MCCState, warn_unused_variable), WD_ALL, "unused-variable"},
 		{offsetof(MCCState, warn_unused_parameter), 0, "unused-parameter"},
 		{offsetof(MCCState, warn_unused_function), WD_ALL, "unused-function"},

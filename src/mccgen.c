@@ -18550,6 +18550,8 @@ static int decl_designator(init_params *p, CType *type, unsigned long c,
 			flags |= DIF_OVERWRITE;
 		} else { MCC_TRACE("br\n");
 			int aggr = (type->t & VT_ARRAY) || (type->t & VT_BTYPE) == VT_STRUCT;
+			if (mcc_state->warn_override_init & WARN_ON)
+				{ MCC_TRACE("br\n"); mcc_warning_c(warn_override_init)("initialized field overwritten"); }
 			decl_design_delrels(p->sec, c, elem_size * nb_elems);
 			if (tok == '{' || !aggr || (flags & DIF_HAVE_ELEM))
 				{ MCC_TRACE("br\n"); flags &= ~DIF_CLEAR; }

@@ -2072,6 +2072,14 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c11 {W}/apok.c -o {W}/apok && {W}/apok && echo ATOMIC_ASSIGN_OK",
 		 "incompatible types for redefinition\nATOMIC_ASSIGN_OK\n"},
 
+		{"override_init_warn", "",
+		 "printf 'int a[3]={[0]=1,[0]=2};\\nstruct S{int x,y;};\\nstruct S s={.x=1,.x=2};\\n"
+		 "int b[3]={[0]=1,[1]=2};\\nint main(void){return 0;}\\n' > {W}/oi.c && "
+		 "printf 'W='; {MCC} -B{B} -I{I} -Woverride-init -c {W}/oi.c -o {W}/oi.o 2>&1 | grep -c 'initialized field overwritten'; "
+		 "printf 'A='; {MCC} -B{B} -I{I} -Wall -c {W}/oi.c -o {W}/oi2.o 2>&1 | grep -c 'overwritten'; "
+		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/oi.c -o {W}/oi3.o 2>&1 | grep -c 'overwritten'",
+		 "W=2\nA=0\nD=0\n"},
+
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
 		 " s.a=1; s.c=2;"
