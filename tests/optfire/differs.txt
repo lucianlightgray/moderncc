@@ -36,3 +36,8 @@ cprop_join|-O2|tree-copy-prop|-
 storeval_callstore|-O3|storeval-callstore|-fno-inline-functions
 sroa_arr|-O4|tree-sroa|-
 unroll|-O2|unroll-loops|-
+# switch-jumptable lowering (id79): a dense switch lowers to an indexed jump
+# table under -fswitch-jumptable, a compare cascade under -fno-. The flag is a
+# SPECIAL knob whose default reproduces the old env/opt-search behavior, so this
+# is o0- and shipped-On-neutral; the differ only shows when the flag is forced.
+switch_jt|-O2|switch-jumptable|-

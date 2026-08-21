@@ -2386,6 +2386,13 @@ ST_FUNC int ast_math_errno_folds(MCCState *s1) { MCC_TRACE("enter\n");
 	return s1->no_math_errno != 0;
 }
 
+static int switch_jt_default_on(MCCState *s1) { MCC_TRACE("enter\n");
+	const char *e = getenv("MCC_SWITCH_JUMPTABLE");
+	if (e && e[0])
+		{ MCC_TRACE("br\n"); return e[0] != '0'; }
+	return s1->optimize_search_all != 0;
+}
+
 void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	int opt_promote = 0;
 	mcc_isa_init(s1);
@@ -2431,6 +2438,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	MCC_OPT_SPECIAL(MCC_OPT_BUILTIN_MATH_ERRNO, ast_math_errno_folds(s1));
 	MCC_OPT_SPECIAL(MCC_OPT_IVOPTS,
 									o4 || (s1->optimize >= 1 && !s1->optimize_size));
+	MCC_OPT_SPECIAL(MCC_OPT_SWITCH_JUMPTABLE, switch_jt_default_on(s1));
 #undef MCC_OPT_SPECIAL
 	ast_replay_env = s1->optimize >= 1 || s1->embed_jit ||
 									 ast_env_int("MCC_FORCE_REPLAY", 0) ||

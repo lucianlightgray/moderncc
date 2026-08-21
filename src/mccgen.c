@@ -16892,12 +16892,14 @@ ST_FUNC uint32_t intr(int r);
 ST_FUNC int ireg(int r);
 #endif
 static int switch_jt_env(void) { MCC_TRACE("enter\n");
-	static int v = -2;
-	if (v == -2)
-		{ MCC_TRACE("br\n"); const char *e = getenv("MCC_SWITCH_JUMPTABLE");
-			v = (e && e[0]) ? (e[0] != '0') : -1; }
-	if (v >= 0)
-		{ MCC_TRACE("br\n"); return v; }
+	if (mcc_state) { MCC_TRACE("br\n");
+		unsigned char f = mcc_state->optflag[MCC_OPT_SWITCH_JUMPTABLE];
+		if (f != MCC_OPT_UNSET)
+			{ MCC_TRACE("br\n"); return f != 0; }
+	}
+	{ const char *e = getenv("MCC_SWITCH_JUMPTABLE");
+		if (e && e[0])
+			{ MCC_TRACE("br\n"); return e[0] != '0'; } }
 	return mcc_state && mcc_state->optimize_search_all;
 }
 static int switch_jt_dense(struct switch_t *sw) { MCC_TRACE("enter\n");

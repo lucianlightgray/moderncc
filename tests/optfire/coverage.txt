@@ -83,7 +83,7 @@
 76|tail-merge-dup|gap|T-lin-10471 — tail-duplication/sinking un-taskified, folded into GVN cleanup gap
 77|const-hoist|partial|merge_strings,zero_bss — mcc does constant DATA optimization (identical-literal merging via merge-constants; zero-init to .bss) but not LLVM-style constant MATERIALIZATION hoisting; it re-materializes immediates instead (id78 remat), optimal on x86_64/PE where an immediate is a single instruction
 78|remat|base|constants re-materialized rather than spilled by the allocator; no knob
-79|switch-jumptable-lowering|covered|bf,jt,switch_duplicate_case
+79|switch-jumptable-lowering|covered|switch_jt,switch_duplicate_case
 80|stack-slot-color|covered|spill_share,spill_share_below
 81|shrink-wrap|base|prologue/epilogue placement is fixed in the backend; no shrink-wrap pass
 82|machine-peephole|covered|cvtsi2f_pxor_depbreak,mul_const_lea_strength,fmov_imm

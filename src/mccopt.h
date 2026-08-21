@@ -137,7 +137,8 @@
 	MCC_OPT_ROW(ARG_FORWARD,                   "arg-forward",                  MCC_OPTD_LEVEL(4)) \
 	MCC_OPT_ROW(REG_COLOR,                     "reg-color",                    MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(SPILL_SHARE,                   "spill-share",                  MCC_OPTD_LEVEL(4)) \
-	MCC_OPT_ROW(LOOP_UNROLL,                   "unroll-loops",                 MCC_OPTD_OFF)
+	MCC_OPT_ROW(LOOP_UNROLL,                   "unroll-loops",                 MCC_OPTD_OFF) \
+	MCC_OPT_ROW(SWITCH_JUMPTABLE,              "switch-jumptable",             MCC_OPTD_SPECIAL)
 
 enum {
 #define MCC_OPT_ROW(id, name, dflt) MCC_OPT_##id,
