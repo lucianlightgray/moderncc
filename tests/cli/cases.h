@@ -1865,10 +1865,10 @@ static const cli_case_t cli_cases[] = {
 		 "WIDTH_OK\n"},
 
 		{"address_compare_warn", "",
-		 "printf 'int a[4];\\nvoid gg(void);\\nint f(void){ return a == 0; }\\nint h(void){ return gg != 0; }\\nint k(int*p){ return p == 0; }\\nint m(void){ if (a) return 1; return 0; }\\nint n(void){ return !a; }\\n' > {W}/aw.c && "
+		 "printf 'int a[4];\\nint x;\\nvoid gg(void);\\nint f(void){ return a == 0; }\\nint h(void){ return gg != 0; }\\nint k(int*p){ return p == 0; }\\nint m(void){ if (a) return 1; return 0; }\\nint n(void){ return !a; }\\nint q(void){ return &x == 0; }\\nint s(void){ return \"z\" == 0; }\\n' > {W}/aw.c && "
 		 "{MCC} -B{B} -I{I} -Wall -c {W}/aw.c -o {W}/aw.o 2>&1 | grep -c 'warning: the comparison' ; "
 		 "{MCC} -B{B} -I{I} -Wall -c {W}/aw.c -o {W}/aw.o 2>&1 | grep -c 'warning: the address of' ; echo END",
-		 "2\n2\nEND\n"},
+		 "3\n2\nEND\n"},
 
 		{"enum_compare_warn", "",
 		 "printf 'enum A{X=1};\\nenum B{Y=1};\\nint f(enum A a, enum B b){ return a==b; }\\nint g(enum A a){ return a==Y; }\\nint h(enum A a, enum A a2){ return a==a2; }\\nint k(enum A a, int i){ return a==i; }\\n' > {W}/ec.c && "

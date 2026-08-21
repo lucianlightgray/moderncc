@@ -4933,7 +4933,12 @@ static void fmt_enum_type(SValue *sv, char *buf, int size) { MCC_TRACE("enter\n"
 static Sym *sv_addr_of_named(SValue *sv) { MCC_TRACE("enter\n");
 	if (!(sv->r & VT_SYM) || !sv->sym)
 		{ MCC_TRACE("br\n"); return NULL; }
+	if (sv->sym->v < TOK_IDENT || sv->sym->v >= SYM_FIRST_ANOM)
+		{ MCC_TRACE("br\n"); return NULL; }
 	if ((sv->type.t & VT_ARRAY) || (sv->type.t & VT_BTYPE) == VT_FUNC)
+		{ MCC_TRACE("br\n"); return sv->sym; }
+	if ((sv->type.t & VT_BTYPE) == VT_PTR &&
+			(sv->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == (VT_CONST | VT_SYM))
 		{ MCC_TRACE("br\n"); return sv->sym; }
 	return NULL;
 }
