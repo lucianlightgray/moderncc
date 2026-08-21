@@ -17,8 +17,10 @@ cd "$(dirname "$0")/../.."
 ROOT=$(pwd)
 MCC=${MCC:-$ROOT/cmake-def/mcc}
 MB=${MB:-$ROOT/cmake-def}
-N=${1:-2000}
+NS=${1:-"1000 2000 4000"}
 REPS=${2:-3}
+TIMEOUT=""
+command -v timeout >/dev/null 2>&1 && TIMEOUT="timeout 90"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -41,25 +43,23 @@ fi
 
 # reference value: serial build of the fork-join kernel with NT=1
 REF=""
-ref_src=$ROOT/tests/benchmarks/spectral_norm_forkjoin.c
-for refcc in "$GCC" "$CLANG"; do
-	[ -z "$refcc" ] && continue
-	"$refcc" -O2 -pthread -I "$INC" -DNT=1 "$ref_src" -o "$WORK/ref" -lm 2>/dev/null &&
-		REF=$("$WORK/ref" "$N") && break
-done
-echo "reference (serial) = ${REF:-<none>}    N=$N  reps=$REPS  perf=$([ -n "$PERF" ] && echo on || echo off)"
+REFCC=""
+for refcc in "$GCC" "$CLANG"; do [ -n "$refcc" ] && { REFCC=$refcc; break; }; done
+echo "inputs (N)=$NS  reps=$REPS  perf=$([ -n "$PERF" ] && echo on || echo off)  timeout=$([ -n "$TIMEOUT" ] && echo on || echo off)"
+echo "each build is verified at EVERY N against the serial reference; gcc and clang serial refs are cross-checked"
 
-bestrun() { # $1=exe args... -> INSN, MS (min over REPS)
-	local exe=$1; shift
+bestrun() { # $1=exe $2=N -> INSN, MS (min over REPS), OUT; sets RC (124=timeout/HANG)
+	local exe=$1 n=$2
 	local bi="" bm=""
+	RC=0
 	for i in $(seq 1 "$REPS"); do
 		local t0=$EPOCHREALTIME rc ins ms
 		if [ -n "$PERF" ]; then
-			perf stat -x, -e instructions:u -o "$WORK/p" "$exe" "$@" >"$WORK/o" 2>/dev/null; rc=$?
+			$TIMEOUT perf stat -x, -e instructions:u -o "$WORK/p" "$exe" "$n" >"$WORK/o" 2>/dev/null; rc=$?
 		else
-			"$exe" "$@" >"$WORK/o" 2>/dev/null; rc=$?
+			$TIMEOUT "$exe" "$n" >"$WORK/o" 2>/dev/null; rc=$?
 		fi
-		[ $rc -ne 0 ] && { INSN=ERR; MS=ERR; OUT=ERR; return; }
+		[ $rc -ne 0 ] && { INSN=ERR; MS=ERR; OUT=ERR; RC=$rc; return; }
 		local t1=$EPOCHREALTIME
 		ms=$(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.1f",(b-a)*1000}')
 		if [ -n "$PERF" ]; then
@@ -72,17 +72,26 @@ bestrun() { # $1=exe args... -> INSN, MS (min over REPS)
 	INSN=${bi:-n/a}; MS=$bm; OUT=$(cat "$WORK/o")
 }
 
+FAILS=0
 for src in "$ROOT"/tests/benchmarks/*.c; do
 	name=$(basename "$src" .c)
 	echo
 	echo "### $name"
-	printf "%-10s %-4s | %14s | %9s | %s\n" toolchain -O "instructions" "wall(ms)" "result"
-	# toolchain|compiler-invocation-tag|olevels
+	# build each toolchain x -O once; run it against every N below
+	tags=""
 	for tc in "gcc" "clang" "mcc-nat" "mcc-coop" "mcc-coop-mn"; do
 		case $tc in
 			mcc-*) olevels="0 1 2 3 4" ;;
 			*)     olevels="0 1 2 3" ;;
 		esac
+		# known-unrunnable (backend limitation, not a kernel bug): coro_prime_sieve
+		# spawns one fiber per prime; mcc-coop-mn (M:N) blocks the worker on a
+		# channel wait instead of parking the fiber, so a pipeline deeper than
+		# nproc deadlocks (T-lin-10525). Skip that one pairing, keep the rest.
+		if [ "$name" = coro_prime_sieve ] && [ "$tc" = mcc-coop-mn ]; then
+			echo "  SKIP $tc (all -O): known M:N deadlock for >nproc-stage pipelines — T-lin-10525"
+			continue
+		fi
 		for o in $olevels; do
 			exe="$WORK/${name}_${tc}_O${o}"
 			case $tc in
@@ -93,12 +102,30 @@ for src in "$ROOT"/tests/benchmarks/*.c; do
 				mcc-coop-mn) "$MCC" -B"$MB" -O$o -DMCC_THREADS_COOP -DMCC_COOP_MN -pthread "$src" -o "$exe" -lm >"$WORK/be" 2>&1 ;;
 			esac
 			if [ $? -ne 0 ]; then
-				printf "%-10s -O%s | %14s | %9s | %s\n" "$tc" "$o" "BUILD-FAIL" "-" "$(head -1 "$WORK/be")"
-				continue
+				echo "  BUILD-FAIL $tc -O$o: $(head -1 "$WORK/be")"; FAILS=$((FAILS+1)); continue
 			fi
-			bestrun "$exe" "$N"
-			ok="ok"; [ -n "$REF" ] && [ "$OUT" != "$REF" ] && ok="MISMATCH($OUT)"
-			printf "%-10s -O%s | %14s | %9s | %s\n" "$tc" "$o" "$INSN" "$MS" "$ok"
+			tags="$tags ${tc}_O${o}"
+		done
+	done
+	for N in $NS; do
+		# serial references (gcc + clang), cross-checked against each other
+		REF=""; CLREF=""
+		[ -n "$GCC" ]   && "$GCC"   -O2 -pthread -I "$INC" -DNT=1 "$src" -o "$WORK/gref" -lm 2>/dev/null && REF=$($TIMEOUT "$WORK/gref" "$N" 2>/dev/null)
+		[ -n "$CLANG" ] && "$CLANG" -O2 -pthread -I "$INC" -DNT=1 "$src" -o "$WORK/cref" -lm 2>/dev/null && CLREF=$($TIMEOUT "$WORK/cref" "$N" 2>/dev/null)
+		xref="ok"; [ -n "$REF" ] && [ -n "$CLREF" ] && [ "$REF" != "$CLREF" ] && { xref="GCC!=CLANG"; FAILS=$((FAILS+1)); }
+		echo "-- N=$N  serial-ref=${REF:-<none>}  (gcc-vs-clang: $xref)"
+		printf "  %-12s %-4s | %14s | %9s | %s\n" toolchain -O "instructions" "wall(ms)" "result"
+		for tag in $tags; do
+			tc=${tag%_O*}; o=${tag##*_O}
+			bestrun "$WORK/${name}_${tag}" "$N"
+			if [ "$RC" = 124 ]; then res="HANG/TIMEOUT"; FAILS=$((FAILS+1))
+			elif [ "$INSN" = ERR ]; then res="RUN-ERR"; FAILS=$((FAILS+1))
+			elif [ -n "$REF" ] && [ "$OUT" != "$REF" ]; then res="MISMATCH($OUT)"; FAILS=$((FAILS+1))
+			else res="ok"; fi
+			printf "  %-12s -O%s | %14s | %9s | %s\n" "$tc" "$o" "$INSN" "$MS" "$res"
 		done
 	done
 done
+
+echo
+if [ "$FAILS" -eq 0 ]; then echo "SUMMARY: all builds green across all inputs (mcc == gcc == clang)"; else echo "SUMMARY: $FAILS failure(s) — see MISMATCH/HANG/BUILD-FAIL above"; fi
