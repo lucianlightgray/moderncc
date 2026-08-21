@@ -22353,17 +22353,24 @@ int mccjit_ast_blind_retype(AstArena *ast) { MCC_TRACE("enter\n");
 			return 2;
 		}
 	}
-	ast_vlat_env = saved_env;
-	ast_cur = sv;
 	if (fallback != AST_NONE) { MCC_TRACE("br\n");
 		for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 			int t = ast_type_t(ast, n);
+			int off, kt;
 			if ((t & VT_BTYPE) != VT_LLONG)
 				{ MCC_TRACE("br\n"); continue; }
+			if (mcc_stats_mask) { MCC_TRACE("br\n");
+				mcc_stats_jit_blind_narrow_kind(
+						ast_vlat_use_of(ast, n, &off, &kt));
+			}
 			ast_set_type(ast, n, (t & ~VT_BTYPE) | VT_INT, 0);
 		}
+		ast_vlat_env = saved_env;
+		ast_cur = sv;
 		return 1;
 	}
+	ast_vlat_env = saved_env;
+	ast_cur = sv;
 	return 0;
 }
 
