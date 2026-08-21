@@ -337,6 +337,7 @@ void ast_reemit_with_gates(Sym *sym, AstArena *ast, uint64_t gate_mask);
 int ast_jit_fold_consts(AstArena *ast);
 int ast_jit_search_vocab(uint64_t *out, int max);
 int mccjit_ast_spec_fold(AstArena *ast, int off, int64_t val);
+int mccjit_ast_blind_retype(AstArena *ast);
 void mcc_jit_publish(void **slot, void *variant);
 int mcc_jit_submit_ast(Sym *sym, AstArena *ast, uint64_t gate_mask, int flags);
 void mcc_jit_export_local(MCCState *s1, const char *name);
@@ -441,6 +442,7 @@ static void mccjit_perf_map_emit(MCCState *js, const char *name, void *addr) { M
 static int mccjit_internal_compile;
 static uint64_t mccjit_recompile_gate_mask;
 static int mccjit_recompile_use_gates;
+static int mccjit_recompile_blind_retype;
 static unsigned long mccjit_search_budget_baked_s;
 
 typedef struct MccjitOverride {
@@ -737,6 +739,11 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 			if (MCC_DEV_ENV_ON("MCC_JIT_SELFTEST_FOLD_CONSTS"))
 				{ MCC_TRACE("br\n"); ast_jit_fold_consts(it.arena); }
 			mccjit_slice_hotpatch(it.arena);
+			if (mccjit_recompile_blind_retype) { MCC_TRACE("br\n");
+				int rt = mccjit_ast_blind_retype(it.arena);
+				if (rt && mcc_stats_mask)
+					{ MCC_TRACE("br\n"); mcc_stats_jit_blind(rt); }
+			}
 			if (mccjit_recompile_use_gates)
 				{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
 			else if (have_override && override_mask)
@@ -827,6 +834,14 @@ MCCJIT_LOCAL void *mccjit_search_masks(const void *blob, size_t len,
 MCCJIT_LOCAL void *mcc_jit_recompile_blob_spec(const void *buf, size_t len,
 																							 int param_index, int64_t const_val) { MCC_TRACE("enter\n");
 	return mccjit_recompile_common(buf, len, 1, param_index, const_val);
+}
+
+MCCJIT_LOCAL void *mcc_jit_recompile_blob_retype(const void *buf, size_t len) { MCC_TRACE("enter\n");
+	void *r;
+	mccjit_recompile_blind_retype = 1;
+	r = mccjit_recompile_common(buf, len, 0, -1, 0);
+	mccjit_recompile_blind_retype = 0;
+	return r;
 }
 
 MCCJIT_LOCAL void *mcc_jit_recompile(Sym *sym, const void *ctxkey) { MCC_TRACE("enter\n");
@@ -1022,7 +1037,9 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 		ctimed = mcc_stats_mask && clock_gettime(CLOCK_MONOTONIC, &cstart) == 0;
 		variant = spec_wrong
 									? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
-									: mcc_jit_recompile_blob(blob, (size_t)len);
+									: mcc_env_on("MCC_JIT_BLIND_RETYPE")
+											? mcc_jit_recompile_blob_retype(blob, (size_t)len)
+											: mcc_jit_recompile_blob(blob, (size_t)len);
 		if (variant && !no_kgc && mccjit_last_kgc_ok) { MCC_TRACE("br\n");
 			int memoize_ok;
 			uint32_t nargs = mccjit_last_nparam;
@@ -1148,9 +1165,11 @@ static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
 	int spec_wrong = MCC_DEV_ENV_ON("MCC_JIT_SPEC_WRONG");
 	void *variant = spec_wrong
 											? mcc_jit_recompile_blob_spec(blob, (size_t)len, 0, 7)
-											: use_gates
-													? mcc_jit_recompile_blob_gated(blob, (size_t)len, gate_mask)
-													: mcc_jit_recompile_blob(blob, (size_t)len);
+											: mcc_env_on("MCC_JIT_BLIND_RETYPE")
+													? mcc_jit_recompile_blob_retype(blob, (size_t)len)
+													: use_gates
+															? mcc_jit_recompile_blob_gated(blob, (size_t)len, gate_mask)
+															: mcc_jit_recompile_blob(blob, (size_t)len);
 	void *entry = NULL;
 	mccjit_variant_cost = mccjit_last_cost;
 	if (routed)
