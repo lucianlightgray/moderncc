@@ -6619,6 +6619,96 @@ if(MCC_BUILD_TESTS)
                 endforeach()
             endforeach()
         endif()
+        # T-win-50049: native x86_64-PE optfire COUNTER-cell -run leg. The differ
+        # leg above run-verifies the gate-differ cells; the contract
+        # (DETAILS#t-lin-10476-impl-interface (1)) places COUNTER in the run-verify
+        # class too, so mirror the differ loop for counters*.txt under
+        # OPTFIRE_EXECVIA=run -- optfire.sh counter mode asserts the --stats counter
+        # fired (>0) then compares `-O{n} -run` stdout to `-O0 -run` (P1 req a+b).
+        # Honors arch.txt CPU pins (skip a counter pinned away from x86_64) like the
+        # native block, and reuses the differ leg's _ofw_seen so a name that is both a
+        # differ and a counter row registers exactly one optfire-x86_64/<name> cell.
+        if(WIN32)
+            set(_ofwc_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
+            file(GLOB _ofwc_cfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/counters*.txt")
+            set(_ofwc_archnames "")
+            set(_ofwc_archcpus "")
+            if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/arch.txt")
+                file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/arch.txt" _ofwc_alines)
+                foreach(_ofwc_al IN LISTS _ofwc_alines)
+                    if(NOT _ofwc_al MATCHES "^#" AND NOT _ofwc_al STREQUAL "")
+                        string(REPLACE "|" ";" _ofwc_av "${_ofwc_al}")
+                        list(GET _ofwc_av 0 _ofwc_an)
+                        list(GET _ofwc_av 1 _ofwc_ac)
+                        list(APPEND _ofwc_archnames "${_ofwc_an}")
+                        list(APPEND _ofwc_archcpus "${_ofwc_ac}")
+                    endif()
+                endforeach()
+            endif()
+            # LLP64 cross-FORMAT exclusions: a counter pass structurally inert on
+            # x86_64-PE for the SAME reason it is on i386 -- `long` is 32-bit under
+            # LLP64, so narrow.c's `long`->int narrow is a no-op (narrow=0). arch.txt
+            # keys on MCC_CPU (x86_64) and cannot express "x86_64 but PE", so pin it
+            # here (like the switch_jt x86_64-Mach-O pic cross-FORMAT nuance).
+            set(_ofwc_llp64_inert "narrow")
+            foreach(_ofwcfile IN LISTS _ofwc_cfiles)
+                file(STRINGS "${_ofwcfile}" _ofwclines)
+                foreach(_ofwcl IN LISTS _ofwclines)
+                    if(NOT _ofwcl MATCHES "^#" AND NOT _ofwcl STREQUAL "")
+                        string(REPLACE "|" ";" _ofwc "${_ofwcl}")
+                        list(GET _ofwc 0 _ofwcname)
+                        list(GET _ofwc 1 _ofwcopt)
+                        list(GET _ofwc 2 _ofwccnt)
+                        list(LENGTH _ofwc _ofwclen)
+                        set(_ofwcldf "-")
+                        if(_ofwclen GREATER 3)
+                            list(GET _ofwc 3 _ofwcldf)
+                        endif()
+                        set(_ofwcsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofwcname}.c")
+                        set(_ofwcskip 0)
+                        set(_ofwcskipmsg "")
+                        list(FIND _ofwc_archnames "${_ofwcname}" _ofwcai)
+                        if(NOT _ofwcai EQUAL -1)
+                            list(GET _ofwc_archcpus ${_ofwcai} _ofwcreq)
+                            string(REPLACE "," ";" _ofwcreq "${_ofwcreq}")
+                            if(NOT "x86_64" IN_LIST _ofwcreq)
+                                set(_ofwcskip 1)
+                                set(_ofwcskipmsg "counter cell pinned to CPU ${_ofwcreq} (arch.txt); this build targets x86_64-PE")
+                            endif()
+                        endif()
+                        if(_ofwcname IN_LIST _ofwc_llp64_inert)
+                            set(_ofwcskip 1)
+                            set(_ofwcskipmsg "structurally inert on x86_64-PE (LLP64): long is 32-bit so narrow.c's long->int narrow is a no-op (narrow=0), as on i386 (arch.txt excludes i386) -- a cross-FORMAT nuance arch.txt's per-CPU pins cannot express")
+                        endif()
+                        if("${_ofwcname}" IN_LIST _ofw_seen)
+                            message(STATUS "optfire-x86_64: ${_ofwcname} already registered (differ leg); skipping counter dup")
+                        elseif(_ofwcskip)
+                            list(APPEND _ofw_seen "${_ofwcname}")
+                            mcc_skip_test("optfire-x86_64/${_ofwcname}" "${_ofwcskipmsg}" LABELS native)
+                        else()
+                            list(APPEND _ofw_seen "${_ofwcname}")
+                            if(MCC_TEST_SH AND EXISTS "${_ofwcsrc}")
+                                add_test(NAME "optfire-x86_64/${_ofwcname}"
+                                    COMMAND "${MCC_TEST_SH}" "${_ofwc_sh}" counter "${_mcc_exe}"
+                                            "${_ofwcsrc}" "${CMAKE_BINARY_DIR}/optfire-x86_64"
+                                            "${_ofwcname}" "${_ofwcopt}" "${_ofwccnt}" "${_ofwcldf}")
+                                set_tests_properties("optfire-x86_64/${_ofwcname}" PROPERTIES
+                                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                                    ENVIRONMENT "OPTFIRE_EXECVIA=run;OPTFIRE_MCCFLAGS=-B${CMAKE_BINARY_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+                            elseif(NOT MCC_TEST_SH)
+                                mcc_skip_test("optfire-x86_64/${_ofwcname}"
+                                    "no POSIX shell (MCC_TEST_SH) on this Windows host to run optfire.sh; set MCC_TEST_SH to a git-bash sh to run-verify the optimizer counter cells via mcc -run on native PE"
+                                    LABELS native)
+                            else()
+                                mcc_skip_test("optfire-x86_64/${_ofwcname}"
+                                    "no tests/optfire/src/${_ofwcname}.c on this host for this counters row"
+                                    LABELS native)
+                            endif()
+                        endif()
+                    endif()
+                endforeach()
+            endforeach()
+        endif()
         if(UNIX)
             set(_of_seen "")
             set(_of_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
