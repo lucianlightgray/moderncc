@@ -646,7 +646,7 @@ ST_FUNC int set_elf_sym(Section *s, addr_t value, unsigned long size,
 			} else if (sym_vis == STV_HIDDEN || sym_vis == STV_INTERNAL) { MCC_TRACE("br\n");
 			} else if ((esym->st_shndx == SHN_COMMON || esym->st_shndx == bss_section->sh_num) && (shndx < SHN_LORESERVE && shndx != bss_section->sh_num)) { MCC_TRACE("br\n");
 				goto do_patch;
-			} else if (shndx == SHN_COMMON || shndx == bss_section->sh_num) { MCC_TRACE("br\n");
+			} else if (shndx == SHN_COMMON || (shndx == bss_section->sh_num && !s1->nocommon)) { MCC_TRACE("br\n");
 			} else if (s->sh_flags & SHF_DYNSYM) { MCC_TRACE("br\n");
 			} else if (esym->st_other & ST_ASM_SET) { MCC_TRACE("br\n");
 				goto do_patch;

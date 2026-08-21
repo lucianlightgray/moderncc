@@ -157,6 +157,18 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/wb.obj {W}/wmw.obj -o {W}/wo.exe && {W}/wo.exe; echo wo=$?",
 		 "sw=42\nwo=42\n"},
 
+		{"fno_common_multidef", "",
+		 "printf 'int g; int seta(void){g=44;return 0;}\\n' > {W}/cma.c && "
+		 "printf 'int g; int seta(void); int main(void){seta();return g;}\\n' > {W}/cmm.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/cma.c -o {W}/cma.o && "
+		 "{MCC} -B{B} -I{I} -c {W}/cmm.c -o {W}/cmm.o && "
+		 "if {MCC} -B{B} -I{I} {W}/cma.o {W}/cmm.o -o {W}/cmd.exe 2>/dev/null; "
+		 "then echo def=LINKED; else echo def=MULTIDEF; fi ; "
+		 "{MCC} -B{B} -I{I} -fcommon -c {W}/cma.c -o {W}/cmac.o && "
+		 "{MCC} -B{B} -I{I} -fcommon -c {W}/cmm.c -o {W}/cmmc.o && "
+		 "{MCC} -B{B} -I{I} -fcommon {W}/cmac.o {W}/cmmc.o -o {W}/cmc.exe && {W}/cmc.exe ; echo fcommon=$?",
+		 "def=MULTIDEF\nfcommon=44\n"},
+
 		{"coop_mn_win32_multiworker", "cpu=x86_64,os=WIN32",
 		 "printf '#include <threads.h>\\n"
 		 "static mtx_t L;static long c=0;\\n"
