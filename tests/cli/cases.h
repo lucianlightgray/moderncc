@@ -55,6 +55,22 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/gfn.c && echo OK",
 		 "OK\n"},
 
+		{"complex_bitint", "",
+		 "printf 'int main(void){"
+		 "_Complex _BitInt(20) z=2+3i,w=4+5i,s=z+w,p=z*w;"
+		 "_Complex _BitInt(20) a=1000+0i,b=1000+0i,c=a*b;"
+		 "_Complex unsigned _BitInt(4) u=10+0i,v=10+0i,uw=u+v;"
+		 "int ok=__real__ s==6&&__imag__ s==8"
+		 "&&__real__ p==-7&&__imag__ p==22"
+		 "&&(int)__real__ c==-48576"
+		 "&&(int)__real__ uw==4"
+		 "&&sizeof(_Complex _BitInt(20))==8"
+		 "&&_Generic(z,_Complex _BitInt(20):1,_Complex int:2,default:0)==1"
+		 "&&_Generic(z,_Complex _BitInt(21):2,default:9)==9;"
+		 "return ok?0:1;}\\n' > {W}/cbi.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/cbi.c && echo OK",
+		 "OK\n"},
+
 		{"arm64_disasm_fp_families", "cpu=arm64",
 		 "printf '.text\\n.globl _t\\n_t:\\n frintn s0, s1\\n frintp s2, s3\\n frintm s4, s5\\n frintz s6, s7\\n frinta s8, s9\\n frintx s10, s11\\n frinti s12, s13\\n frintz d2, d3\\n fcsel s0, s1, s2, eq\\n fcsel d3, d4, d5, ne\\n fcmpe s2, s3\\n fcmpe s4, #0.0\\n fcmpe d0, d1\\n fcvtns w0, s1\\n fcvtau w6, s7\\n fcvtps w8, s9\\n fcvtms x2, d3\\n fmov s0, #1.0\\n fmov s6, #-0.5\\n fmov d0, #2.0\\n ldr x1, Lp\\n ldr s2, Lp\\n ret\\n .p2align 3\\nLp: .quad 0\\n' > {W}/fpf.s && "
 		 "clang -c {W}/fpf.s -o {W}/fpf.o 2>/dev/null && "

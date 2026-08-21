@@ -8361,7 +8361,8 @@ static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
 
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		Sym *e = cache[i].ref->next;
-		if ((e->type.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED)) == bkey && e->type.ref == base->ref) { MCC_TRACE("br\n");
+		if ((e->type.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED)) == bkey &&
+				e->type.ref == base->ref && e->type.bs == base->bs) { MCC_TRACE("br\n");
 			*type = cache[i];
 			return;
 		}
@@ -8375,8 +8376,12 @@ static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
 	s->a.is_complex = 1;
 	f0 = sym_push2(&global_stack, mcc_state->gen_complex_re_tok | SYM_FIELD, base->t, 0);
 	f0->type.ref = base->ref;
+	f0->type.bp = base->bp;
+	f0->type.bs = base->bs;
 	f1 = sym_push2(&global_stack, mcc_state->gen_complex_im_tok | SYM_FIELD, base->t, 0);
 	f1->type.ref = base->ref;
+	f1->type.bp = base->bp;
+	f1->type.bs = base->bs;
 	s->next = f0, f0->next = f1, f1->next = NULL;
 	type->t = VT_STRUCT;
 	type->ref = s;
@@ -10182,8 +10187,6 @@ the_end:
 	if (bitint_seen) { MCC_TRACE("br\n");
 		int uns = (t & VT_UNSIGNED) != 0;
 		int sbt;
-		if (complex_seen)
-			{ MCC_TRACE("br\n"); mcc_error("'_Complex _BitInt' is not supported"); }
 		/* C23 6.2.5p11: a signed _BitInt needs at least 2 bits (one sign, one
 		 * value); an unsigned _BitInt at least 1. */
 		if (bitint_n < 1 + !uns)
@@ -10197,6 +10200,9 @@ the_end:
 		if (bitint_n > 64) { MCC_TRACE("br\n");
 			int quals = t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
 											 VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS);
+			if (complex_seen)
+				{ MCC_TRACE("br\n"); mcc_error("'_Complex _BitInt(N>64)' is not yet "
+									"supported"); }
 			mk_bitint_type(type, uns, bitint_n);
 			type->t |= quals;
 			return type_found;
@@ -10210,13 +10216,28 @@ the_end:
 			{ MCC_TRACE("br\n"); sbt = VT_INT; }
 		else
 			{ MCC_TRACE("br\n"); sbt = VT_LLONG; }
-		type->ref = NULL;
-		type->t = sbt | VT_BITINT | VT_BITFIELD | (uns ? VT_UNSIGNED : 0) |
-							(t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
-										VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS));
-		type->bp = 0;
-		type->bs = bitint_n;
-		return type_found;
+		{
+			int quals = t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
+											 VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS);
+			CType sbase;
+			sbase.ref = NULL;
+			sbase.t = sbt | VT_BITINT | VT_BITFIELD | (uns ? VT_UNSIGNED : 0);
+			sbase.bp = 0;
+			sbase.bs = bitint_n;
+			if (complex_seen) { MCC_TRACE("br\n");
+				/* _Complex _BitInt(N<=64): re/im each an N-bit storage integer;
+				 * mk_complex_type propagates .bs so the parts route through the
+				 * _BitInt engine and the width survives type-compat (T-lin-10464). */
+				mk_complex_type(type, &sbase);
+				type->t |= quals;
+				return type_found;
+			}
+			type->ref = NULL;
+			type->t = sbase.t | quals;
+			type->bp = 0;
+			type->bs = bitint_n;
+			return type_found;
+		}
 	}
 	if (complex_seen) { MCC_TRACE("br\n");
 		CType base;
