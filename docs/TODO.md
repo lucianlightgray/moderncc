@@ -1,12 +1,7 @@
 # TODO
 
 ## Sessions
-
-_**MIGRATING** (2026-08-21) → per-session files are now authoritative: `docs/sessions/{mac-arm64,lin-x64,win-x64}.md`. Each session writes only its OWN file, so concurrent heartbeats never share a diff hunk — this ends the chronic Sessions-table rebase conflict (INSTRUCTIONS.md §4.1). The table below is a transitional mirror; it is dropped once all three sessions write their file. **lin-x64 has cut over.** mac/win: mirror your row into your file at next checkpoint, then this table goes._
-
-| SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
-| --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10492   | 2026-08-21T19:55Z |
+_Session state is per-session — `docs/sessions/{mac-arm64,lin-x64,win-x64}.md` (Next ID, heartbeat, capabilities, STATUS). No shared table (migration complete 2026-08-21: all three sessions write their own file; the transitional mirror table is dropped per INSTRUCTIONS.md §4.1 / Appendix)._
 
 ## Contracts — blocking, highest priority
 
