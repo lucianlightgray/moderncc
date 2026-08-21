@@ -20179,9 +20179,12 @@ static int decl(int l) {
 					--local_scope;
 				}
 				if ((type.t & (VT_EXTERN | VT_INLINE)) == (VT_EXTERN | VT_INLINE)) { MCC_TRACE("br\n");
-					if (gnu89_inline_semantics(mcc_state) || sym->f.func_alwinl || sym->f.func_gnuinl)
-						{ MCC_TRACE("br\n"); type.t = (type.t & ~VT_EXTERN) | VT_STATIC; gnu_ei = 1; }
-					else
+					if (gnu89_inline_semantics(mcc_state) || sym->f.func_gnuinl) { MCC_TRACE("br\n");
+						if (sym->f.func_alwinl)
+							{ MCC_TRACE("br\n"); type.t = (type.t & ~VT_EXTERN) | VT_STATIC; gnu_ei = 1; }
+						else
+							{ MCC_TRACE("br\n"); type.t &= ~VT_EXTERN; gnu_ei = 1; }
+					} else
 						{ MCC_TRACE("br\n"); type.t &= ~VT_INLINE; }
 				} else if ((gnu89_inline_semantics(mcc_state) || sym->f.func_gnuinl) &&
 									 (type.t & (VT_INLINE | VT_STATIC | VT_EXTERN)) == VT_INLINE) { MCC_TRACE("br\n");

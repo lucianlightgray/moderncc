@@ -3398,11 +3398,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'inline int f(void){return 42;}\\nint main(void){return f();}\\n' > {W}/c99p.c && "
 		 "{MCC} -B{B} -I{I} {W}/c99p.c -o {W}/c99p 2>&1 | grep -oE 'unresolved reference to' | head -1",
 		 "unresolved reference to\n"},
-		{"gnu89_extern_inline_static_copy_diff", "",
+		{"gnu_extern_inline_no_static_copy", "",
 		 "printf 'extern inline int f(void){return 42;}\\nint main(void){return f();}\\n' > {W}/g89x.c && "
-		 "{MCC} -B{B} -I{I} -fgnu89-inline {W}/g89x.c -o {W}/g89x >/dev/null 2>&1 && "
-		 "{W}/g89x; echo rc=$?",
-		 "rc=42\n"},
+		 "{MCC} -B{B} -I{I} -fgnu89-inline {W}/g89x.c -o {W}/g89x 2>&1 | grep -oE 'unresolved reference' ; "
+		 "printf 'extern inline __attribute__((gnu_inline)) int f(void){return 42;}\\nint main(void){return f();}\\n' > {W}/g89a.c && "
+		 "{MCC} -B{B} -I{I} {W}/g89a.c -o {W}/g89a 2>&1 | grep -oE 'unresolved reference' ; "
+		 "printf 'extern inline int f(void){return 42;}\\nint f(void){return 7;}\\nint main(void){return f();}\\n' > {W}/g89y.c && "
+		 "{MCC} -B{B} -I{I} -fgnu89-inline {W}/g89y.c -o {W}/g89y >/dev/null 2>&1 && {W}/g89y; echo rc=$?",
+		 "unresolved reference\nunresolved reference\nrc=7\n"},
 		{"c11_ucn_basic_latin_reject", "",
 		 "printf '%s\\n' 'int a\\u0041b;' > {W}/ucnbl.c && "
 		 "{MCC} -c {W}/ucnbl.c -o {W}/ucnbl.o 2>&1 | "
