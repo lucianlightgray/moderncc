@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30268   | 2026-08-21T14:46Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10469   | 2026-08-21T15:11Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10476   | 2026-08-21T15:11Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50043   | 2026-08-21T14:52Z |
 
 ## Contracts — blocking, highest priority
@@ -121,12 +121,22 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 
 ## Open — claimable
 
-- [ ] T-lin-10466 [S] Optimizer test-suite: new `tests/optimizers/` — one PARTIAL per optimization (constfold1.c, dce1.c, licm1.c, cse1.c, strength_reduce1.c, …) that is unoptimized C which mcc SHOULD optimize, + mix/match programs combining partials, each asserting its optimization fired (--stats counter delta / O0-vs-On diff / gcc-O2 parity / disasm grep). DEPS: T-lin-10467 (union opt list), T-lin-10468 (mcc knob map). REF: DETAILS.md#t-lin-10466-optimizer-suite
+- [ ] T-lin-10469 [S] OPTIMIZER GAP: loop UNROLLING — no mcc knob exists (full/partial/runtime unroll). Add pass + `-funroll-loops` knob + optfire counter/cell. Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10470 [S] OPTIMIZER GAP: auto-VECTORIZATION / SLP — no mcc knob (loop + straight-line SIMD). Large; gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10471 [S] OPTIMIZER GAP: general GVN (global value numbering) beyond the existing CSE/PRE. Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10472 [S] OPTIMIZER GAP (TRACTABLE): SHIP SRA/SROA — `tree-sra`/`tree-sroa`/`tree-sroa-params` are IMPLEMENTED but disposition OFF at every level (mccopt.h:99-101). Wire to a level (verify-first vs o0-baseline), add optfire `sra`/`sroa` counter rows + exec correctness. REF: DETAILS.md#t-lin-10468-optimizer-gaps
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10473 [S] OPTIMIZER GAP: interprocedural const-prop / dead-arg elimination / function specialization+cloning (AOT; mcc only has JIT-side specfold). Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10474 [S] OPTIMIZER GAP: escape-analysis → heap-to-stack allocation + ALLOCATION SINKING (LuaJIT SINK / Julia / Dart style; the reachable high-value novel opt for AOT C per T-lin-10467 langs-11-20). REF: DETAILS.md#t-lin-10467-langs-11-20
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10475 [S] OPTIMIZER GAP: whole-program Type-Flow-Analysis → static devirtualization + dead-function tree-shaking (Dart TFA style; needs whole-program/LTO scope). REF: DETAILS.md#t-lin-10467-langs-11-20
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10466 [S] Optimizer test-suite BUILD: partials (one per opt, in `tests/optfire/src/<opt>N.c`) + mix/match, each asserting its opt fired — REUSE tests/optfire (counters.txt / differs.txt / levels.txt rows + cli -S asm-greps), NOT a new harness. Research + knob-map + gaps DONE (T-lin-10467/10468, DETAILS anchors). DEPS: —. REF: DETAILS.md#t-lin-10468-optimizer-gaps
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: —
-- [ ] T-lin-10467 [S] Research: exhaustive optimization catalog of the top-20 most-used languages' production compilers (GCC/LLVM/HotSpot/V8/RyuJIT/gc/GHC/LuaJIT/…) → the deduplicated UNION optimization set → DETAILS. Agent-driven (3 agents dispatched 2026-08-21T15:11Z). REF: DETAILS.md#t-lin-10467-lang-opt-catalog
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: —
-- [ ] T-lin-10468 [S] Optimizer gap-analysis: map mcc's MCC_OPT_LIST knobs (mccopt.h) to the T-lin-10467 union set; every standard optimization with NO mcc knob or NO test = a gap → mint a per-gap fix task (find/fix misses in current + future opt strategies). DEPS: T-lin-10467. REF: DETAILS.md#t-lin-10468-optimizer-gaps
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: T-lin-10467
 - [ ] T-lin-10459 [S] Ungate `__int128` + `__float128` across ALL triples/arches (arm64/riscv64/i386/arm + x86_64-PE/win32) — soft-float libcalls + register-pair ABI where no HW type; relax MCC_HAVE_INT128 (mcc.h:1244) / MCC_HAVE_FLOAT128 (mcc.h:1239). Slices 1-6 gcc-parity, 7-8 (32-bit __int128) beyond-gcc per USER (all 8). DEPS: T-lin-10458[C] (satisfied). Per-arch verify via qemu/wine. REF: DETAILS.md#t-lin-10459-ungate
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: T-lin-10458[C]
 - [ ] T-lin-10460 [S] `_Decimal32/64/128` (C23 §H / gcc _Decimal) — parse+type+sizeof(4/8/16)+ABI+`df/dd/dl` literals+arithmetic (BID software via `__bid_*`); distinct VT base code(s). DEPS: T-lin-10458[C]. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21

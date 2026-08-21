@@ -1,25 +1,23 @@
-# tests/optimizers — optimization coverage suite (T-lin-10466)
+# Optimization coverage — SEE tests/optfire/ (T-lin-10466)
 
-One **partial** per optimization: a small, self-contained `.c` of deliberately
-UNOPTIMIZED code that mcc *should* transform at `-O1`..`-O4`. Naming: `<opt>N.c`
-(constfold1.c, constfold2.c, dce1.c, cse1.c, licm1.c, strength_reduce1.c,
-inline1.c, dse1.c, vrp1.c, sccp1.c, tailcall1.c, gvn1.c, reassoc1.c,
-switch_convert1.c, if_convert1.c, unroll1.c, …).
+DESIGN CORRECTION (mcc-inventory agent, DETAILS#t-lin-10468-optimizer-gaps):
+do NOT build a new harness — REUSE `tests/optfire/`. It already implements every
+assertion needed via `optfire.sh` (5 modes) + CMake auto-globbing of the ledger
+tables. Put partials in `tests/optfire/src/<opt>N.c` and register a row:
 
-**mix/** holds programs that combine partials so several optimizations must
-compose (e.g. constfold-then-dce, licm-then-cse).
+- **counter opts** (const-fold, cse, dse, sccp, vrp/range, licm, ivsr, pre,
+  reassoc, narrow, divmagic, if-conv/select/abs, jt, switch/bf, tco, inline,
+  bfold, ident, sra, sroa, ltemp, cload) → a `counters.txt` row
+  `<name>|-O<n>|<counter>`: asserts the `--stats=4` counter incremented AND the
+  `-On` runtime output == the `-O0` reference (fired AND correct).
+- **no-counter / gated opts** (promote-arrow, chain-store, reg-color, spill-share,
+  arg-forward, loop transforms) → a `differs.txt` row: `-f` vs `-fno-` objects
+  byte-differ AND both == `-O0`.
+- **codegen-shape** (branchless select→cmov/csel, divmagic→imul, if-conv drops a
+  branch) → a `tests/cli/cases.h` `-S` asm-grep cell (à la arm64_disasm_*).
+- **level curve pin** → a `levels.txt` row; **gate attribution** → `cdelta.txt`.
+- arch-scope x86_64/arm64-only knobs via `arch.txt` (differs-<cpu>.txt).
 
-Each cell asserts its optimization actually FIRED (not just that output is
-correct) — mechanism chosen per category once the mcc `--stats`/opt-fire ledger
-map is finalized (T-lin-10468):
-- `--stats` counter delta (preferred where mcc exposes a counter),
-- `-O0` vs `-On` instruction/byte diff (the transform must change codegen),
-- gcc `-O2` behavioral or asm-shape parity,
-- disassembly grep for the expected instruction pattern.
-
-Correctness is always also checked (exec RC / value), so a "fired but wrong"
-optimization fails loudly. Gaps found here (a partial mcc does NOT optimize)
-become per-gap fix tasks via T-lin-10468.
-
-Status: SEED. The union optimization catalog (T-lin-10467, agent-driven) and the
-mcc-knob map (T-lin-10468) populate the concrete partial list + assertion harness.
+Union optimization catalog (top-20 langs): DETAILS#t-lin-10467-lang-opt-catalog
+(+ #t-lin-10467-langs-11-20). mcc knob→opt map + GAPS: DETAILS#t-lin-10468-optimizer-gaps.
+Gaps are minted as T-lin-10469+ fix tasks.
