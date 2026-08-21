@@ -20,3 +20,16 @@ bfold_sqrt|-O2|bfold|bfold-sqrt
 bfold_sign|-O2|bfold|bfold-sign
 bfold_round|-O2|bfold|bfold-round
 bfold_minmax|-O2|bfold|bfold-minmax
+# The two AST optimizer strategies whose -fno- gate (added by T-lin-10443,
+# ast_opt_user_disabled) is cleanly counter-visible: forcing the flag off drives
+# the pass count to 0 where it fires by default. tree-loop-im gates ast_licm_temp
+# (the ltemp counter) and narrow gates the narrow pass; both fire at -O4 on their
+# own optfire subject and vanish under -fno-. The other four gated strategies --
+# gcse, tree-dse, tree-copy-prop and sethi-ullman -- are NOT here on purpose: their
+# --stats counter reads strategy SELECTION (sf[AST_STRAT_*]), which happens before
+# the do_<pass> gate ast_opt_user_disabled sits on, so -fno- suppresses the pass
+# but leaves the count unchanged (cse/dse/cprop all read 2->2). cdelta cannot
+# measure a gate downstream of its counter; that overlapping-taxonomy set has no
+# clean single-counter signal and is deliberately not asserted here.
+ltemp|-O4|ltemp|tree-loop-im
+narrow|-O4|narrow|narrow
