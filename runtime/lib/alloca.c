@@ -17,7 +17,7 @@ __asm__(
 																																												 "    pop     %eax\n"
 																																												 "    add     $3,%eax\n"
 																																												 "    and     $-4,%eax\n"
-																																												 "    jz      p3\n");
+																																												 );
 
 #ifdef _WIN32
 __asm__(
@@ -54,7 +54,7 @@ __asm__(
 __asm__(
 		"    add     $15,%rax\n"
 		"    and     $-16,%rax\n"
-		"    jz      p3\n");
+		);
 
 #ifdef _WIN32
 __asm__(

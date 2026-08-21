@@ -168,6 +168,10 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -fcommon -c {W}/cmm.c -o {W}/cmmc.o && "
 		 "{MCC} -B{B} -I{I} -fcommon {W}/cmac.o {W}/cmmc.o -o {W}/cmc.exe && {W}/cmc.exe ; echo fcommon=$?",
 		 "def=MULTIDEF\nfcommon=44\n"},
+		{"builtin_alloca_zero_valid_ptr", "",
+		 "printf 'int main(void){ char*a=(char*)__builtin_alloca(0); char*b=(char*)__builtin_alloca(24); return (a!=0 && b!=0 && a!=b)?0:1; }\n' > {W}/az.c && "
+		 "{MCC} -B{B} -I{I} {W}/az.c -o {W}/az.exe && {W}/az.exe && echo OK",
+		 "OK\n"},
 
 		{"coop_mn_win32_multiworker", "cpu=x86_64,os=WIN32",
 		 "printf '#include <threads.h>\\n"
