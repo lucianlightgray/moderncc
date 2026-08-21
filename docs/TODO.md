@@ -16,12 +16,9 @@ _Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs
 _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/log/lin-x64.md`. Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1)._
 
 ## In progress — win-x64     ← only win-x64 writes this zone
-- STATUS + capabilities: docs/sessions/win-x64.md -- narrative: docs/log/win-x64.md -- ACTIVE: T-win-50049 [S] P1 win-PE optfire counter-cell -run leg (IN_PROGRESS, claimed 4380c274). Formalized 7 tasks this session; T-win-50055 WITHDRAWN as a T-lin-10459 dup.
+- STATUS + capabilities: docs/sessions/win-x64.md -- narrative: docs/log/win-x64.md -- no active win claims. DONE this session: T-win-50049 [S] P1 win-PE optfire counter-cell -run leg (1fd25d5c, 28 passes fire+run-verified on PE, 77/77). Formalized 6 remaining new tasks (50050-50054 + T-lin-10398/win GPU child); T-win-50055 WITHDRAWN as a T-lin-10459 dup.
 ## Open — claimable
 
-- [ ] T-win-50049 [S] P1/JIT: win-PE optfire COUNTER-cell `-run` leg — run-verify the ~11 counter-only optimizer passes (bfold/ltemp/licm/pre/range/reassoc/abs/select/divmagic/jt/bf + 3 mix_* composition cells) on native x86_64-PE, closing the contract's counter-in-run-verify-class gap the differ-only T-lin-10478-win leg left (glob counters*.txt into the if(WIN32) block under OPTFIRE_EXECVIA=run). All 11 measured fire+run-correct on this box (win-x64 2026-08-21). Test-infra only, o0-neutral.
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 4380c274 | TS: 2026-08-21T23:28Z | DEPS: —
-      REF: DETAILS.md#t-win-50049-optfire-counter-run-win
 - [ ] T-win-50050 [S] OPTIMIZER (P2): constant-fold string/memory builtins (strlen/strcmp/strncmp/memcmp/strnlen) on literal args — mcc emits runtime calls where gcc+clang fold to constants; new `bfold-string` knob extending ast_bfold_run (mccast.c:7829). Native x86_64-PE -run-verifiable, o0-neutral (level-gated).
       OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: —
       REF: DETAILS.md#t-win-50050-bfold-string
