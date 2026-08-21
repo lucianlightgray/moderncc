@@ -17,7 +17,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21 (contract appended on research publish) | DEPS: none
 
 - [ ] T-lin-10476 [C] JIT-COVERAGE MATRIX CONTRACT (P1, GOAL.md) — replace optfire's `if(UNIX)` native block + ELF-only fired-only cross loop (CMakeLists.txt:6526/6543/6603) with a triple-indexed registration table (arch×os×runner×can-run?) + a per-triple RUNNER hook (native/qemu/wine/Rosetta) that unsets OPTFIRE_NORUN where a runner exists, so every optimizer cell RUNS via `-run` (JIT) and compares to -O0 on each triple. Defines the interface T-lin-10478[P]/10479/10480 build on; motivated by the optfire audit. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix | DEPS: none
-      OWNER: lin-x64 | STATE: CLAIMED | SHA: — | TS: 2026-08-21T20:12Z | DEPS: none
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 82de22d9a | TS: 2026-08-21T20:20Z | DEPS: none
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
