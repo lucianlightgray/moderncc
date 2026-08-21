@@ -2081,9 +2081,9 @@ static const cli_case_t cli_cases[] = {
 		 "W=2\nA=0\nD=0\n"},
 
 		{"missing_field_initializers_warn", "",
-		 "printf 'struct S{int x,y;};struct O{struct S i;int z;};\\n"
+		 "printf 'struct S{int x,y;};struct O{struct S i;int z;};struct F{int n;int fa[];};\\n"
 		 "struct S a={1};\\nstruct S b={0};\\nstruct S c={1,2};\\n"
-		 "struct S d={.x=1};\\nstruct O e={{1,2}};\\nint main(void){return 0;}\\n' > {W}/mfi.c && "
+		 "struct S d={.x=1};\\nstruct O e={{1,2}};\\nstruct F g={5};\\nint main(void){return 0;}\\n' > {W}/mfi.c && "
 		 "printf 'X='; {MCC} -B{B} -I{I} -Wmissing-field-initializers -c {W}/mfi.c -o {W}/mfi.o 2>&1 | grep -c 'missing initializer for field'; "
 		 "printf 'E='; {MCC} -B{B} -I{I} -Wextra -c {W}/mfi.c -o {W}/mfi2.o 2>&1 | grep -c 'missing initializer'; "
 		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/mfi.c -o {W}/mfi3.o 2>&1 | grep -c 'missing initializer'",

@@ -19150,7 +19150,8 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 						(mcc_state->warn_missing_field_initializers & WARN_ON)) { MCC_TRACE("br\n");
 					int first_scalar = s->next && (s->next->type.t & VT_BTYPE) != VT_STRUCT &&
 														 !(s->next->type.t & VT_ARRAY);
-					if (!(nitem == 1 && first_scalar && p->mfi_last_zero))
+					int fam = (f->type.t & VT_ARRAY) && f->type.ref->c < 0;
+					if (!fam && !(nitem == 1 && first_scalar && p->mfi_last_zero))
 						{ MCC_TRACE("br\n"); mcc_warning_c(warn_missing_field_initializers)(
 								"missing initializer for field '%s'",
 								get_tok_str(f->v & ~SYM_FIELD, NULL)); }
