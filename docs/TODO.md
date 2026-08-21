@@ -14,7 +14,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
-_Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs/log/mac-arm64.md` (top entry = the current RESUME HANDOFF). Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1). **Current: 2026-08-21T21:32Z — T-lin-10469 loop-unroll DONE+ARCHIVED (c5d075877); ACTIVE CLAIM T-lin-10478/mac (P1, Mach-O -run legs, CLAIMED); 10489[X]mac still DEPS-blocked.**_
+_Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs/log/mac-arm64.md` (top entry = the current RESUME HANDOFF). Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1). **Current: 2026-08-21T21:57Z — T-lin-10478/mac leg DONE (13f5e8c77, P1 Mach-O -run coverage, 92/92); T-lin-10469 loop-unroll DONE+ARCHIVED (c5d075877); no active mac claims; 10489[X]mac still DEPS-blocked.**_
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
@@ -59,8 +59,8 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
       OWNER: win-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-21T21:53Z | DEPS: —
 - [ ] T-lin-10478 [P] P1/JIT: run-verify EVERY optimizer cell through the JIT (`-run`) on every triple — each cell must (a) fire AND (b) `-run`-execute correct vs -O0 on that OS/arch. Fans into /lin (x86_64-ELF native + arm64/riscv64-ELF via qemu-user), /mac (arm64-osx native + x86_64-osx Rosetta + x86_64-PE wine), /win (x86_64-PE native). Parent closes when all three legs green + coverage recorded. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T17:38Z | DEPS: T-lin-10476[C]
-  - [ ] T-lin-10478/mac [P] P1/JIT Mach-O -run legs -- extend lin's _of_matrix with `arm64|macos|native|run` + `x86_64|macos|rosetta|run` + an os=macos branch (no hosted-boot; native mcc + cmake-macos-x64/mcc under `arch -x86_64`), OS-qualified cell names to avoid the qemu-arm64 collision, gate-symmetric mcc_skip_test. Both Mach-O `-run` legs instant-ready. REF: DETAILS.md#t-lin-10478-mac-wiring-plan
-        OWNER: mac-arm64 | STATE: CLAIMED | SHA: — | TS: 2026-08-21T21:32Z | DEPS: T-lin-10476[C]
+  - [x] T-lin-10478/mac [P] P1/JIT Mach-O -run legs DONE (13f5e8c77) — optfire differ cells run-verified via mcc `-run` on optfire-arm64-osx (native) + optfire-x86_64-osx (Rosetta), 92/92 green; arch.txt pins respected, OS-qualified names, x64boot freshness fixture, gate-symmetric skips. Native optfire 149/149 unchanged. REF: DETAILS.md#t-lin-10478-mac-coverage
+        OWNER: mac-arm64 | STATE: DONE | SHA: 13f5e8c77 | TS: 2026-08-21T21:57Z | DEPS: T-lin-10476[C]
 - [ ] T-lin-10479 [S] P1/JIT oracle layering: add an AOT-vs-JIT cross-check (mac `-run` uses the internal ELF relocator — distinct from Mach-O AOT) + a gcc/clang differential where an oracle exists (lin gcc-15, mac gcc-16+clang), atop the mandatory -O{n}==-O0 self-check. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T17:38Z | DEPS: T-lin-10476[C]
 - [ ] T-lin-10480 [S] P1/JIT breadth: wire the native-host-only ast typecov cells into the cross-run matrix, then widen past int-only — narrow/reassoc/sccp/range/ivsr/select/sroa/tco across short/_Bool/unsigned/float/double/long double/__int128/__float128/ptr/struct — and add the missing off-side `_below` level boundary for differ-only cells. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix
