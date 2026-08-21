@@ -3322,8 +3322,6 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 			} else if (!strncmp(optarg, "fp-contract=", 12) ||
 								 !strcmp(optarg, "unsafe-math-optimizations") ||
 								 !strcmp(optarg, "no-unsafe-math-optimizations") ||
-								 !strcmp(optarg, "unroll-loops") ||
-								 !strcmp(optarg, "no-unroll-loops") ||
 								 !strcmp(optarg, "plt") || !strcmp(optarg, "no-plt") ||
 								 !strcmp(optarg, "semantic-interposition") ||
 								 !strcmp(optarg, "no-semantic-interposition") ||

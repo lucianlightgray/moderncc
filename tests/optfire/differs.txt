@@ -35,3 +35,4 @@ cprop_join|-O2|tree-copy-prop|-
 # rows enabled an internal compiler error. The row can now be measured off.
 storeval_callstore|-O3|storeval-callstore|-fno-inline-functions
 sroa_arr|-O4|tree-sroa|-
+unroll|-O2|unroll-loops|-

@@ -1615,6 +1615,7 @@ static int ast_inline_pass_env;
 static int ast_interchange_env;
 static int ast_fusion_env;
 static int ast_tile_env;
+static int ast_unroll_env;
 static int ast_tile_size;
 static int ast_vlat_env;
 int mccjit_recompiling;
@@ -2592,6 +2593,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	if (ast_tile_size < 2)
 		{ MCC_TRACE("br\n"); ast_tile_size = 32; }
 	ast_vlat_env = mcc_opt(s1, MCC_OPT_LOOP_VLAT);
+	ast_unroll_env = mcc_opt(s1, MCC_OPT_LOOP_UNROLL);
 	ast_jit_env = s1 && !mccjit_recompiling &&
 			(s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
 	ast_jit_splice_env = mcc_opt(s1, MCC_OPT_JIT_SPLICE);
@@ -16353,6 +16355,82 @@ static int ast_interchange_apply(AstArena *a, AstLocal outer, AstLocal inner) { 
 	return 1;
 }
 
+#define AST_UNROLL_CAP 8
+
+static int ast_body_has_loop(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_licm_is_loop(a, n))
+		{ MCC_TRACE("br\n"); return 1; }
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); if (ast_body_has_loop(a, c))
+			{ MCC_TRACE("br\n"); return 1; } }
+	return 0;
+}
+
+static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
+	if (li->op != 3 || li->unanalyzable || !li->has_iv)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (li->bound_kind != AST_LOOP_BOUND_CONST || li->iv_stride != 1)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal loop = li->header;
+	AstLocal parent = ast_parent(a, loop);
+	if (parent == AST_NONE || ast_kind(a, parent) != AST_BasicBlock)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal cond = li->cond;
+	if (cond == AST_NONE || ast_kind(a, cond) != AST_Binary ||
+			ast_op(a, cond) != TOK_LT || ast_nchild(a, cond) != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ref_is_local_off(a, ast_child(a, cond, 0), li->iv_off))
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal blit = ast_dep_strip(a, ast_child(a, cond, 1));
+	if (blit == AST_NONE || ast_kind(a, blit) != AST_Literal)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal so = ast_li_prev_sib(a, loop);
+	if (!ast_interchange_is_init(a, so, li->iv_off))
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal ilit = ast_dep_strip(a, ast_child(a, so, 1));
+	if (ilit == AST_NONE || ast_kind(a, ilit) != AST_Literal)
+		{ MCC_TRACE("br\n"); return 0; }
+	int64_t bnd = (int64_t)ast_ival(a, blit);
+	int64_t ini = (int64_t)ast_ival(a, ilit);
+	int64_t trip = bnd - ini;
+	if (trip < 1 || trip > AST_UNROLL_CAP)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal incr = ast_child(a, loop, 1);
+	AstLocal body = ast_child(a, loop, 2);
+	if (incr == AST_NONE || body == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_body_has_loop(a, body))
+		{ MCC_TRACE("br\n"); return 0; }
+	for (int64_t k = 0; k < trip; k++) { MCC_TRACE("br\n");
+		ast_li_list_insert_before(a, parent, loop, ast_dup_sub(a, body));
+		ast_li_list_insert_before(a, parent, loop, ast_dup_sub(a, incr));
+	}
+	ast_li_list_remove(a, parent, loop);
+	return 1;
+}
+
+static int ast_unroll_run(AstArena *a) { MCC_TRACE("enter\n");
+	if (!ast_unroll_env)
+		{ MCC_TRACE("br\n"); return 0; }
+	int total = 0;
+	for (int guard = 0; guard < AST_LOOPNEST_CAP; guard++) { MCC_TRACE("br\n");
+		ast_loopnest_sync(a);
+		int applied = 0;
+		for (int i = 0; i < ast_loopnest_n; i++) { MCC_TRACE("br\n");
+			if (ast_unroll_apply(a, &ast_loopnest[i])) { MCC_TRACE("br\n");
+				total++;
+				applied = 1;
+				break;
+			}
+		}
+		if (!applied)
+			{ MCC_TRACE("br\n"); break; }
+	}
+	return total;
+}
+
 static int ast_interchange_run(AstArena *a) { MCC_TRACE("enter\n");
 	if (!ast_interchange_env)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -21294,6 +21372,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int interchanged = 0;
 			int fused = 0;
 			int tiled = 0;
+			int unrolled = 0;
 			int math_inlined = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
@@ -21489,6 +21568,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						{ MCC_TRACE("br\n"); fused = ast_fusion_run(ast_cur); }
 					if (ast_tile_env)
 						{ MCC_TRACE("br\n"); tiled = ast_tile_run(ast_cur); }
+					if (ast_unroll_env)
+						{ MCC_TRACE("br\n"); unrolled = ast_unroll_run(ast_cur); }
 				}
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (!ast_strat_order_forced)
@@ -21587,13 +21668,13 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
 						do_sra || do_unread ||
-						interchanged || fused || tiled || math_inlined)
+						interchanged || fused || tiled || unrolled || math_inlined)
 					{ MCC_TRACE("br\n"); ast_opt_total++; }
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
 						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
 						!do_cload && !do_sra && !do_unread && !interchanged && !fused &&
-						!tiled && !math_inlined)
+						!tiled && !unrolled && !math_inlined)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
 				if (ast_jit_splice_env && ast_opt_ok) { MCC_TRACE("br\n");
 					ast_promo_n = 0;
@@ -21614,7 +21695,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
 						do_sra || do_unread ||
-						interchanged || fused || tiled || math_inlined) { MCC_TRACE("br\n");
+						interchanged || fused || tiled || unrolled || math_inlined) { MCC_TRACE("br\n");
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
@@ -21630,7 +21711,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 										do_dse || do_sccp || do_jt || do_bf || do_sethi ||           \
 										do_tco || do_narrow || do_divmagic || do_select ||          \
 										do_cload || do_sra || interchanged || fused || tiled ||     \
-										math_inlined || (ui))                                        \
+										math_inlined || unrolled || (ui))                            \
 											 ? ast_fconst_n                                            \
 											 : 0;                                                      \
 		ast_locrec_i = 0;                                                            \

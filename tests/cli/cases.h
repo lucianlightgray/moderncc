@@ -2140,6 +2140,14 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'N='; {MCC} -B{B} -I{I} -Wno-sizeof-array-argument -c {W}/sza.c -o {W}/sza2.o 2>&1 | grep -c 'array function parameter'",
 		 "D=2\nN=0\n"},
 
+		{"loop_unroll_full", "",
+		 "printf 'int main(void){int s=0;for(int i=0;i<6;i++)s+=i*i;return s;}\\n' > {W}/ulf.c && "
+		 "{MCC} -B{B} -I{I} -O2 -funroll-loops {W}/ulf.c -o {W}/ulf && {W}/ulf; printf 'R=%d\\n' $?; "
+		 "{MCC} -B{B} -I{I} -O2 -funroll-loops -c {W}/ulf.c -o {W}/ulf.on.o; "
+		 "{MCC} -B{B} -I{I} -O2 -fno-unroll-loops -c {W}/ulf.c -o {W}/ulf.off.o; "
+		 "cmp -s {W}/ulf.on.o {W}/ulf.off.o && echo U=same || echo U=fired",
+		 "R=55\nU=fired\n"},
+
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
 		 " s.a=1; s.c=2;"

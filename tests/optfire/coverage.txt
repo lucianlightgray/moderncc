@@ -53,7 +53,7 @@
 
 # --- Group C: loop (31-51) ---
 31|licm|covered|licm
-32|loop-unroll|gap|T-lin-10469
+32|loop-unroll|covered|unroll
 33|loop-peel|gap|T-lin-10469
 34|loop-unswitch|gap|T-lin-10469
 35|ivopts|covered|ivsr,ivsr_ptr
