@@ -4462,6 +4462,25 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test("osx/headers-parse-known-positive" "${_osxhp_why}")
         endif()
 
+        if(APPLE)
+            foreach(_tcp IN ITEMS cse dse licm pre)
+                if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake-macos-x64/mcc")
+                    add_test(NAME "ast/${_tcp}-typecov-x86_64-osx"
+                        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
+                                "${CMAKE_CURRENT_SOURCE_DIR}/cmake-macos-x64/mcc"
+                                "${CMAKE_CURRENT_SOURCE_DIR}"
+                                "${CMAKE_CURRENT_BINARY_DIR}/${_tcp}-typecov-x86_64-osx")
+                    set_tests_properties("ast/${_tcp}-typecov-x86_64-osx" PROPERTIES
+                        FIXTURES_REQUIRED "MCC_BUILT;FX_optfire_x64" SKIP_RETURN_CODE 77
+                        LABELS "macho;native" TIMEOUT 120)
+                else()
+                    mcc_skip_test("ast/${_tcp}-typecov-x86_64-osx"
+                        "no cmake-macos-x64/mcc (x86_64 Rosetta backend build); build: CC=/usr/bin/cc cmake -S . -B cmake-macos-x64 -G Ninja -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64 && ninja -C cmake-macos-x64 mcc runmain.o libmccrt.a"
+                        LABELS "macho;native")
+                endif()
+            endforeach()
+        endif()
+
         if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
            AND NOT MCC_TARGETOS STREQUAL "WIN32")
             if(MCC_ENABLE_CROSS)
