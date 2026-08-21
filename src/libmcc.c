@@ -2453,6 +2453,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_sign_compare), 0, "sign-compare"},
 		{offsetof(MCCState, warn_type_limits), 0, "type-limits"},
 		{offsetof(MCCState, warn_bool_compare), WD_ALL, "bool-compare"},
+		{offsetof(MCCState, warn_bool_operation), WD_ALL, "bool-operation"},
 		{offsetof(MCCState, warn_char_subscripts), WD_ALL, "char-subscripts"},
 		{offsetof(MCCState, warn_enum_compare), WD_ALL, "enum-compare"},
 		{offsetof(MCCState, warn_address), WD_ALL, "address"},

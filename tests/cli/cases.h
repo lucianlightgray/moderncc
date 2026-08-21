@@ -2098,6 +2098,13 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/eb.c -o {W}/eb3.o 2>&1 | grep -c 'empty body'",
 		 "E=3\nA=0\nD=0\n"},
 
+		{"bool_operation_warn", "",
+		 "printf 'int t1(_Bool b){return ~b;}\\nint t2(_Bool b){b++;return b;}\\n"
+		 "int t3(_Bool b){b--;return b;}\\nint t4(int x){return ~x;}\\nint main(void){return 0;}\\n' > {W}/bo.c && "
+		 "printf 'A='; {MCC} -B{B} -I{I} -Wall -c {W}/bo.c -o {W}/bo.o 2>&1 | grep -c 'boolean expression'; "
+		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/bo.c -o {W}/bo2.o 2>&1 | grep -c 'boolean'",
+		 "A=3\nD=0\n"},
+
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
 		 " s.a=1; s.c=2;"

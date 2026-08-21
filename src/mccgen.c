@@ -6830,6 +6830,11 @@ ST_FUNC void inc(int post, int c) { MCC_TRACE("enter\n");
 	if (vtop->r & VT_NONLVAL)
 		{ MCC_TRACE("br\n"); expect("lvalue"); }
 	verify_assign_readonly(&vtop->type);
+	if ((vtop->type.t & VT_BTYPE) == VT_BOOL &&
+			(mcc_state->warn_bool_operation & WARN_ON))
+		{ MCC_TRACE("br\n"); mcc_warning_c(warn_bool_operation)(
+				"%s of a boolean expression",
+				c == TOK_INC ? "increment" : "decrement"); }
 	if (is_complex_type(&vtop->type) && mcc_state->cversion < 202400)
 		{ MCC_TRACE("br\n"); mcc_pedantic("ISO C before C2Y forbids '++'/'--' on a complex type"); }
 	if (vtop->type.t & VT_ATOMIC_BIT) { MCC_TRACE("br\n");
@@ -14312,6 +14317,10 @@ tok_next:
 	case '~':
 		next();
 		unary();
+		if ((vtop->type.t & VT_BTYPE) == VT_BOOL &&
+				(mcc_state->warn_bool_operation & WARN_ON))
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_bool_operation)(
+					"'~' on a boolean expression"); }
 		if (is_complex_type(&vtop->type)) { MCC_TRACE("br\n");
 			gen_complex_conj();
 		} else { MCC_TRACE("br\n");
