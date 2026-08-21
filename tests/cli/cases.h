@@ -1870,6 +1870,10 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/flt128_predef.c -o {W}/flt128 && {W}/flt128",
 		 "FLT128_OK\n"},
 
+		{"float_char_predef", "",
+		 "{MCC} -B{B} -I{I} {D}/float_char_predef.c -o {W}/fchar && {W}/fchar",
+		 "FLOAT_CHAR_OK\n"},
+
 		{"width_predef", "",
 		 "{MCC} -B{B} -I{I} {D}/width_predef.c -o {W}/width && {W}/width",
 		 "WIDTH_OK\n"},
