@@ -163,6 +163,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/sp.c -o {W}/sp2.o 2>&1 | grep -c 'inside' ; echo OK ; }",
 		 "around '+' inside '<<'\naround '-' inside '>>'\n0\nOK\n"},
 
+		{"logical_paren_warn", "",
+		 "printf 'int a,b,c,d;\\nint f1(void){return a && b || c;}\\nint f2(void){return c || a && b;}\\nint f3(void){return a && b || c && d;}\\nint f4(void){return (a && b) || c;}\\nint f5(void){return a || b || c;}\\nint f6(void){return a && b && c;}\\n' > {W}/lp.c && "
+		 "{ {MCC} -B{B} -I{I} -Wall -c {W}/lp.c -o {W}/lp.o 2>&1 | grep -c \"around '&&' within '||'\" ; "
+		 "{MCC} -B{B} -I{I} -c {W}/lp.c -o {W}/lp2.o 2>&1 | grep -c 'within' ; echo OK ; }",
+		 "3\n0\nOK\n"},
+
 		{"overflow_const_conv_warn", "",
 		 "printf 'char c1 = 300;\\nchar c2 = -200;\\nchar c3 = 200;\\nunsigned char u = 256;\\nshort s = 70000;\\nchar c4 = (char)300;\\nlong l = 300;\\nenum E{A}; enum E e = 300;\\n' > {W}/ov.c && "
 		 "{ {MCC} -B{B} -I{I} -c {W}/ov.c -o {W}/ov.o 2>&1 | grep -c 'overflow in conversion' ; "

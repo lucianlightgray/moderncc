@@ -15989,7 +15989,7 @@ static void init_prec(void) { MCC_TRACE("enter\n");
 
 #define precedence(i) ((unsigned)i < 256 ? prec[i] : 0)
 
-static void expr_landor(int op);
+static void expr_landor(int op, int first_op);
 
 static int expr_top_op;
 
@@ -15999,7 +15999,7 @@ static void expr_infix(int p) { MCC_TRACE("enter\n");
 	while ((p2 = precedence(t)) >= p) { MCC_TRACE("br\n");
 		wur_call_name = 0;
 		if (t == TOK_LOR || t == TOK_LAND) { MCC_TRACE("br\n");
-			expr_landor(t);
+			expr_landor(t, expr_top_op);
 			expr_top_op = t;
 		} else { MCC_TRACE("br\n");
 			int left_op = expr_top_op, right_op, lp, rp;
@@ -16040,10 +16040,17 @@ static int condition_3way(void) { MCC_TRACE("enter\n");
 	return c;
 }
 
-static void expr_landor(int op) { MCC_TRACE("enter\n");
+static void expr_landor(int op, int first_op) { MCC_TRACE("enter\n");
 	int t = 0, cc = 1, f = 0, i = op == TOK_LAND, c;
 	int first = 1;
+	int lor_warn = op == TOK_LOR && (mcc_state->warn_parentheses & WARN_ON);
+	int cur_op = first_op, idx = 0, x0_and = 0;
 	for (;;) { MCC_TRACE("br\n");
+		if (lor_warn && cur_op == TOK_LAND && !(idx == 1 && x0_and))
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_parentheses)(
+					"suggest parentheses around '&&' within '||'"); }
+		if (idx == 0)
+			{ MCC_TRACE("br\n"); x0_and = cur_op == TOK_LAND; }
 		c = f ? i : condition_3way();
 		if (c < 0)
 			{ MCC_TRACE("br\n"); save_regs(1), cc = 0; }
@@ -16061,6 +16068,8 @@ static void expr_landor(int op) { MCC_TRACE("enter\n");
 		seqp_flush();
 		rir_hook_landor_next();
 		expr_landor_next(op);
+		cur_op = expr_top_op;
+		idx++;
 	}
 	if (cc || f) { MCC_TRACE("br\n");
 		vpop();
