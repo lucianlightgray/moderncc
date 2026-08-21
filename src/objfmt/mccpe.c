@@ -2285,6 +2285,62 @@ ST_FUNC int coff_output_obj(MCCState *s1, const char *filename) { MCC_TRACE("ent
 		}
 #endif
 		nl = strlen(name);
+		if (bind == STB_WEAK && scnum > 0) { MCC_TRACE("br\n");
+			/* COFF/PE has no direct weak DEFINITION. gcc-mingw lowers a weak
+			   def to the weak-external mechanism: the actual definition is
+			   emitted under a file-local mangled alias, and the user symbol is
+			   a WEAK_EXTERNAL (undefined) whose default (TagIndex) is that
+			   alias. A strong def of the same name elsewhere then overrides it
+			   (no LNK2005/`defined twice`), and with no override the reference
+			   falls back to the alias. Emitting <name> as a plain strong
+			   EXTERNAL (the old behavior) collapsed the weak bit and multi-def'd
+			   against a strong def. See T-mac-30019 part 1. */
+			struct syment *ax;
+			char *wname;
+			int alias_idx;
+			wname = mcc_malloc(nl + sizeof(".weak."));
+			memcpy(wname, ".weak.", 6);
+			memcpy(wname + 6, name, nl + 1);
+			/* 1) the real definition, under a local alias (collision-proof) */
+			se = section_ptr_add(symsec, COFF_SIZEOF_SYMBOL);
+			memset(se, 0, COFF_SIZEOF_SYMBOL);
+			if (nl + 6 <= 8) { MCC_TRACE("br\n");
+				memcpy(se->n_name, wname, nl + 6);
+			} else { MCC_TRACE("br\n");
+				se->n_zeroes = 0;
+				se->n_offset = put_elf_str(strsec, wname);
+			}
+			se->n_value = value;
+			se->n_scnum = scnum;
+			se->n_type = (type == STT_FUNC) ? (COFF_DTYPE_FUNCTION << 4) : 0;
+			se->n_sclass = IMAGE_SYM_CLASS_STATIC;
+			se->n_numaux = 0;
+			alias_idx = coffidx;
+			coffidx++;
+			mcc_free(wname);
+			/* 2) the user symbol: WEAK_EXTERNAL (undefined) -> alias default */
+			se = section_ptr_add(symsec, COFF_SIZEOF_SYMBOL);
+			memset(se, 0, COFF_SIZEOF_SYMBOL);
+			if (nl <= 8) { MCC_TRACE("br\n");
+				memcpy(se->n_name, name, nl);
+			} else { MCC_TRACE("br\n");
+				se->n_zeroes = 0;
+				se->n_offset = put_elf_str(strsec, name);
+			}
+			se->n_value = 0;
+			se->n_scnum = 0;
+			se->n_type = (type == STT_FUNC) ? (COFF_DTYPE_FUNCTION << 4) : 0;
+			se->n_sclass = IMAGE_SYM_CLASS_WEAK_EXTERNAL;
+			se->n_numaux = 1;
+			old_to_new[i] = coffidx; /* relocations bind to the weak-external */
+			coffidx++;
+			ax = section_ptr_add(symsec, COFF_SIZEOF_SYMBOL);
+			memset(ax, 0, COFF_SIZEOF_SYMBOL);
+			write32le((unsigned char *)ax, alias_idx);    /* aux TagIndex   */
+			write32le((unsigned char *)ax + 4, 1);        /* NOLIBRARY(1)   */
+			coffidx++;
+			continue;
+		}
 		se = section_ptr_add(symsec, COFF_SIZEOF_SYMBOL);
 		memset(se, 0, COFF_SIZEOF_SYMBOL);
 		if (nl <= 8) { MCC_TRACE("br\n");
@@ -2644,8 +2700,27 @@ ST_FUNC int coff_load_object_file(MCCState *s1, int fd, unsigned long file_offse
 				if (smap[secnum].s->sh_flags & SHF_TLS)
 					{ MCC_TRACE("br\n"); type = STT_TLS; }
 			}
-			if (scls == IMAGE_SYM_CLASS_WEAK_EXTERNAL)
-				{ MCC_TRACE("br\n"); bind = STB_WEAK; }
+			if (scls == IMAGE_SYM_CLASS_WEAK_EXTERNAL) { MCC_TRACE("br\n");
+				bind = STB_WEAK;
+				/* A weak-external's aux TagIndex names a default symbol linked
+				   when the weak symbol is otherwise unresolved. When that default
+				   is itself DEFINED (our own weak-def alias, or gcc-mingw's), bind
+				   the weak symbol to the default's location so a reference resolves
+				   to the weak definition -- while a strong def elsewhere still
+				   overrides (STB_WEAK yields). Mirrors the writer's weak-def
+				   lowering; see T-mac-30019 part 1. */
+				if (naux >= 1) { MCC_TRACE("br\n");
+					int tag = read32le(symtab + (size_t)(i + 1) * COFF_SIZEOF_SYMBOL);
+					if (tag > 0 && tag < nsym) { MCC_TRACE("br\n");
+						MccCoffSym *def = (MccCoffSym *)(symtab + (size_t)tag * COFF_SIZEOF_SYMBOL);
+						short dsec = def->SectionNumber;
+						if (dsec >= 1 && dsec <= nsec && !smap[dsec].skip && smap[dsec].s) { MCC_TRACE("br\n");
+							shndx = smap[dsec].s->sh_num;
+							value = def->Value + smap[dsec].offset;
+						}
+					}
+				}
+			}
 
 			old_to_new[i] = set_elf_sym(symtab_section, value, size,
 																	ELFW(ST_INFO)(bind, type), 0, shndx, name);

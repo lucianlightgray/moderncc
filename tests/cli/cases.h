@@ -136,6 +136,19 @@ static const cli_case_t cli_cases[] = {
 		 "{W}/relovfl.exe ; echo rc=$?",
 		 "rc=42\n"},
 
+		{"coff_weak_def_no_multidef", "cpu=x86_64,os=WIN32",
+		 "printf 'int foo=5;\\n' > {W}/wa.c && "
+		 "printf 'int foo __attribute__((weak))=2;\\nint helper(void){return foo;}\\n' > {W}/wb.c && "
+		 "printf 'int helper(void);\\nint main(void){return helper()==5?42:1;}\\n' > {W}/wms.c && "
+		 "printf 'int helper(void);\\nint main(void){return helper()==2?42:1;}\\n' > {W}/wmw.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/wa.c -o {W}/wa.obj && "
+		 "{MCC} -B{B} -I{I} -c {W}/wb.c -o {W}/wb.obj && "
+		 "{MCC} -B{B} -I{I} -c {W}/wms.c -o {W}/wms.obj && "
+		 "{MCC} -B{B} -I{I} -c {W}/wmw.c -o {W}/wmw.obj && "
+		 "{MCC} -B{B} -I{I} {W}/wa.obj {W}/wb.obj {W}/wms.obj -o {W}/sw.exe && {W}/sw.exe; echo sw=$? ; "
+		 "{MCC} -B{B} -I{I} {W}/wb.obj {W}/wmw.obj -o {W}/wo.exe && {W}/wo.exe; echo wo=$?",
+		 "sw=42\nwo=42\n"},
+
 		{"coop_mn_win32_multiworker", "cpu=x86_64,os=WIN32",
 		 "printf '#include <threads.h>\\n"
 		 "static mtx_t L;static long c=0;\\n"
