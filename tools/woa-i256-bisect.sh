@@ -1,29 +1,26 @@
 #!/usr/bin/env bash
-# T-win-50041 round 7: minimal Bug-B repro. Build a NON-crashing mcc
-# (RelWithDebInfo sidesteps Bug A) + runtime, compile+link+run the 4-line repro at
-# -O0 and -O1, print the __int256 values. Confirms Bug B is a real, minimal,
-# opt-independent (__int256)double conversion miscompile on arm64-Windows.
+# T-win-50041 round 10: disassemble __mcc_i256_from_f64 (arm64-Windows) to find
+# the mis-generated instruction in the negative branch (the -x -> nested-call
+# marshalling). Use a NON-crashing RelWithDebInfo mcc.
 set -x
 S="$PWD"; B="$S/cmake-woa-rdi"; OUT="$S/bisect-out"; mkdir -p "$OUT"
 cmake -S "$S" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo > "$OUT/00.txt" 2>&1 || true
 cmake --build "$B" --target mcc exec_runner > "$OUT/01.txt" 2>&1 || true
-# build the runtime (libmccrt.a) via the mcc_build ctest fixture so direct links resolve
-( cd "$B" && ctest -R "mcc_build" --timeout 300 ) > "$OUT/02-rt.txt" 2>&1 || true
+( cd "$B" && ctest -R "mcc_build" --timeout 300 ) > "$OUT/02.txt" 2>&1 || true
 MCC="$B/mcc.exe"; [ -x "$MCC" ] || MCC="$B/mcc"
 RT="-B $S/runtime/win32 -B $S/runtime -I $S/runtime/include -I $S/tests/support"
-MIN="$S/tools/woa-i256-min.c"
-
-runit() {  # optflag
-  local o="$1"
-  "$MCC" $RT $o "$MIN" -o "$OUT/min$o.exe" 2>"$OUT/mc$o.txt"
-  echo "--- min $o (compile rc=$?) ---"
-  [ -x "$OUT/min$o.exe" ] && "$OUT/min$o.exe" 2>&1 || echo "(no exe)"
-}
+DIS="$(command -v llvm-objdump || true)"
 
 {
-  echo "== mcc = $MCC =="; "$MCC" -v 2>&1 | head -1
-  runit -O0
-  runit -O1
+  echo "== mcc = $MCC =="
+  echo "=== mcc -S of __mcc_i256_from_f64 (source-structured asm) ==="
+  "$MCC" $RT -S "$S/runtime/lib/int256.c" -o "$OUT/int256.s" 2>/dev/null
+  awk '/^[[:space:]]*__mcc_i256_from_f64:/{p=1}
+       p{print}
+       p&&/\.size[[:space:]]+__mcc_i256_from_f64/{exit}
+       p&&/^[[:space:]]*(w256_from_double_mag|__mcc_i256_from_f32):/{if(seen)exit;seen=1}' "$OUT/int256.s" | head -120
+  echo "=== also w256_from_double_mag (the callee) — first 60 lines ==="
+  awk '/^[[:space:]]*w256_from_double_mag:/{p=1} p{print} p&&/\.size[[:space:]]+w256_from_double_mag/{exit}' "$OUT/int256.s" | head -60
 } > "$OUT/bisect.txt" 2>&1
-echo "===== ROUND 7: minimal Bug-B repro ====="
+echo "===== ROUND 10: __mcc_i256_from_f64 disasm ====="
 cat "$OUT/bisect.txt"
