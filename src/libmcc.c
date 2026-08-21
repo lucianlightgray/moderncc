@@ -2462,6 +2462,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_implicit_fallthrough), 0, "implicit-fallthrough"},
 		{offsetof(MCCState, warn_override_init), 0, "override-init"},
 		{offsetof(MCCState, warn_missing_field_initializers), 0, "missing-field-initializers"},
+		{offsetof(MCCState, warn_empty_body), 0, "empty-body"},
 		{offsetof(MCCState, warn_unused_variable), WD_ALL, "unused-variable"},
 		{offsetof(MCCState, warn_unused_parameter), 0, "unused-parameter"},
 		{offsetof(MCCState, warn_unused_function), WD_ALL, "unused-function"},
@@ -3379,6 +3380,7 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->warn_type_limits = on;
 				s->warn_missing_field_initializers = on;
 				s->warn_override_init = on;
+				s->warn_empty_body = on;
 				break;
 			}
 			if (optarg[0] && set_flag(s, options_W, optarg) < 0)

@@ -2089,6 +2089,15 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/mfi.c -o {W}/mfi3.o 2>&1 | grep -c 'missing initializer'",
 		 "X=2\nE=2\nD=0\n"},
 
+		{"empty_body_warn", "",
+		 "printf 'void s(void);\\nint a(int x){if(x); return x;}\\n"
+		 "int b(int x){if(x)s();else ; return x;}\\nint c(int x){do ; while(x); return x;}\\n"
+		 "int d(int x){while(x); return x;}\\nint main(void){return 0;}\\n' > {W}/eb.c && "
+		 "printf 'E='; {MCC} -B{B} -I{I} -Wextra -c {W}/eb.c -o {W}/eb.o 2>&1 | grep -c 'empty body'; "
+		 "printf 'A='; {MCC} -B{B} -I{I} -Wall -c {W}/eb.c -o {W}/eb2.o 2>&1 | grep -c 'empty body'; "
+		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/eb.c -o {W}/eb3.o 2>&1 | grep -c 'empty body'",
+		 "E=3\nA=0\nD=0\n"},
+
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
 		 " s.a=1; s.c=2;"

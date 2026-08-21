@@ -17539,6 +17539,9 @@ again:
 		rir_hook_if_gvtst_done();
 		skip(')');
 		else_dangles_here = 1;
+		if (tok == ';' && (mcc_state->warn_empty_body & WARN_ON))
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_empty_body)(
+					"suggest braces around empty body in an 'if' statement"); }
 		block(0);
 		if (tok == TOK_ELSE) { MCC_TRACE("br\n");
 			if (stmt_dangle && (mcc_state->warn_parentheses & WARN_ON))
@@ -17548,6 +17551,9 @@ again:
 			gsym(a);
 			next();
 			rir_hook_if_else();
+			if (tok == ';' && (mcc_state->warn_empty_body & WARN_ON))
+				{ MCC_TRACE("br\n"); mcc_warning_c(warn_empty_body)(
+						"suggest braces around empty body in an 'else' statement"); }
 			block(0);
 			gsym(d);
 		} else { MCC_TRACE("br\n");
@@ -17884,6 +17890,9 @@ again:
 		d = gind();
 		rir_hook_do_begin();
 		lcen_iter(&lcen);
+		if (tok == ';' && (mcc_state->warn_empty_body & WARN_ON))
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_empty_body)(
+					"suggest braces around empty body in a 'do' statement"); }
 		lblock(&a, &b);
 		rir_hook_do_body_end();
 		gsym(b);

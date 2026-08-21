@@ -786,6 +786,7 @@ struct MCCState {
 	unsigned char warn_implicit_fallthrough;
 	unsigned char warn_override_init;
 	unsigned char warn_missing_field_initializers;
+	unsigned char warn_empty_body;
 	unsigned char warn_unused_variable;
 	unsigned char warn_unused_parameter;
 	unsigned char warn_unused_function;
