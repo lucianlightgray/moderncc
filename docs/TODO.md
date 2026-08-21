@@ -6,7 +6,7 @@
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30269   | 2026-08-21T17:01Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10476   | 2026-08-21T16:04Z |
-| win-x64   | Windows  | x64   | 50000–69999 | 50044   | 2026-08-21T17:01Z |
+| win-x64   | Windows  | x64   | 50000–69999 | 50045   | 2026-08-21T17:05Z |
 
 ## Contracts — blocking, highest priority
 
@@ -128,6 +128,8 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 
 ## Open — claimable
 
+- [ ] T-win-50044 [S] Diagnostic: implement `-Wmissing-field-initializers` (mcc lacks it; gap under T-mac-30265, win-found). gcc warns on a struct brace-init with fewer initializers than members, exempting `{0}`/`{}`/designated/all-fields/union/FAM, recursing into nested. Full spec + hook site + edge-case traps banked.
+      OWNER: win-x64 | STATE: CLAIMED | SHA: 07dfc694 | TS: 2026-08-21T17:05Z | REF: DETAILS.md#t-mac-30265-missing-field-initializers-gap-win-found | DEPS: —
 - [ ] T-lin-10469 [S] OPTIMIZER GAP: loop UNROLLING — no mcc knob exists (full/partial/runtime unroll). Add pass + `-funroll-loops` knob + optfire counter/cell. Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10470 [S] OPTIMIZER GAP: auto-VECTORIZATION / SLP — no mcc knob (loop + straight-line SIMD). Large; gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
