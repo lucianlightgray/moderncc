@@ -1495,6 +1495,11 @@ static const cli_case_t cli_cases[] = {
 		 "{ [ \"$c\" -eq \"$b\" ] && echo prob=nobloat || echo prob=BLOAT; }; echo END",
 		 "expect=nobloat\nprob=nobloat\nEND\n"},
 
+		{"builtin_expect_side_effect", "",
+		 "printf 'int x,y;\\nint foo(int z){ if(__builtin_expect(x ? y!=0 : 0, z++)) return 7; return z; }\\nint main(){ x=1; y=0; return foo(10)==11 ? 0 : 1; }\\n' > {W}/bx.c && "
+		 "{ {MCC} -B{B} -nostdinc {W}/bx.c -o {W}/bx && {W}/bx && echo OK || echo FAIL; }",
+		 "OK\n"},
+
 		{"builtin_inline_mem_and_retaddr", "",
 		 "printf 'int main(void){ char a[8]={0}, b[8]={1,2,3,4,5,6,7,8}, c[8], d[4];"
 		 " __builtin_memcpy_inline(a,b,8); __builtin_memmove_inline(c,a,8); __builtin_memset_inline(d,9,4);"

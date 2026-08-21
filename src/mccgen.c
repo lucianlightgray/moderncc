@@ -14427,14 +14427,19 @@ tok_next:
 
 	case TOK_builtin_expect: {
 		CType lt;
+		int exp_const;
 		next();
 		skip('(');
 		expr_eq();
+		exp_const = (vtop->r & (VT_VALMASK | VT_LVAL)) == VT_CONST && !(vtop->r & VT_SYM);
 		skip(',');
-		nocode_wanted++;
+		int drop_c = exp_const || vtop->r == VT_CMP;
+		if (drop_c)
+			{ MCC_TRACE("br\n"); nocode_wanted++; }
 		expr_eq();
 		vpop();
-		nocode_wanted--;
+		if (drop_c)
+			{ MCC_TRACE("br\n"); nocode_wanted--; }
 		skip(')');
 		lt.t = (LONG_SIZE == 8) ? (VT_LLONG | VT_LONG) : (VT_INT | VT_LONG);
 		lt.ref = NULL;
