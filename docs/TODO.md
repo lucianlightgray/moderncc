@@ -12,10 +12,6 @@ _**MIGRATING** (2026-08-21) → per-session files are now authoritative: `docs/s
 
 _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b328a85a), T-lin-10427 (gated MCC_COOP_MT primitives, 87b49371), **T-lin-10428 (M:N core, 50da1e68 — both spectral_norm kernels ~3.7x toward native under mcc-coop-mn)**. Remaining coop children in Open: T-lin-10429 (TLS safety — see its note: 10428's non-migrating design largely moots the hazard) and T-lin-10430 [X]win (Win32 multi-worker); both DEPS on 10428 now satisfied._
 
-- [ ] T-lin-10458 [C] Type-expansion program CONTRACT — central VT_BTYPE base-code allocation (free 18–31), qualifier/distinctness-flag bits, per-arch soft-float/register-pair ABI table, and the _Generic-distinctness side-channel. Blocks all T-lin-1045{9..65} children.
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: b59809731 | TS: 2026-08-21T12:40Z
-      REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21 (contract appended on research publish) | DEPS: none
-
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
 _Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs/log/mac-arm64.md` (top entry = the current RESUME HANDOFF). Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1). **Current: PAUSED 2026-08-21T20:01Z, clean, no active mac claims; both P1/P3 lanes (T-lin-10478[P]-mac, T-lin-10489[X]mac) DEPS-blocked.**_
