@@ -351,6 +351,16 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O1 -run {W}/pxb.c && echo RUNOK",
 		 "0\n1\nRUNOK\n"},
 
+		{"fneg_inreg_xorps", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double nd(double x){return -x;}float nf(float x){return "
+		 "-x;}int main(void){return nd(2.0)==-2.0&&nf(3.0f)==-3.0f?0:1;}\\n' "
+		 "> {W}/fn.c && "
+		 "{MCC} -B{B} -I{I} -O0 -S {W}/fn.c -o {W}/fn0.s && "
+		 "{MCC} -B{B} -I{I} -O1 -S {W}/fn.c -o {W}/fn1.s && "
+		 "grep -cE 'xorps|xorpd' {W}/fn0.s ; grep -cE 'xorps|xorpd' {W}/fn1.s ; "
+		 "{MCC} -B{B} -I{I} -O1 -run {W}/fn.c && echo RUNOK",
+		 "0\n2\nRUNOK\n"},
+
 		{"embed_jit_manifest", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int main(void){return 0;}\\n' > {W}/mf.c && "
 		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O13 -v --embed-jit --jit-functions main,helper --jit-max-duration 120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "

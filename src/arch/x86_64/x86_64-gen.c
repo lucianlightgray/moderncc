@@ -2975,6 +2975,23 @@ void gen_opf(int op) { MCC_TRACE("enter\n");
 		gv(float_type);
 		if (float_type == MCC_RC_ST0) { MCC_TRACE("br\n");
 			o(0xe0d9);
+		} else if (mcc_state && mcc_state->optimize >= 1) { MCC_TRACE("br\n");
+			int dbl = bt == VT_DOUBLE;
+			int rr = vtop->r & VT_VALMASK;
+			int pinned = (ast_pinned_regs & ((uint64_t)1 << rr)) != 0;
+			int mreg = get_reg(MCC_RC_FLOAT);
+			int m = REG_VALUE(mreg);
+			o(0x66); sse_rex(mreg, mreg); o(0x760f); o(0xc0 | (m << 3) | m);
+			o(0x66); sse_rex(0, mreg);
+			if (dbl) { MCC_TRACE("br\n"); o(0x730f); o(0xf0 | m); o(63); }
+			else     { MCC_TRACE("br\n"); o(0x720f); o(0xf0 | m); o(31); }
+			if (dbl) { MCC_TRACE("br\n"); o(0x66); }
+			if (pinned) { MCC_TRACE("br\n");
+				sse_rex(mreg, rr); o(0x570f); o(0xc0 | (m << 3) | REG_VALUE(rr));
+				vtop->r = mreg;
+			} else { MCC_TRACE("br\n");
+				sse_rex(rr, mreg); o(0x570f); o(0xc0 | (REG_VALUE(rr) << 3) | m);
+			}
 		} else { MCC_TRACE("br\n");
 			save_reg(vtop->r);
 			o(0x80);
