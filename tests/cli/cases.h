@@ -1336,7 +1336,7 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/loc.c -o {W}/loc 2>/dev/null && {W}/loc && echo LOC_OK; echo END",
 		 "LOC_OK\nEND\n"},
 
-		{"builtin_expect_is_code_neutral", "cpu!=arm64:the __builtin_expect long-cast sign-extend is unfolded on arm64-LP64 (known QoI T-lin-10453); size-neutral on every other target",
+		{"builtin_expect_is_code_neutral", "optimizer",
 		 "printf 'int g;\\nint f(void){ if (__builtin_expect(!!(g==0),0)) return 1; return 2; }\\n' > {W}/be.c && "
 		 "{MCC} -B{B} -I{I} -w -O1 -c {W}/be.c -o {W}/beA.o && "
 		 "printf 'int g;\\nint f(void){ if (__builtin_expect_with_probability(!!(g==0),0,0.9)) return 1; return 2; }\\n' > {W}/be.c && "

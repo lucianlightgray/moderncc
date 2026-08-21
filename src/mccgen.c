@@ -14241,7 +14241,11 @@ tok_next:
 		skip(')');
 		lt.t = (LONG_SIZE == 8) ? (VT_LLONG | VT_LONG) : (VT_INT | VT_LONG);
 		lt.ref = NULL;
-		gen_cast(&lt);
+		if (mcc_state && mcc_state->optimize >= 1 && vtop->r == VT_CMP) { MCC_TRACE("br\n");
+			vtop->type = lt;
+		} else { MCC_TRACE("br\n");
+			gen_cast(&lt);
+		}
 		break;
 	}
 	case TOK_builtin_assume:
@@ -14534,7 +14538,11 @@ tok_next:
 		skip(')');
 		lt.t = (LONG_SIZE == 8) ? (VT_LLONG | VT_LONG) : (VT_INT | VT_LONG);
 		lt.ref = NULL;
-		gen_cast(&lt);
+		if (mcc_state && mcc_state->optimize >= 1 && vtop->r == VT_CMP) { MCC_TRACE("br\n");
+			vtop->type = lt;
+		} else { MCC_TRACE("br\n");
+			gen_cast(&lt);
+		}
 		break;
 	}
 	case TOK_builtin_shuffle:
