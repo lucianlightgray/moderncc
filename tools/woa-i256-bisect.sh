@@ -15,7 +15,7 @@ CDB="/c/Program Files (x86)/Windows Kits/10/Debuggers/arm64/cdb.exe"
 DIS="/c/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/Llvm/ARM64/bin/llvm-objdump"
 {
   "$MCC" $RT -g "$MIN" -o "$OUT/min.exe" 2>/dev/null; echo "min compile rc=$?"
-  RVA=$("$DIS" -t "$OUT/min.exe" 2>/dev/null | grep -iE '__mcc_i256_from_f64$' | awk '{print $1}' | sed 's/^0x0*//' | head -1)
+  RVA=$("$DIS" -t "$OUT/min.exe" 2>/dev/null | grep -iE '__mcc_i256_from_f64$' | awk '{print $(NF-1)}' | sed 's/^0x0*//' | head -1)
   echo "__mcc_i256_from_f64 RVA=0x$RVA"
   echo "=== cdb: bp __mcc_i256_from_f64 (module+RVA), dump result of neg vs pos ==="
   "$CDB" -c "lm1m; bp min+0x$RVA; g; .echo HIT1_NEG; r d0; r? \$t0=@x0; pt; dq @\$t0 L4; g; .echo HIT2_POS; r d0; r? \$t1=@x0; pt; dq @\$t1 L4; q" "$OUT/min.exe" 2>&1 \
