@@ -3238,6 +3238,12 @@ void gen_cvt_itof(int t) { MCC_TRACE("enter\n");
 								(vtop->type.t & VT_BTYPE) == VT_LLONG)
 						? 8
 						: 0;
+		if (mcc_state && mcc_state->optimize >= 1) { MCC_TRACE("br\n");
+			o(0x66);
+			sse_rex(r, r);
+			o(0xef0f);
+			o(0xc0 | (REG_VALUE(r) << 3) | REG_VALUE(r));
+		}
 		o(0xf2 + ((t & VT_BTYPE) == VT_FLOAT ? 1 : 0));
 		if (w || REX_BASE(r) || REX_BASE(vtop->r & VT_VALMASK)) { MCC_TRACE("br\n");
 			o(0x40 | w | (REX_BASE(r) << 2) | REX_BASE(vtop->r & VT_VALMASK));

@@ -342,6 +342,15 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} --no-embed-jit -O0 -c {W}/so.c -o {W}/so2.o && echo FLAGOK",
 		 "WARMOK\nrc=55\nFLAGOK\n"},
 
+		{"cvtsi2f_pxor_depbreak", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double f(int x){return (double)x;}int main(void){return "
+		 "(int)f(-7)==-7?0:1;}\\n' > {W}/pxb.c && "
+		 "{MCC} -B{B} -I{I} -O0 -S {W}/pxb.c -o {W}/pxb0.s && "
+		 "{MCC} -B{B} -I{I} -O1 -S {W}/pxb.c -o {W}/pxb1.s && "
+		 "grep -c pxor {W}/pxb0.s ; grep -c pxor {W}/pxb1.s ; "
+		 "{MCC} -B{B} -I{I} -O1 -run {W}/pxb.c && echo RUNOK",
+		 "0\n1\nRUNOK\n"},
+
 		{"embed_jit_manifest", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int main(void){return 0;}\\n' > {W}/mf.c && "
 		 "XDG_CACHE_HOME={W}/mfc {MCC} -B{B} -I{I} -O13 -v --embed-jit --jit-functions main,helper --jit-max-duration 120 -c {W}/mf.c -o {W}/mf.o 2>&1 | grep 'embed-jit manifest' ; "
