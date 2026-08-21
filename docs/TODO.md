@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30269   | 2026-08-21T16:49Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30269   | 2026-08-21T16:54Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10476   | 2026-08-21T16:04Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50044   | 2026-08-21T16:50Z |
 
@@ -340,7 +340,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       REF: INVESTIGATIONS.md#r16-riscv-stackslot | DEPS: —
 - [ ] T-mac-30090 [S] Fix: [LOW cluster] (1) COFF silently clamps section align >8192 (`mccpe.c:2093`) while Mach-O caps 4096 WITH warning (`mccmacho.c:2057-2058`) → `_Alignas(16384)` silently under-aligned on COFF; (2) `__BIGGEST_ALIGNMENT__ 16` (`mccdefs.h:247`) vs `MCC_MAX_ALIGN 8` on i386/arm (`i386-gen.h:41`/`arm-gen.h:96`, used `mccgen.c:6432`) → bare `__attribute__((aligned))` gives 8 not 16; (3) riscv64 raw `==VT_UNION` (`riscv64-gen.c:542`) vs arm64 masked `IS_UNION` (`:987`) — brittle; (4) arm64-Darwin K&R `double` args in v0 not stack (`arm64-gen.c:1328/1268`, speculative). Fix each per anchor.
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
-      REF: INVESTIGATIONS.md#r16-low-cluster | DEPS: —
+      REF: INVESTIGATIONS.md#r16-low-cluster | DEPS: — | NOTE (mac-arm64 2026-08-21, verify-first): sub-item (4) arm64-Darwin K&R `double` args = NON-BUG (do not re-scout) — verified ==gcc-16 across in-register (`int a;double b;int c;double d`), 10-double register-exhaustion+2-stack-spill (v0-v7 then stack, →55), and cross-TU (K&R callee in a separate .o, no caller prototype, →10.0), all -O0/-O2 correct. The "speculative v0-not-stack" concern doesn't reproduce. REMAINING sub-items are all off-box for mac: (1) COFF align>8192 silent-clamp = win/PE (mccpe.c:2093, warn like Mach-O — win-verifiable); (2) `__BIGGEST_ALIGNMENT__`16 vs `MCC_MAX_ALIGN`8 = i386/arm only (arm64 unaffected); (3) riscv64 raw `==VT_UNION` = code-quality, correct results.
 - [ ] T-mac-30075 [S] Investigate: `#include` search (precedence chain vs gcc/clang ROBUST at every rung) — ~~[HIGH] default macOS framework search path populated ONLY for EXE/DYN/MEMORY output → `mcc -c`/`-E`/`-S` FAIL on any `<Framework/Header.h>`~~ **DONE (08734371: split mcc_add_macos_frameworkpath out of mcc_add_macos_sdkpath, call it in the !nostdinc include-setup block so it runs for all output types; verified -c/-E/-S resolve CFBase.h vs clang, o0-neutral, TDD cli/macho_framework_header_search_for_c_e; DETAILS#t-mac-30075-framework-header-search-for-compile)**; [MED] `-F`/`-iframework` searched dead-last not in cmdline order → wrong header when `-F` precedes `-I` (`mccpp.c:1518`); [LOW] `-I-` treated as ordinary; [LOW] no dup-dir dedup
       OWNER: — | STATE: OPEN | SHA: 3901764e | TS: 2026-08-18T02:56Z
       REF: INVESTIGATIONS.md#r15-include-search | DEPS: —
