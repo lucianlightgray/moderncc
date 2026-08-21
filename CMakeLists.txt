@@ -6070,6 +6070,17 @@ if(MCC_BUILD_TESTS)
                 LABELS "cross" TIMEOUT 600)
         endforeach()
 
+        foreach(_bf riscv64 arm arm64 i386)
+            add_test(NAME cross/bf16-qemu-${_bf}
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/bf16-qemu.sh"
+                        "${_bf}" "${MCC_CROSS_DIR}/mcc-${_bf}" "${MCC_CROSS_DIR}"
+                        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gentoo-stage3-${_bf}-glibc"
+                        "${CMAKE_BINARY_DIR}/bf16-qemu-${_bf}")
+            set_tests_properties(cross/bf16-qemu-${_bf} PROPERTIES
+                FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT" SKIP_RETURN_CODE 77
+                LABELS "cross" TIMEOUT 300)
+        endforeach()
+
         set(_c2bank_riscv64 "3;2;1157")
         set(_c2bank_arm "1;0;1131")
         set(_c2bank_arm64 "1;0;1200")
