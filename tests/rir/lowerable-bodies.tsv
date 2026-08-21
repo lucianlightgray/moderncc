@@ -144,7 +144,12 @@ self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_has_unaligned_field	src/mcc.c	0000
 self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_is_vec16	src/mcc.c	0000
 self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_mixed_class	src/mcc.c	0000
 self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_stack_arg_align	src/mcc.c	6666
+self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_imul32	src/mcc.c	0000
 self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_move	src/mcc.c	0000
+self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_packed_fcmp	src/mcc.c	0000
+self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_packed_icmp	src/mcc.c	0000
+self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_packed_iop	src/mcc.c	0000
+self	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_packed_op	src/mcc.c	0000
 self	elf	src/arch/x86_64/x86_64-link.c	code_reloc	src/mcc.c	0000
 self	elf	src/arch/x86_64/x86_64-link.c	create_plt_entry	src/mcc.c	0000
 self	elf	src/arch/x86_64/x86_64-link.c	gotplt_entry_type	src/mcc.c	0000
@@ -591,11 +596,13 @@ self	elf	src/mccast.c	ast_cprop_switch_meet	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cprop_tt_same	src/mcc.c	6666
 self	elf	src/mccast.c	ast_cse_block	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_commutative_op	src/mcc.c	6666
+self	elf	src/mccast.c	ast_cse_is_local	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_kill	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_regpure	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_regpure_compute	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_run	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_same	src/mcc.c	0000
+self	elf	src/mccast.c	ast_cse_scalar	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_setref	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_state_load	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_state_meet	src/mcc.c	0000
@@ -603,6 +610,7 @@ self	elf	src/mccast.c	ast_cse_state_save	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_stmts	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_subst	src/mcc.c	0000
 self	elf	src/mccast.c	ast_cse_try_match	src/mcc.c	0000
+self	elf	src/mccast.c	ast_cse_wide	src/mcc.c	0000
 self	elf	src/mccast.c	ast_data_all_zero	src/mcc.c	6666
 self	elf	src/mccast.c	ast_dead_value	src/mcc.c	0000
 self	elf	src/mccast.c	ast_dep_adjacent	src/mcc.c	0000
@@ -874,6 +882,7 @@ self	elf	src/mccast.c	ast_ltemp_restore	src/mcc.c	0000
 self	elf	src/mccast.c	ast_ltemp_run	src/mcc.c	0000
 self	elf	src/mccast.c	ast_ltemp_save	src/mcc.c	0000
 self	elf	src/mccast.c	ast_ltemp_scan	src/mcc.c	0000
+self	elf	src/mccast.c	ast_ltemp_size	src/mcc.c	0000
 self	elf	src/mccast.c	ast_math_errno_folds	src/mcc.c	6666
 self	elf	src/mccast.c	ast_math_inline_run	src/mcc.c	0000
 self	elf	src/mccast.c	ast_memo_invalidate	src/mcc.c	0000
@@ -910,6 +919,7 @@ self	elf	src/mccast.c	ast_op	src/mcc.c	6666
 self	elf	src/mccast.c	ast_op_is_asm	src/mcc.c	6666
 self	elf	src/mccast.c	ast_op_modeled	src/mcc.c	0000
 self	elf	src/mccast.c	ast_opt_defaults	src/mcc.c	0000
+self	elf	src/mccast.c	ast_opt_user_disabled	src/mcc.c	0000
 self	elf	src/mccast.c	ast_order_pack	src/mcc.c	6666
 self	elf	src/mccast.c	ast_order_seq_str	src/mcc.c	0000
 self	elf	src/mccast.c	ast_order_unpack	src/mcc.c	6666
@@ -1271,6 +1281,7 @@ self	elf	src/mccast.c	ast_wide_r2	src/mcc.c	6666
 self	elf	src/mccast.c	dump_emit	src/mcc.c	0000
 self	elf	src/mccast.c	dump_rec	src/mcc.c	0000
 self	elf	src/mccast.c	mcc_opt	src/mcc.c	6666
+self	elf	src/mccast.c	mccjit_ast_blind_retype	src/mcc.c	0000
 self	elf	src/mccast.c	mccjit_ast_spec_fold	src/mcc.c	0000
 self	elf	src/mccast.c	op_str	src/mcc.c	0000
 self	elf	src/mccast.c	sg_abs	src/mcc.c	0000
@@ -1608,6 +1619,7 @@ self	elf	src/mccgen.c	bitscan_inline_on	src/mcc.c	0000
 self	elf	src/mccgen.c	block	src/mcc.c	0000
 self	elf	src/mccgen.c	block_cleanup	src/mcc.c	0000
 self	elf	src/mccgen.c	block_nested	src/mcc.c	0000
+self	elf	src/mccgen.c	bool_cmp_holds	src/mcc.c	0000
 self	elf	src/mccgen.c	bswap_inline_on	src/mcc.c	0000
 self	elf	src/mccgen.c	btype_size	src/mcc.c	6666
 self	elf	src/mccgen.c	builtin_libm_alias	src/mcc.c	0000
@@ -1618,6 +1630,9 @@ self	elf	src/mccgen.c	case_cmp	src/mcc.c	0000
 self	elf	src/mccgen.c	case_cmp_qs	src/mcc.c	0000
 self	elf	src/mccgen.c	case_sort	src/mcc.c	0000
 self	elf	src/mccgen.c	cast_error	src/mcc.c	0000
+self	elf	src/mccgen.c	check_address_compare	src/mcc.c	0000
+self	elf	src/mccgen.c	check_bool_compare	src/mcc.c	0000
+self	elf	src/mccgen.c	check_enum_compare	src/mcc.c	0000
 self	elf	src/mccgen.c	check_fields	src/mcc.c	0000
 self	elf	src/mccgen.c	check_func_return	src/mcc.c	0000
 self	elf	src/mccgen.c	check_tautological_unsigned_cmp	src/mcc.c	0000
@@ -1698,6 +1713,7 @@ self	elf	src/mccgen.c	fconst_key2	src/mcc.c	0000
 self	elf	src/mccgen.c	finalize_tentative_arrays	src/mcc.c	0000
 self	elf	src/mccgen.c	find_field	src/mcc.c	0000
 self	elf	src/mccgen.c	float_sign_byte	src/mcc.c	6666
+self	elf	src/mccgen.c	fmt_enum_type	src/mcc.c	0000
 self	elf	src/mccgen.c	fnsec_for	src/mcc.c	0000
 self	elf	src/mccgen.c	fold_bit_builtin	src/mcc.c	0000
 self	elf	src/mccgen.c	fold_const_lval	src/mcc.c	0000
@@ -1926,6 +1942,8 @@ self	elf	src/mccgen.c	patch_storage	src/mcc.c	0000
 self	elf	src/mccgen.c	patch_type	src/mcc.c	0000
 self	elf	src/mccgen.c	pointed_size	src/mcc.c	0000
 self	elf	src/mccgen.c	pointed_type	src/mcc.c	0000
+self	elf	src/mccgen.c	poison_find	src/mcc.c	0000
+self	elf	src/mccgen.c	poison_record	src/mcc.c	0000
 self	elf	src/mccgen.c	popcount_inline_on	src/mcc.c	0000
 self	elf	src/mccgen.c	post_type	src/mcc.c	0000
 self	elf	src/mccgen.c	post_type_nested	src/mcc.c	0000
@@ -1967,7 +1985,12 @@ self	elf	src/mccgen.c	struct_find	src/mcc.c	0000
 self	elf	src/mccgen.c	struct_has_flexible_member	src/mcc.c	0000
 self	elf	src/mccgen.c	struct_layout	src/mcc.c	0000
 self	elf	src/mccgen.c	struct_layout_vla	src/mcc.c	0000
+self	elf	src/mccgen.c	sv_addr_of_named	src/mcc.c	0000
+self	elf	src/mccgen.c	sv_enum_ref	src/mcc.c	0000
+self	elf	src/mccgen.c	sv_is_bool_expr	src/mcc.c	0000
+self	elf	src/mccgen.c	sv_is_int_const_for_bool	src/mcc.c	0000
 self	elf	src/mccgen.c	sv_is_int_zero	src/mcc.c	0000
+self	elf	src/mccgen.c	sv_is_null_const_addr	src/mcc.c	0000
 self	elf	src/mccgen.c	sv_is_unsigned_expr	src/mcc.c	0000
 self	elf	src/mccgen.c	switch_jt_dense	src/mcc.c	0000
 self	elf	src/mccgen.c	switch_jt_env	src/mcc.c	0000
@@ -2211,6 +2234,7 @@ self	elf	src/mccjit_embed.c	mcc_jit_publish	src/mcc.c	0000
 self	elf	src/mccjit_embed.c	mcc_jit_recompile	src/mcc.c	0000
 self	elf	src/mccjit_embed.c	mcc_jit_recompile_blob	src/mcc.c	0000
 self	elf	src/mccjit_embed.c	mcc_jit_recompile_blob_gated	src/mcc.c	0000
+self	elf	src/mccjit_embed.c	mcc_jit_recompile_blob_retype	src/mcc.c	0000
 self	elf	src/mccjit_embed.c	mcc_jit_recompile_blob_spec	src/mcc.c	0000
 self	elf	src/mccjit_embed.c	mcc_jit_submit_ast	src/mcc.c	0000
 self	elf	src/mccjit_embed.c	mccjit_atfork_child	src/mcc.c	0000
@@ -2961,6 +2985,9 @@ self	elf	src/mccstats.c	mcc_stats_enable	src/mcc.c	0000
 self	elf	src/mccstats.c	mcc_stats_env_init	src/mcc.c	0000
 self	elf	src/mccstats.c	mcc_stats_finish	src/mcc.c	0000
 self	elf	src/mccstats.c	mcc_stats_fold_cycle	src/mcc.c	0000
+self	elf	src/mccstats.c	mcc_stats_jit_blind	src/mcc.c	0000
+self	elf	src/mccstats.c	mcc_stats_jit_blind_dirty	src/mcc.c	0000
+self	elf	src/mccstats.c	mcc_stats_jit_blind_promote	src/mcc.c	0000
 self	elf	src/mccstats.c	mcc_stats_jit_capture	src/mcc.c	0000
 self	elf	src/mccstats.c	mcc_stats_jit_compile	src/mcc.c	0000
 self	elf	src/mccstats.c	mcc_stats_jit_gsearch	src/mcc.c	0000
@@ -6551,7 +6578,12 @@ wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_has_unaligned_field	src/mcc.c	0000
 wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_is_vec16	src/mcc.c	0000
 wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_mixed_class	src/mcc.c	0000
 wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_stack_arg_align	src/mcc.c	6666
+wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_imul32	src/mcc.c	0000
 wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_move	src/mcc.c	0000
+wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_packed_fcmp	src/mcc.c	0000
+wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_packed_icmp	src/mcc.c	0000
+wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_packed_iop	src/mcc.c	0000
+wide	elf	src/arch/x86_64/x86_64-gen.c	x86_64_vec16_packed_op	src/mcc.c	0000
 wide	elf	src/arch/x86_64/x86_64-link.c	code_reloc	src/mcc.c	0000
 wide	elf	src/arch/x86_64/x86_64-link.c	create_plt_entry	src/mcc.c	0000
 wide	elf	src/arch/x86_64/x86_64-link.c	gotplt_entry_type	src/mcc.c	0000
@@ -6998,11 +7030,13 @@ wide	elf	src/mccast.c	ast_cprop_switch_meet	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cprop_tt_same	src/mcc.c	6666
 wide	elf	src/mccast.c	ast_cse_block	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_commutative_op	src/mcc.c	6666
+wide	elf	src/mccast.c	ast_cse_is_local	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_kill	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_regpure	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_regpure_compute	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_run	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_same	src/mcc.c	0000
+wide	elf	src/mccast.c	ast_cse_scalar	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_setref	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_state_load	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_state_meet	src/mcc.c	0000
@@ -7010,6 +7044,7 @@ wide	elf	src/mccast.c	ast_cse_state_save	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_stmts	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_subst	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_cse_try_match	src/mcc.c	0000
+wide	elf	src/mccast.c	ast_cse_wide	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_data_all_zero	src/mcc.c	6666
 wide	elf	src/mccast.c	ast_dead_value	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_dep_adjacent	src/mcc.c	0000
@@ -7281,6 +7316,7 @@ wide	elf	src/mccast.c	ast_ltemp_restore	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_ltemp_run	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_ltemp_save	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_ltemp_scan	src/mcc.c	0000
+wide	elf	src/mccast.c	ast_ltemp_size	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_math_errno_folds	src/mcc.c	6666
 wide	elf	src/mccast.c	ast_math_inline_run	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_memo_invalidate	src/mcc.c	0000
@@ -7317,6 +7353,7 @@ wide	elf	src/mccast.c	ast_op	src/mcc.c	6666
 wide	elf	src/mccast.c	ast_op_is_asm	src/mcc.c	6666
 wide	elf	src/mccast.c	ast_op_modeled	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_opt_defaults	src/mcc.c	0000
+wide	elf	src/mccast.c	ast_opt_user_disabled	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_order_pack	src/mcc.c	6666
 wide	elf	src/mccast.c	ast_order_seq_str	src/mcc.c	0000
 wide	elf	src/mccast.c	ast_order_unpack	src/mcc.c	6666
@@ -7678,6 +7715,7 @@ wide	elf	src/mccast.c	ast_wide_r2	src/mcc.c	6666
 wide	elf	src/mccast.c	dump_emit	src/mcc.c	0000
 wide	elf	src/mccast.c	dump_rec	src/mcc.c	0000
 wide	elf	src/mccast.c	mcc_opt	src/mcc.c	6666
+wide	elf	src/mccast.c	mccjit_ast_blind_retype	src/mcc.c	0000
 wide	elf	src/mccast.c	mccjit_ast_spec_fold	src/mcc.c	0000
 wide	elf	src/mccast.c	op_str	src/mcc.c	0000
 wide	elf	src/mccast.c	sg_abs	src/mcc.c	0000
@@ -8015,6 +8053,7 @@ wide	elf	src/mccgen.c	bitscan_inline_on	src/mcc.c	0000
 wide	elf	src/mccgen.c	block	src/mcc.c	0000
 wide	elf	src/mccgen.c	block_cleanup	src/mcc.c	0000
 wide	elf	src/mccgen.c	block_nested	src/mcc.c	0000
+wide	elf	src/mccgen.c	bool_cmp_holds	src/mcc.c	0000
 wide	elf	src/mccgen.c	bswap_inline_on	src/mcc.c	0000
 wide	elf	src/mccgen.c	btype_size	src/mcc.c	6666
 wide	elf	src/mccgen.c	builtin_libm_alias	src/mcc.c	0000
@@ -8025,6 +8064,9 @@ wide	elf	src/mccgen.c	case_cmp	src/mcc.c	0000
 wide	elf	src/mccgen.c	case_cmp_qs	src/mcc.c	0000
 wide	elf	src/mccgen.c	case_sort	src/mcc.c	0000
 wide	elf	src/mccgen.c	cast_error	src/mcc.c	0000
+wide	elf	src/mccgen.c	check_address_compare	src/mcc.c	0000
+wide	elf	src/mccgen.c	check_bool_compare	src/mcc.c	0000
+wide	elf	src/mccgen.c	check_enum_compare	src/mcc.c	0000
 wide	elf	src/mccgen.c	check_fields	src/mcc.c	0000
 wide	elf	src/mccgen.c	check_func_return	src/mcc.c	0000
 wide	elf	src/mccgen.c	check_tautological_unsigned_cmp	src/mcc.c	0000
@@ -8105,6 +8147,7 @@ wide	elf	src/mccgen.c	fconst_key2	src/mcc.c	0000
 wide	elf	src/mccgen.c	finalize_tentative_arrays	src/mcc.c	0000
 wide	elf	src/mccgen.c	find_field	src/mcc.c	0000
 wide	elf	src/mccgen.c	float_sign_byte	src/mcc.c	6666
+wide	elf	src/mccgen.c	fmt_enum_type	src/mcc.c	0000
 wide	elf	src/mccgen.c	fnsec_for	src/mcc.c	0000
 wide	elf	src/mccgen.c	fold_bit_builtin	src/mcc.c	0000
 wide	elf	src/mccgen.c	fold_const_lval	src/mcc.c	0000
@@ -8333,6 +8376,8 @@ wide	elf	src/mccgen.c	patch_storage	src/mcc.c	0000
 wide	elf	src/mccgen.c	patch_type	src/mcc.c	0000
 wide	elf	src/mccgen.c	pointed_size	src/mcc.c	0000
 wide	elf	src/mccgen.c	pointed_type	src/mcc.c	0000
+wide	elf	src/mccgen.c	poison_find	src/mcc.c	0000
+wide	elf	src/mccgen.c	poison_record	src/mcc.c	0000
 wide	elf	src/mccgen.c	popcount_inline_on	src/mcc.c	0000
 wide	elf	src/mccgen.c	post_type	src/mcc.c	0000
 wide	elf	src/mccgen.c	post_type_nested	src/mcc.c	0000
@@ -8374,7 +8419,12 @@ wide	elf	src/mccgen.c	struct_find	src/mcc.c	0000
 wide	elf	src/mccgen.c	struct_has_flexible_member	src/mcc.c	0000
 wide	elf	src/mccgen.c	struct_layout	src/mcc.c	0000
 wide	elf	src/mccgen.c	struct_layout_vla	src/mcc.c	0000
+wide	elf	src/mccgen.c	sv_addr_of_named	src/mcc.c	0000
+wide	elf	src/mccgen.c	sv_enum_ref	src/mcc.c	0000
+wide	elf	src/mccgen.c	sv_is_bool_expr	src/mcc.c	0000
+wide	elf	src/mccgen.c	sv_is_int_const_for_bool	src/mcc.c	0000
 wide	elf	src/mccgen.c	sv_is_int_zero	src/mcc.c	0000
+wide	elf	src/mccgen.c	sv_is_null_const_addr	src/mcc.c	0000
 wide	elf	src/mccgen.c	sv_is_unsigned_expr	src/mcc.c	0000
 wide	elf	src/mccgen.c	switch_jt_dense	src/mcc.c	0000
 wide	elf	src/mccgen.c	switch_jt_env	src/mcc.c	0000
@@ -8618,6 +8668,7 @@ wide	elf	src/mccjit_embed.c	mcc_jit_publish	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mcc_jit_recompile	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mcc_jit_recompile_blob	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mcc_jit_recompile_blob_gated	src/mcc.c	0000
+wide	elf	src/mccjit_embed.c	mcc_jit_recompile_blob_retype	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mcc_jit_recompile_blob_spec	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mcc_jit_submit_ast	src/mcc.c	0000
 wide	elf	src/mccjit_embed.c	mccjit_atfork_child	src/mcc.c	0000
@@ -9368,6 +9419,9 @@ wide	elf	src/mccstats.c	mcc_stats_enable	src/mcc.c	0000
 wide	elf	src/mccstats.c	mcc_stats_env_init	src/mcc.c	0000
 wide	elf	src/mccstats.c	mcc_stats_finish	src/mcc.c	0000
 wide	elf	src/mccstats.c	mcc_stats_fold_cycle	src/mcc.c	0000
+wide	elf	src/mccstats.c	mcc_stats_jit_blind	src/mcc.c	0000
+wide	elf	src/mccstats.c	mcc_stats_jit_blind_dirty	src/mcc.c	0000
+wide	elf	src/mccstats.c	mcc_stats_jit_blind_promote	src/mcc.c	0000
 wide	elf	src/mccstats.c	mcc_stats_jit_capture	src/mcc.c	0000
 wide	elf	src/mccstats.c	mcc_stats_jit_compile	src/mcc.c	0000
 wide	elf	src/mccstats.c	mcc_stats_jit_gsearch	src/mcc.c	0000
