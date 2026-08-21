@@ -41,6 +41,7 @@ void mcc_stats_jit_blind_promote(void);
 void mcc_stats_jit_blind_dirty(void);
 void mcc_stats_jit_blind_div_range(int input_fits_int);
 void mcc_stats_jit_blind_narrow_kind(int is_leaf);
+void mcc_stats_jit_bguard(int agree);
 void mcc_stats_jit_kgc_hit(void);
 void mcc_stats_jit_kgc_miss(void);
 void mcc_stats_jit_poison(void);

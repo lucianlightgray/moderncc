@@ -2483,6 +2483,21 @@ static void gen_ubsan_check_k(int cc, int kind) { MCC_TRACE("enter\n");
 	gsym(t);
 }
 
+static void gen_blind_boundary_guard(void) { MCC_TRACE("enter\n");
+	Sym *sym;
+	int t;
+	if (!ast_reemit_guard_op || nocode_wanted)
+		{ MCC_TRACE("br\n"); return; }
+	g(0x0f);
+	t = gjmp2(0x81, 0);
+	sym = external_helper_sym(tok_alloc_const("mccjit_boundary_hit"));
+	o(0xc7); o(0x05);
+	greloca(cur_text_section, sym, ind, R_X86_64_PC32, -8);
+	gen_le32(0);
+	gen_le32(1);
+	gsym(t);
+}
+
 void gen_ubsan_nullptr(void) { MCC_TRACE("enter\n");
 	int r;
 	if (!mcc_state->do_sanitize_undefined || nocode_wanted)
@@ -2606,6 +2621,8 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		if (mcc_state->do_sanitize_undefined && !nocode_wanted && !uu &&
 				(op == '+' || op == '-'))
 			{ MCC_TRACE("br\n"); gen_ubsan_check_k(0x81, op == '-' ? UBK_SUB : UBK_OVERFLOW); }
+		if ((op == '+' || op == '-') && !ll)
+			{ MCC_TRACE("br\n"); gen_blind_boundary_guard(); }
 		vtop--;
 		if (op >= TOK_ULT && op <= TOK_GT)
 			{ MCC_TRACE("br\n"); vset_VT_CMP(op); }
@@ -2660,6 +2677,8 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		o(0xc0 + REG_VALUE(fr) + REG_VALUE(r) * 8);
 		if (mcc_state->do_sanitize_undefined && !nocode_wanted && !uu)
 			{ MCC_TRACE("br\n"); gen_ubsan_check_k(0x81, UBK_MUL); }
+		if (!ll)
+			{ MCC_TRACE("br\n"); gen_blind_boundary_guard(); }
 		vtop--;
 		break;
 	case TOK_SHL:

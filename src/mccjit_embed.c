@@ -444,6 +444,8 @@ static uint64_t mccjit_recompile_gate_mask;
 static int mccjit_recompile_use_gates;
 static int mccjit_recompile_blind_retype;
 static int mccjit_last_blind_proven;
+
+int mccjit_boundary_hit;
 static unsigned long mccjit_search_budget_baked_s;
 
 typedef struct MccjitOverride {
@@ -3393,7 +3395,10 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 		return (int64_t)vf((int)x);
 	}
 	bval = (int64_t)bf((int)x);
+	mccjit_boundary_hit = 0;
 	vval = (int64_t)vf((int)x);
+	if (mcc_stats_mask && mcc_env_on("MCC_JIT_BLIND_RETYPE"))
+		{ MCC_TRACE("br\n"); mcc_stats_jit_bguard((vval != bval) == (mccjit_boundary_hit != 0)); }
 	if (vval == bval) { MCC_TRACE("br\n");
 		k->hits++;
 		k->nm_match++;
@@ -3717,7 +3722,10 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 		return mccjit_invoke(variant, argv, nargs, wide);
 	}
 	bval = mccjit_invoke(baseline, argv, nargs, wide);
+	mccjit_boundary_hit = 0;
 	vval = mccjit_invoke(variant, argv, nargs, wide);
+	if (mcc_stats_mask && mcc_env_on("MCC_JIT_BLIND_RETYPE"))
+		{ MCC_TRACE("br\n"); mcc_stats_jit_bguard((vval != bval) == (mccjit_boundary_hit != 0)); }
 	if (vval == bval) { MCC_TRACE("br\n");
 		k->hits++;
 		k->nm_match++;
@@ -4015,9 +4023,12 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 		return mccjit_invoke_mixed_i(variant, gpv, fpv);
 	}
 	bval = mccjit_invoke_mixed_i(baseline, gpv, fpv);
+	mccjit_boundary_hit = 0;
 	vval = mccjit_invoke_mixed_i(variant, gpv, fpv);
 	bc = k->ret_wide ? bval : (int64_t)(int32_t)bval;
 	vc = k->ret_wide ? vval : (int64_t)(int32_t)vval;
+	if (mcc_stats_mask && mcc_env_on("MCC_JIT_BLIND_RETYPE"))
+		{ MCC_TRACE("br\n"); mcc_stats_jit_bguard((vc != bc) == (mccjit_boundary_hit != 0)); }
 	if (vc == bc) { MCC_TRACE("br\n");
 		k->hits++;
 		k->nm_match++;

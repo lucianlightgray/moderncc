@@ -2044,6 +2044,7 @@ static int ast_temp_frontier;
 static int ir_cap_replaying;
 
 uint64_t ast_pinned_regs;
+int ast_reemit_guard_op;
 int ast_func_has_asm;
 int ast_func_has_labeladdr;
 
@@ -5602,7 +5603,10 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 															? MCC_RC_RET(vtop->type.t)
 															: MCC_RC_TYPE(vtop->type.t)); }
 
+		if (ast_fbits(a, n) & AST_FB_JIT_GUARD)
+			{ MCC_TRACE("br\n"); ast_reemit_guard_op = bop; }
 		gen_op((ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) ? bop ^ 1 : bop);
+		ast_reemit_guard_op = 0;
 		if (ast_fbits(a, n) & AST_FB_CMP_INVERT_LATE) { MCC_TRACE("br\n");
 			if (vtop->r == VT_CMP) { MCC_TRACE("br\n");
 				int j = vtop->jfalse;

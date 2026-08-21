@@ -174,6 +174,7 @@ extern int ast_replaying;
 extern int ast_func_has_asm;
 extern int ast_func_has_labeladdr;
 extern uint64_t ast_pinned_regs;
+extern int ast_reemit_guard_op;
 extern int ast_regdisp_env;
 extern int ast_fmov_imm_env;
 extern int ast_trunc32_env;

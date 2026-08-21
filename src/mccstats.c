@@ -123,6 +123,8 @@ typedef struct McccStats {
 	unsigned long jit_blind_div_oorange;
 	unsigned long jit_blind_narrow_leaf;
 	unsigned long jit_blind_narrow_comp;
+	unsigned long jit_bguard_agree;
+	unsigned long jit_bguard_disagree;
 	unsigned long jit_kgc_hits;
 	unsigned long jit_kgc_misses;
 	unsigned long jit_poison;
@@ -430,6 +432,9 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 			if (mcs.jit_blind_narrow_leaf || mcs.jit_blind_narrow_comp)
 				mccstats_row(r, "          blind narrow-kind: %lu leaf-read (round-trip guard)  %lu computation (jo overflow-flag guard)",
 										 mcs.jit_blind_narrow_leaf, mcs.jit_blind_narrow_comp);
+			if (mcs.jit_bguard_agree || mcs.jit_bguard_disagree)
+				mccstats_row(r, "          blind boundary-guard: %lu agree (in-variant overflow flag == shadow divergence)  %lu disagree",
+										 mcs.jit_bguard_agree, mcs.jit_bguard_disagree);
 		}
 		if (mcs.jit_nearmatch || mcs.jit_kgc_corrections) { MCC_TRACE("br\n");
 			mccstats_row(r, "          near-match: %lu variants kept  %lu corrections patched",
@@ -760,6 +765,15 @@ void mcc_stats_jit_blind_narrow_kind(int is_leaf) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); mcs.jit_blind_narrow_leaf++; }
 	else
 		{ MCC_TRACE("br\n"); mcs.jit_blind_narrow_comp++; }
+}
+
+void mcc_stats_jit_bguard(int agree) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	if (agree)
+		{ MCC_TRACE("br\n"); mcs.jit_bguard_agree++; }
+	else
+		{ MCC_TRACE("br\n"); mcs.jit_bguard_disagree++; }
 }
 
 void mcc_stats_jit_kgc_hit(void) { MCC_TRACE("enter\n");
