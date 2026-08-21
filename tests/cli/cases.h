@@ -1444,6 +1444,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -S -O1 -frounding-math {W}/frm.c -o - 2>/dev/null | grep -q sqrt && echo FRM_OK",
 		 "FRM_OK\n"},
 
+		{"bcheck_bcopy_index_bounds", "os!=WIN32",
+		 "printf '#include <strings.h>\\n#include <string.h>\\nint main(void){char a[4],b[64];memset(b,1,64);bcopy(b,a,64);return 0;}\\n' > {W}/bcb.c && "
+		 "{MCC} -B{B} -b -run {W}/bcb.c 2>&1 | grep -q 'BCHECK: invalid pointer' && echo BCB_OK",
+		 "BCB_OK\n"},
+
 		{"dumpmachine", "os!=WIN32",
 		 "{MCC} -dumpmachine | grep -qE '^(x86_64|i386|i686|aarch64|arm64|arm|riscv64)-' && echo TRIPLE_OK",
 		 "TRIPLE_OK\n"},

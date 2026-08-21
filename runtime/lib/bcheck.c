@@ -293,6 +293,9 @@ DLL_EXPORT char *__bound_strcat(char *dest, const char *src);
 DLL_EXPORT char *__bound_strncat(char *dest, const char *src, size_t n);
 DLL_EXPORT char *__bound_strchr(const char *string, int ch);
 DLL_EXPORT char *__bound_strrchr(const char *string, int ch);
+DLL_EXPORT void __bound_bcopy(const void *src, void *dst, size_t n);
+DLL_EXPORT char *__bound_index(const char *s, int c);
+DLL_EXPORT char *__bound_rindex(const char *s, int c);
 DLL_EXPORT char *__bound_strdup(const char *s);
 
 #if defined(__arm__) && defined(__ARM_EABI__)
@@ -1915,6 +1918,18 @@ char *__bound_strrchr(const char *s, int c) {
 	}
 	__bound_check(s, (const char *)str - s, "strrchr");
 	return *str == ch ? (char *)str : NULL;
+}
+
+void __bound_bcopy(const void *src, void *dst, size_t n) {
+	__bound_memmove(dst, src, n);
+}
+
+char *__bound_index(const char *s, int c) {
+	return __bound_strchr(s, c);
+}
+
+char *__bound_rindex(const char *s, int c) {
+	return __bound_strrchr(s, c);
 }
 
 char *__bound_strdup(const char *s) {

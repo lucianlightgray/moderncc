@@ -805,10 +805,10 @@
 	__BUILTIN(__SIZE_TYPE__, strspn, (const char*, const char*))
 	__BUILTIN(__SIZE_TYPE__, strcspn, (const char*, const char*))
 	__BUILTIN(char*, strpbrk, (const char*, const char*))
-	__BUILTIN(void, bcopy, (const void*, void*, __SIZE_TYPE__))
+	__BOTH(void, bcopy, (const void*, void*, __SIZE_TYPE__))
 	__BUILTIN(int, bcmp, (const void*, const void*, __SIZE_TYPE__))
-	__BUILTIN(char*, index, (const char*, int))
-	__BUILTIN(char*, rindex, (const char*, int))
+	__BOTH(char*, index, (const char*, int))
+	__BOTH(char*, rindex, (const char*, int))
 #ifndef __builtin_bzero
 	__BUILTIN(void, bzero, (void*, __SIZE_TYPE__))
 #endif
