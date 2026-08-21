@@ -366,6 +366,7 @@ typedef struct
 	Section *sec;
 	int local_offset;
 	Sym *flex_array_ref;
+	char reverse_so;
 	char flex_is_member;
 	char flex_auto;
 	char flex_warned;
@@ -18711,21 +18712,34 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 				}
 			}
 		} else { MCC_TRACE("br\n");
+			int rso = p->reverse_so;
 			if (type->t & VT_BITFIELD) { MCC_TRACE("br\n");
 				int bit_pos, bit_size, bits, n;
-				unsigned char *p, v, m;
+				unsigned char *bp, v, m;
 				bit_pos = vtop->type.bp;
 				bit_size = vtop->type.bs;
-				p = (unsigned char *)ptr + (bit_pos >> 3);
-				bit_pos &= 7, bits = 0;
-				while (bit_size) { MCC_TRACE("br\n");
-					n = 8 - bit_pos;
-					if (n > bit_size)
-						{ MCC_TRACE("br\n"); n = bit_size; }
-					v = val >> bits << bit_pos;
-					m = ((1 << n) - 1) << bit_pos;
-					*p = (*p & ~m) | (v & m);
-					bits += n, bit_size -= n, bit_pos = 0, ++p;
+				bp = (unsigned char *)ptr + (bit_pos >> 3);
+				if (rso) { MCC_TRACE("br\n");
+					int nbytes = ((bit_pos & 7) + bit_size + 7) >> 3;
+					int k, lo, vshift, placed = 0;
+					for (k = 0; k < nbytes; k++) { MCC_TRACE("br\n");
+						packed_bf_rev_span(bit_pos, bit_size, k, nbytes, &n, &lo, &vshift, &placed);
+						m = ((1 << n) - 1) << lo;
+						v = (unsigned char)(val >> vshift << lo);
+						bp[k] = (bp[k] & ~m) | (v & m);
+						placed += n;
+					}
+				} else { MCC_TRACE("br\n");
+					bit_pos &= 7, bits = 0;
+					while (bit_size) { MCC_TRACE("br\n");
+						n = 8 - bit_pos;
+						if (n > bit_size)
+							{ MCC_TRACE("br\n"); n = bit_size; }
+						v = val >> bits << bit_pos;
+						m = ((1 << n) - 1) << bit_pos;
+						*bp = (*bp & ~m) | (v & m);
+						bits += n, bit_size -= n, bit_pos = 0, ++bp;
+					}
 				}
 			} else if (is_wideint_type(type)) { MCC_TRACE("br\n");
 				wideint_init_putv(ptr, vtop);
@@ -18794,6 +18808,16 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 					mcc_error("internal error: static initializer for unknown base type %d", bt);
 					break;
 				}
+			if (rso && !(type->t & VT_BITFIELD) && !(vtop->r & VT_SYM) &&
+					!is_wideint_type(type) && !is_bitint_type(type)) { MCC_TRACE("br\n");
+				int lo2 = 0, hi2 = size - 1;
+				while (lo2 < hi2) { MCC_TRACE("br\n");
+					unsigned char tmp = ((unsigned char *)ptr)[lo2];
+					((unsigned char *)ptr)[lo2] = ((unsigned char *)ptr)[hi2];
+					((unsigned char *)ptr)[hi2] = tmp;
+					lo2++, hi2--;
+				}
+			}
 		}
 		vtop--;
 	} else if (p->llocal) { MCC_TRACE("br\n");
@@ -18802,6 +18826,8 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 		rr = gv(MCC_RC_INT);
 		vtop->type = dtype;
 		vtop->r = rr | VT_LVAL;
+		if (p->reverse_so && sso_reverses(&dtype))
+			{ MCC_TRACE("br\n"); vtop->r |= VT_REVSO; }
 		vtop->c.i = 0;
 		rir_hook_store_addr_late();
 		vswap();
@@ -18809,6 +18835,8 @@ static void init_putv(init_params *p, CType *type, unsigned long c) {
 		vpop();
 	} else { MCC_TRACE("br\n");
 		vset(&dtype, VT_LOCAL | VT_LVAL, c);
+		if (p->reverse_so && sso_reverses(&dtype))
+			{ MCC_TRACE("br\n"); vtop->r |= VT_REVSO; }
 		vswap();
 		vstore();
 		vpop();
@@ -18906,6 +18934,7 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 	Sym *s, *f;
 	Sym indexsym;
 	CType *t1;
+	char saved_rso = p->reverse_so;
 
 	if (debug_modes && !(flags & DIF_SIZE_ONLY) && !p->sec)
 		{ MCC_TRACE("br\n"); mcc_debug_line(mcc_state), mcc_tcov_check_line(mcc_state, 1); }
@@ -19043,6 +19072,8 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 			f = &indexsym;
 
 		do_init_list:
+			if ((type->t & VT_BTYPE) == VT_STRUCT)
+				{ MCC_TRACE("br\n"); p->reverse_so = type->ref->a.reverse_so; }
 			if (tok == '}' && !(flags & (DIF_HAVE_ELEM | DIF_SIZE_ONLY)) &&
 					mcc_state->cversion < 202311)
 				{ MCC_TRACE("br\n"); mcc_pedantic("empty initializer braces are a C23 feature"); }
@@ -19097,6 +19128,7 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 					p->rng_done[my_rng] = 1;
 				}
 			}
+			p->reverse_so = saved_rso;
 		}
 		if (!no_oblock)
 			{ MCC_TRACE("br\n"); skip('}'); }

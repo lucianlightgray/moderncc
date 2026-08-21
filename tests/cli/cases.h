@@ -1495,6 +1495,11 @@ static const cli_case_t cli_cases[] = {
 		 "{ [ \"$c\" -eq \"$b\" ] && echo prob=nobloat || echo prob=BLOAT; }; echo END",
 		 "expect=nobloat\nprob=nobloat\nEND\n"},
 
+		{"reverse_sso_initializer", "",
+		 "printf 'extern int printf(const char*,...);\\nstruct S { int x; short i:12; char c1:1,c2:1,c3:1,c4:1; } __attribute__((scalar_storage_order(\"big-endian\")));\\nstruct S g = { 0x12345678, 341, 1,1,1,1 };\\nint main(void){ struct S s = { 0x12345678, 341, 1,1,1,1 }; unsigned char *p=(unsigned char*)&g,*q=(unsigned char*)&s; printf(\"%%02x%%02x %%d | %%02x%%02x %%d\\\\n\", p[0],p[1],p[4], q[0],q[1],q[4]); return 0; }\\n' > {W}/rs.c && "
+		 "{MCC} -B{B} -nostdinc {W}/rs.c -o {W}/rs && {W}/rs",
+		 "1234 21 | 1234 21\n"},
+
 		{"always_inline_out_of_line_emit", "",
 		 "printf 'inline __attribute__((always_inline)) int add(int a,int b){ return a+b; }\\nint main(void){ return add(2,3)==5 ? 0 : 1; }\\n' > {W}/ai.c && "
 		 "printf 'inline int pf(int a){ return a+1; }\\nint main(void){ return pf(4); }\\n' > {W}/pi.c && "
