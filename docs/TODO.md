@@ -623,6 +623,9 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
 - [ ] T-lin-10524 [S] OPT ROUND2 (cleanup): retire/repoint inert tree-sra — byte-neutral by construction (front end pre-folds MEMBER refs), ships OFF, and SUPPRESSES real SROA. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
 
+- [ ] T-lin-10525 [S] RUNTIME BUG (coop M:N): a fiber blocking on cnd_wait/mtx blocks its pthread WORKER instead of parking the fiber, so a program with >nproc simultaneously-blocked fibers deadlocks. Found porting coro-prime-sieve (hangs N≥~nproc under mcc-coop-mn; fine on gcc/clang/mcc-nat/mcc-coop). Fix: park-fiber-not-worker in the M:N blocking path (runtime/include/mcc_coop_threads.h); then drop the run.sh SKIP guard. REF: DETAILS.md#t-lin-10525-coop-mn-fiber-park
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+
 ## Blocked — awaiting QUESTIONS.md
 
 
