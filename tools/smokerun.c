@@ -2030,6 +2030,14 @@ static void engines_run(int known_pos)
 		}
 
 		if (e->jit) {
+			/* Force the subject to boot its embedded JIT regardless of the
+			   build's MCC_CONFIG_JIT default: the jit-parity arm must actually
+			   run the JIT (its whole point is to catch "an AOT run wearing the
+			   jit arm's name").  A build configured MCC_CONFIG_JIT=OFF bakes
+			   def_on=0 into the subject, so without MCC_JIT=1 the boot-swap
+			   silently no-ops and this arm degrades to AOT (the win-PE failure
+			   mode; the engine itself is fine).  MCC_JIT=1 overrides def_on. */
+			host_setenv("MCC_JIT", "1");
 			host_setenv("MCC_JIT_VERBOSE", "1");
 			host_setenv("MCC_JIT_HOT_CALLS", "1");
 		}
@@ -2037,6 +2045,7 @@ static void engines_run(int known_pos)
 										err);
 		st = run_subject_err(exe, "", out, err);
 		if (e->jit) {
+			host_unsetenv("MCC_JIT");
 			host_unsetenv("MCC_JIT_VERBOSE");
 			host_unsetenv("MCC_JIT_HOT_CALLS");
 			txt = slurp(err);
