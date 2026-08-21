@@ -11,6 +11,7 @@ Should mcc bump its predefined `__GNUC__` from 4 to ≥7 (fleet-wide)? Context: 
 **Mode (b): no safe assumption.** T-mac-30178 is BLOCKED — the _Float32/_Float64 keywords stay reverted (build-correct) until this is decided. `__fp16`/`__float128`/`_Float16` keywords already ship (they happen not to collide with a glibc typedef on the tested sysroots — but the same class of risk exists, so the decision generalizes).
 **Cost if wrong:** bumping without verification could silently flip glibc feature-macro behavior on lin/riscv64/win (mingw also checks `__GNUC__`) → subtle miscompiles or build breaks across the fleet; NOT bumping leaves `_Float32`/`_Float64` unavailable freestanding/on macOS (a minor C23-interchange-types gap). lin-x64 offered to run the qemu-riscv64+glibc validation leg once scoped.
 REF: DETAILS.md#t-mac-30178-float32-keyword-reverted
+**DECISION (2026-08-21, user via lin-x64): BUMP __GNUC__ to 7 — VERIFY FIRST.** Land behind cross-target validation (qemu-riscv64+glibc, native lin, win/mingw feature-guard sweep) before fleet adoption; then unblock T-mac-30178 (restore the _Float32/_Float64 keywords). Owner mac; lin offered the qemu-riscv64+glibc leg.
 
 
 ### Q-win-50039 — [win-x64] — 2026-08-20T16:15Z — BLOCKS: T-win-50019
@@ -18,6 +19,7 @@ REF: DETAILS.md#t-mac-30178-float32-keyword-reverted
 **Mode (b): no safe assumption.** T-win-50019 BLOCKED pending the direction (adapt-mcc-to-TDR vs test-accepts-TDR, and if the latter, whether the contract stays lavapipe-shaped for non-TDR backends).
 **Cost if wrong:** a unilateral test-rewrite that bakes in RTX-2060/TDR behavior could diverge the contract from what lavapipe / other-GPU backends expect, or mask a real fault-handling gap.
 REF: DETAILS.md#t-lin-10092-win-requote-b-2026-08-15-15-of-9406
+**DECISION (2026-08-21, user via lin-x64): TESTS ACCEPT TDR.** Rewrite the 7 fault-recovery assertions to accept Windows TDR (adapter-reset) semantics; keep the lavapipe-shaped strand/mark-unusable contract for non-TDR (CPU/lavapipe) backends. Unblocks T-win-50019 (win owns).
 
 ### Q-win-50040 — [win-x64] — 2026-08-20T16:15Z — BLOCKS: T-win-50021
 The win embed-JIT binary is a permanent CRT-split: mcc's win32 runtime is MSVCRT-based (`runtime/win32/include/stdio.h` binds stdout via msvcrt `_iob`/`__iob_func`) while the embed-JIT engine blob is ucrt, so `puts`->msvcrt and `printf`->ucrt write to different stdout buffers -> header loss (concretely reproduced this session on full_language.c: embed-JIT emits 1475 lines vs AOT 1477 — the `puts("---- xxx_test ----")` headers are dropped; objdump confirms the binary imports BOTH msvcrt.dll AND the api-ms-win-crt-* ucrt sets). The complete fix = make the whole program single-CRT (all-ucrt: re-base mcc's win32 runtime stdio on `__acrt_iob_func`/ucrt), a FUNDAMENTAL change with fleet-wide implications for the working MSVCRT AOT path; multiple prior sessions found single-CRT attempts fragile/nondeterministic and the no-op `_set_invalid_parameter_handler` band-aid SILENTLY MISCOMPILES (685-line drift). The engine itself is HEALTHY — the 0xC0000409 crash is fixed (ab9fcf4d), strtold resolved (93c19c75), fd-shim landed (28703ba6), all `jit/selftest-*` green.
@@ -25,6 +27,7 @@ The win embed-JIT binary is a permanent CRT-split: mcc's win32 runtime is MSVCRT
 **Direction needed:** invest a dedicated deep session in the all-ucrt win-runtime rebase (risk to the working AOT path, needs multi-rebuild validation), OR accept win-PE embed-JIT stdio-CRT-inconsistency as a known limitation and de-scope `mcctest-embedjit`/`smoke/engines` on win.
 **Cost if wrong:** rushing the all-ucrt rebase risks regressing the working MSVCRT AOT path fleet-wide; the band-aid is a proven silent miscompile.
 REF: DETAILS.md#t-win-50021-slice-2-DEFINITIVE-crt-mismatch-msvcrt-plus-ucrt-apisets
+**DECISION (2026-08-21, user via lin-x64): DO THE ALL-UCRT REBASE.** Re-base mcc's win32 runtime stdio on ucrt (__acrt_iob_func) for a single-CRT program; dedicated deep session with multi-rebuild validation to protect the working MSVCRT AOT path. Unblocks T-win-50021 (win owns); engine crash/strtold/fd-shim already done.
 
 
 ### Q-lin-10456 — [lin-x64] — 2026-08-21T00:45Z — BLOCKS: none (advisory; informs T-lin-10455)
@@ -32,3 +35,4 @@ Design direction: how should mcc leverage the runtime JIT cache (the KGC observe
 **Assumed for now (mode a):** the current slice keeps the conservative live shadow-compare-forever + poison model (never hard-promotes a blind variant to skip the baseline); safe, just leaves perf on the table. T-lin-10455's remaining work proceeds under this assumption.
 **Cost if wrong:** a promotion rule that trusts observed-input coverage without a sound range-cover proof at the set site would hard-adopt a variant that diverges on an unseen input → a real miscompile (not the current always-safe shadow-compare). Getting the invariant in (2) right is the difference between an optimization and a latent wrong-code bug.
 REF: DETAILS.md#t-lin-10455-retype-superopt
+**DECISION (2026-08-21, user): VLAT-GATED HARD-PROMOTE.** T-lin-10455 adopts hard-promotion (skip the baseline) gated on a VLAT/VRP range-cover proof at the variable's most-recent set site; an out-of-range input at the def site re-arms shadow-compare. NOT the unsound N-clean-calls rule. This is the sound version of "promote until a new unknown input is seen."
