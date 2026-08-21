@@ -1090,7 +1090,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 				{ MCC_TRACE("br\n"); a[i] = nx++ << 1 | 1; }
 			else { MCC_TRACE("br\n");
 				ns = (ns + 7) & ~7;
-				a[i] = ns | 1;
+				a[i] = 32 + ((ns - 32) << 1) | 1;
 				ns += 8;
 			}
 			continue;
@@ -1124,7 +1124,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 		if (hfa || is_float_abi(bt)) { MCC_TRACE("br\n");
 			if (macho_named && !hfa)
 				{ MCC_TRACE("br\n"); ns = (ns + align - 1) & -align; }
-			a[i] = ns;
+			a[i] = 32 + ((ns - 32) << 1);
 			ns += size;
 			continue;
 		}
@@ -1155,12 +1155,12 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 			ns = (ns + 7) & ~7;
 			ns = (ns + align - 1) & -align;
 		} else { MCC_TRACE("br\n");
-			unsigned long oal = align < 2 ? 2 : align;
+			unsigned long oal = align;
 			ns = (ns + oal - 1) & -oal;
 		}
 
 		if (bt == VT_STRUCT) { MCC_TRACE("br\n");
-			a[i] = ns;
+			a[i] = 32 + ((ns - 32) << 1);
 			ns += size;
 			continue;
 		}
@@ -1168,7 +1168,7 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 		if (size < 8 && !macho_named)
 			{ MCC_TRACE("br\n"); size = 8; }
 
-		a[i] = ns;
+		a[i] = 32 + ((ns - 32) << 1);
 		ns += size;
 	}
 
@@ -1203,7 +1203,7 @@ static unsigned long arm64_pcs(int variadic, int n, CType **type, unsigned long 
 				{ MCC_TRACE("br\n"); printf("V%lu\n", a[i] / 2 - 8); }
 			else
 				{ MCC_TRACE("br\n"); printf("stack %lu%s\n",
-							 (a[i] - 32) & ~1, a[i] & 1 ? " pointer" : ""); }
+							 (a[i] - 32) >> 1, a[i] & 1 ? " pointer" : ""); }
 		}
 	}
 
@@ -1312,19 +1312,19 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 			if (a[i] >= 32) { MCC_TRACE("br\n");
 				r = get_reg(MCC_RC_INT);
 				arm64_spoff(intr(r), a1[i]);
-				arm64_strx(3, intr(r), 31, (a[i] - 32) >> 1 << 1);
+				arm64_strx(3, intr(r), 31, (a[i] - 32) >> 1);
 			}
 		} else if (a[i] >= 32) { MCC_TRACE("br\n");
 			if ((vtop->type.t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 				int r = get_reg(MCC_RC_INT);
-				arm64_spoff(intr(r), a[i] - 32);
+				arm64_spoff(intr(r), (a[i] - 32) >> 1);
 				vset(&vtop->type, r | VT_LVAL, 0);
 				vswap();
 				vstore();
 			} else if (is_float_abi(vtop->type.t)) { MCC_TRACE("br\n");
 				gv(MCC_RC_FLOAT);
 				arm64_strv(arm64_type_size(vtop[0].type.t),
-									 fltr(vtop[0].r), 31, a[i] - 32);
+									 fltr(vtop[0].r), 31, (a[i] - 32) >> 1);
 			} else { MCC_TRACE("br\n");
 				gv(MCC_RC_INT);
 				int st_sz = 3;
@@ -1337,7 +1337,7 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 				}
 #endif
 				arm64_strx(st_sz,
-									 intr(vtop[0].r), 31, a[i] - 32);
+									 intr(vtop[0].r), 31, (a[i] - 32) >> 1);
 			}
 		}
 
@@ -1603,7 +1603,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 									 ? 160 + a[i] / 2 * 8
 							 : a[i] < 32
 									 ? 16 + (a[i] - 16) / 2 * 16
-									 : 224 + ((a[i] - 32) >> 1 << 1));
+									 : 224 + ((a[i] - 32) >> 1));
 
 		gfunc_set_param(sym, off, a[i] & 1);
 

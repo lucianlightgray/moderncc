@@ -41,6 +41,11 @@ long shorts(long a1, long a2, long a3, long a4, long a5, long a6, long a7,
 						long a8, short s1, short s2, short s3, short s4) {
 	return s1 + s2 * 10 + s3 * 100 + (long)s4 * 1000;
 }
+long chars(long a1, long a2, long a3, long a4, long a5, long a6, long a7,
+					 long a8, char c1, char c2, char c3, char c4, int t) {
+	return (long)c1 + (long)c2 * 10 + (long)c3 * 100 + (long)c4 * 1000 +
+				 (long)t * 10000;
+}
 EOF
 
 cat >"$WORK/caller.c" <<'EOF'
@@ -48,6 +53,7 @@ long mix(long, long, long, long, long, long, long, long, char, short, int, char,
 long ints(long, long, long, long, long, long, long, long, int, int, int, int, int);
 double flts(double, double, double, double, double, double, double, double, float, double, float);
 long shorts(long, long, long, long, long, long, long, long, short, short, short, short);
+long chars(long, long, long, long, long, long, long, long, char, char, char, char, int);
 
 #ifndef DELTA
 #define DELTA 0
@@ -67,6 +73,9 @@ int main(void) {
 
 	long r4 = shorts(1, 2, 3, 4, 5, 6, 7, 8, (short)2, (short)3, (short)4, (short)5);
 	bad += (r4 != 5432 + DELTA);
+
+	long r5 = chars(1, 2, 3, 4, 5, 6, 7, 8, (char)2, (char)3, (char)4, (char)5, 6);
+	bad += (r5 != 65432 + DELTA);
 
 	return bad;
 }
