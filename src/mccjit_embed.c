@@ -3403,6 +3403,7 @@ static int64_t mccjit_kgc_call1(MccjitKgc *k, void *variant, void *baseline,
 		return bval;
 	}
 	k->misses++;
+	if (k->misses == 1 && mcc_stats_mask) { MCC_TRACE("br\n"); mcc_stats_jit_blind_dirty(); }
 	mccjit_nearmatch_miss(k, tuple, bval);
 	pthread_mutex_unlock(&k->lock);
 	if (flagged)
@@ -3720,6 +3721,7 @@ static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 		return bval;
 	}
 	k->misses++;
+	if (k->misses == 1 && mcc_stats_mask) { MCC_TRACE("br\n"); mcc_stats_jit_blind_dirty(); }
 	if (mcc_stats_mask)
 		{ MCC_TRACE("br\n"); mcc_stats_jit_kgc_miss(); }
 	if (!mccjit_nearmatch_miss(k, tuple, bval)) { MCC_TRACE("br\n");
@@ -3787,6 +3789,7 @@ static double mccjit_kgc_calln_fp(MccjitKgc *k, void *variant, void *baseline,
 		return bval;
 	}
 	k->misses++;
+	if (k->misses == 1 && mcc_stats_mask) { MCC_TRACE("br\n"); mcc_stats_jit_blind_dirty(); }
 	if (!mccjit_nearmatch_miss(k, tuple, (int64_t)bbits)) { MCC_TRACE("br\n");
 		uint64_t total = k->hits + k->misses;
 		if (total >= (uint64_t)mccjit_poison_min() &&
@@ -4008,6 +4011,7 @@ static int64_t mccjit_kgc_calln_mixed_i(MccjitKgc *k, const int64_t *gpv,
 		return bval;
 	}
 	k->misses++;
+	if (k->misses == 1 && mcc_stats_mask) { MCC_TRACE("br\n"); mcc_stats_jit_blind_dirty(); }
 	if (!mccjit_nearmatch_miss(k, tuple, bc))
 		{ MCC_TRACE("br\n"); mccjit_mixed_poison_update(k); }
 	pthread_mutex_unlock(&k->lock);
@@ -4065,6 +4069,7 @@ static double mccjit_kgc_calln_mixed_d(MccjitKgc *k, const int64_t *gpv,
 		return bval;
 	}
 	k->misses++;
+	if (k->misses == 1 && mcc_stats_mask) { MCC_TRACE("br\n"); mcc_stats_jit_blind_dirty(); }
 	if (!mccjit_nearmatch_miss(k, tuple, (int64_t)bbits))
 		{ MCC_TRACE("br\n"); mccjit_mixed_poison_update(k); }
 	pthread_mutex_unlock(&k->lock);
