@@ -1430,6 +1430,10 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'struct E{};struct E a,b;union U{};union U c,d;int main(void){return ((&a!=&b)+(&c!=&d)==2 && sizeof(struct E)==0 && sizeof(union U)==0)?0:1;}\\n' > {W}/eag.c && {MCC} -B{B} {W}/eag.c -o {W}/eag && {W}/eag && echo EAG_OK",
 		 "EAG_OK\n"},
 
+		{"asm_empty_clobber_section", "",
+		 "printf 'int f(void){int x=0;asm volatile(\"\":\"=m\"(x)::);asm volatile(\"\":::);return x;}\\n' > {W}/aec.c && {MCC} -B{B} -c {W}/aec.c -o {W}/aec.o && echo AEC_OK",
+		 "AEC_OK\n"},
+
 		{"dumpmachine", "os!=WIN32",
 		 "{MCC} -dumpmachine | grep -qE '^(x86_64|i386|i686|aarch64|arm64|arm|riscv64)-' && echo TRIPLE_OK",
 		 "TRIPLE_OK\n"},

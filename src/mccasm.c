@@ -2298,7 +2298,7 @@ ST_FUNC void asm_instr(void) { MCC_TRACE("enter\n");
 				if (tok == ':') { MCC_TRACE("br\n");
 					next();
 					for (;;) { MCC_TRACE("br\n");
-						if (tok == ':')
+						if (tok == ':' || tok == ')')
 							{ MCC_TRACE("br\n"); break; }
 						if (tok != TOK_STR)
 							{ MCC_TRACE("br\n"); expect("string constant"); }
