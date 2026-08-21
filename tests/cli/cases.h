@@ -1495,6 +1495,11 @@ static const cli_case_t cli_cases[] = {
 		 "{ [ \"$c\" -eq \"$b\" ] && echo prob=nobloat || echo prob=BLOAT; }; echo END",
 		 "expect=nobloat\nprob=nobloat\nEND\n"},
 
+		{"local_label_address", "",
+		 "printf 'int f(int x){ __label__ a,b; static void*jt[2]; jt[0]=&&a; jt[1]=&&b; goto *jt[x]; a: return 1; b: return 2; }\\nint main(void){ return (f(0)==1 && f(1)==2) ? 0 : 1; }\\n' > {W}/ll.c && "
+		 "{ {MCC} -B{B} -nostdinc {W}/ll.c -o {W}/ll && {W}/ll && echo OK || echo FAIL; }",
+		 "OK\n"},
+
 		{"builtin_expect_side_effect", "",
 		 "printf 'int x,y;\\nint foo(int z){ if(__builtin_expect(x ? y!=0 : 0, z++)) return 7; return z; }\\nint main(){ x=1; y=0; return foo(10)==11 ? 0 : 1; }\\n' > {W}/bx.c && "
 		 "{ {MCC} -B{B} -nostdinc {W}/bx.c -o {W}/bx && {W}/bx && echo OK || echo FAIL; }",

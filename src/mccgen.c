@@ -1543,7 +1543,10 @@ ST_FUNC void label_pop(Sym **ptop, Sym *slast, int keep) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); mcc_warning_c(warn_unused_label)(
 						"label '%s' defined but not used", get_tok_str(s->v, NULL)); }
 			if (s->c) { MCC_TRACE("br\n");
+				int saved_nocode = nocode_wanted;
+				nocode_wanted = 0;
 				put_extern_sym(s, cur_text_section, s->jnext, 1);
+				nocode_wanted = saved_nocode;
 			}
 		}
 		if (s->r != LABEL_GONE)
