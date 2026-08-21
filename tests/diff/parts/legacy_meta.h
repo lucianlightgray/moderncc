@@ -602,8 +602,10 @@ void asm_test(void) {
 	strncat2(buf, " worldXXXXX", 3);
 	printf("%s\n", buf);
 
+#ifndef _WIN32
 	printf("mul64=0x%Lx\n", mul64(0x12345678, 0xabcd1234));
 	printf("inc64=0x%Lx\n", inc64(0x12345678ffffffff));
+#endif
 
 	s1.a = 42;
 	s1.b = 43;

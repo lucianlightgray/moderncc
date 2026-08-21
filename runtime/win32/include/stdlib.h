@@ -214,7 +214,7 @@ extern wchar_t ***_imp___wenviron;
 #endif
 #endif
 
-#if defined __aarch64__
+#if defined __aarch64__ || defined __x86_64__
 #undef __argc
 #undef __argv
 #undef __wargv

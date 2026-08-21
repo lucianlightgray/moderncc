@@ -3328,7 +3328,7 @@ static void pe_add_runtime(MCCState *s1, struct pe_info *pe) { MCC_TRACE("enter\
 
 	if (0 == s1->nostdlib) { MCC_TRACE("br\n");
 		static const char *const libs[] = {
-				"msvcrt", "kernel32", "", "user32", "gdi32", NULL};
+				"ucrt", "kernel32", "", "user32", "gdi32", NULL};
 		const char *const *pp, *p;
 #ifdef MCC_EMBED_MCCRT
 		mcc_add_mccrt_embedded(s1);

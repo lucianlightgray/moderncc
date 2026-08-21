@@ -1841,7 +1841,6 @@ ST_FUNC int mcc_add_jit_engine_embedded(MCCState *s1) { MCC_TRACE("enter\n");
 		mcc_add_library(s1, "mingw32");
 		mcc_add_library(s1, "mingwex");
 		mcc_add_library(s1, "ucrt");
-		mcc_add_library(s1, "msvcrt");
 		mcc_add_library(s1, "kernel32");
 #ifdef MCC_TARGET_I386
 		{

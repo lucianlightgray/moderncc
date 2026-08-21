@@ -46,26 +46,13 @@ typedef struct _iobuf FILE;
 #endif
 
 #ifndef _STDIO_DEFINED
-#ifdef _WIN64
-_CRTIMP FILE *__cdecl __iob_func(void);
-#else
-#ifdef _MSVCRT_
-extern FILE _iob[];
-#define __iob_func() (_iob)
-#else
-extern FILE (*_imp___iob)[];
-#define __iob_func() (*_imp___iob)
-#define _iob __iob_func()
-#endif
-#endif
-
-#define _iob __iob_func()
+_CRTIMP FILE *__cdecl __acrt_iob_func(unsigned _Ix);
 #endif
 
 #ifndef _STDSTREAM_DEFINED
-#define stdin (&__iob_func()[0])
-#define stdout (&__iob_func()[1])
-#define stderr (&__iob_func()[2])
+#define stdin (__acrt_iob_func(0))
+#define stdout (__acrt_iob_func(1))
+#define stderr (__acrt_iob_func(2))
 #define _STDSTREAM_DEFINED
 #endif
 

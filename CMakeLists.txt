@@ -2969,6 +2969,10 @@ if(MCC_EMBED_JIT AND TARGET libmcc_jitengine)
                 "MCC_EMBED_JIT_MINGW_LIBDIR=\"${_mccjit_mingw_libdir}\""
                 "MCC_EMBED_JIT_GCC_LIBDIR=\"${_mccjit_gcc_libdir}\"")
             message(STATUS "mcc: embed-jit runtime libs: ${_mccjit_mingw_libdir} + ${_mccjit_gcc_libdir}")
+            if(EXISTS "${_mccjit_mingw_libdir}/libucrt.a")
+                file(COPY "${_mccjit_mingw_libdir}/libucrt.a"
+                     DESTINATION "${CMAKE_BINARY_DIR}/lib")
+            endif()
         endif()
     elseif(NOT WIN32 AND NOT APPLE)
         execute_process(COMMAND "${CMAKE_C_COMPILER}" -print-libgcc-file-name
@@ -8354,9 +8358,7 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
     if(MCC_TARGETOS STREQUAL "WIN32")
         set(_mcctest_mccargs "-mno-ms-bitfields")
 
-        set(_msvcrt_start "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/msvcrt_start.c")
-        set(_mcctest_refflags
-            "-mno-ms-bitfields -D__USE_MINGW_ANSI_STDIO=0 -nostdlib ${_msvcrt_start} -lgcc -Wl,--start-group -lmingwex c:/windows/system32/msvcrt.dll -Wl,--end-group -lkernel32")
+        set(_mcctest_refflags "-mno-ms-bitfields -D__USE_MINGW_ANSI_STDIO=0")
         if(MCC_CPU STREQUAL "i386")
             string(APPEND _mcctest_refflags " -fexcess-precision=standard")
         endif()

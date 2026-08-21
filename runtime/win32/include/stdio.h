@@ -88,18 +88,7 @@ typedef long long off64_t;
 #endif
 
 #ifndef _STDIO_DEFINED
-#ifdef _WIN64
-_CRTIMP FILE *__cdecl __iob_func(void);
-#else
-#ifdef _MSVCRT_
-extern FILE _iob[];
-#define __iob_func() (_iob)
-#else
-extern FILE (*_imp___iob)[];
-#define __iob_func() (*_imp___iob)
-#define _iob __iob_func()
-#endif
-#endif
+_CRTIMP FILE *__cdecl __acrt_iob_func(unsigned _Ix);
 #endif
 
 #ifndef _FPOS_T_DEFINED
@@ -119,9 +108,9 @@ typedef long long fpos_t;
 #ifndef _STDSTREAM_DEFINED
 #define _STDSTREAM_DEFINED
 
-#define stdin (&__iob_func()[0])
-#define stdout (&__iob_func()[1])
-#define stderr (&__iob_func()[2])
+#define stdin (__acrt_iob_func(0))
+#define stdout (__acrt_iob_func(1))
+#define stderr (__acrt_iob_func(2))
 #endif
 
 #define _IOREAD 0x0001
@@ -424,8 +413,8 @@ __CRT_INLINE wint_t __cdecl putwchar(wchar_t _C) {
 #define _STDIO_DEFINED
 #endif
 
-#define _fgetc_nolock(_stream) (--(_stream)->_cnt >= 0 ? 0xff & *(_stream)->_ptr++ : _filbuf(_stream))
-#define _fputc_nolock(_c, _stream) (--(_stream)->_cnt >= 0 ? 0xff & (*(_stream)->_ptr++ = (char)(_c)) : _flsbuf((_c), (_stream)))
+#define _fgetc_nolock(_stream) fgetc(_stream)
+#define _fputc_nolock(_c, _stream) fputc((_c), (_stream))
 #define _getc_nolock(_stream) _fgetc_nolock(_stream)
 #define _putc_nolock(_c, _stream) _fputc_nolock(_c, _stream)
 #define _getchar_nolock() _getc_nolock(stdin)

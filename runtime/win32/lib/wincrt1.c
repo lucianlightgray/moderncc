@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <stdlib.h>
+#include <signal.h>
 
 #define __UNKNOWN_APP 0
 #define __CONSOLE_APP 1
@@ -58,18 +59,61 @@ static int go_winmain(TCHAR *arg1) {
 }
 
 static LONG WINAPI catch_sig(EXCEPTION_POINTERS *ex) {
-	return _XcptFilter(ex->ExceptionRecord->ExceptionCode, ex);
+	int sig;
+	switch (ex->ExceptionRecord->ExceptionCode) {
+	case EXCEPTION_ACCESS_VIOLATION:
+	case EXCEPTION_IN_PAGE_ERROR:
+	case EXCEPTION_DATATYPE_MISALIGNMENT:
+	case EXCEPTION_STACK_OVERFLOW:
+		sig = SIGSEGV;
+		break;
+	case EXCEPTION_INT_DIVIDE_BY_ZERO:
+	case EXCEPTION_INT_OVERFLOW:
+	case EXCEPTION_FLT_DIVIDE_BY_ZERO:
+	case EXCEPTION_FLT_OVERFLOW:
+	case EXCEPTION_FLT_UNDERFLOW:
+	case EXCEPTION_FLT_INEXACT_RESULT:
+	case EXCEPTION_FLT_INVALID_OPERATION:
+	case EXCEPTION_FLT_DENORMAL_OPERAND:
+	case EXCEPTION_FLT_STACK_CHECK:
+		sig = SIGFPE;
+		break;
+	case EXCEPTION_ILLEGAL_INSTRUCTION:
+	case EXCEPTION_PRIV_INSTRUCTION:
+		sig = SIGILL;
+		break;
+	default:
+		return EXCEPTION_CONTINUE_SEARCH;
+	}
+	{
+		__p_sig_fn_t _h = signal(sig, SIG_DFL);
+		if (_h != SIG_DFL && _h != SIG_ERR) {
+			signal(sig, _h);
+			raise(sig);
+		}
+	}
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void __cdecl _mcc_iph(const wchar_t *_e, const wchar_t *_f, const wchar_t *_fl, unsigned int _l, uintptr_t _r) {
+	(void)_e;
+	(void)_f;
+	(void)_fl;
+	(void)_l;
+	(void)_r;
 }
 
 int _twinstart(void) {
 	_startupinfo start_info_con = {0};
 	SetUnhandledExceptionFilter(catch_sig);
 	__set_app_type(__GUI_APP);
+	_set_invalid_parameter_handler(_mcc_iph);
 	__tgetmainargs(&__argc, &__targv, &_tenviron, 0, &start_info_con);
 	exit(go_winmain(__argc > 1 ? __targv[1] : NULL));
 }
 
 int _runtwinmain(int argc, char **argv) {
+	_set_invalid_parameter_handler(_mcc_iph);
 #ifdef UNICODE
 	_startupinfo start_info = {0};
 	__tgetmainargs(&__argc, &__targv, &_tenviron, 0, &start_info);
