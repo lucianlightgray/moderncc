@@ -36,7 +36,7 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/f3264.c && echo OK",
 		 "OK\n"},
 
-		{"generic_floatn_distinctness", "os!=WIN32",
+		{"generic_floatn_distinctness", "",
 		 "printf 'int main(void){float f;double d;long double L;"
 		 "_Float32 a;_Float64 b;_Float32x c;_Float64x e;"
 		 "int ok=_Generic(f,float:1,_Float32:0,default:9)==1"
