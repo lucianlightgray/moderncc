@@ -6116,6 +6116,8 @@ static void mcc_predefs(MCCState *s1, CString *cs, int is_asm) { MCC_TRACE("ente
 		{ MCC_TRACE("br\n"); putdef(cs, "__FAST_MATH__"); }
 	if (s1->optimize > 0)
 		{ MCC_TRACE("br\n"); putdef(cs, "__OPTIMIZE__"); }
+	else
+		{ MCC_TRACE("br\n"); putdef(cs, "__NO_INLINE__"); }
 	if (s1->optimize_size)
 		{ MCC_TRACE("br\n"); putdef(cs, "__OPTIMIZE_SIZE__"); }
 	if (s1->option_pthread)

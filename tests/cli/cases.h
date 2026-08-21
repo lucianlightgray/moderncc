@@ -1864,6 +1864,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/width_predef.c -o {W}/width && {W}/width",
 		 "WIDTH_OK\n"},
 
+		{"no_inline_predef", "",
+		 "printf 'int x;\\n' > {W}/ni.c && "
+		 "{MCC} -B{B} -I{I} -dM -E {W}/ni.c 2>&1 | grep -c '__NO_INLINE__' ; "
+		 "{MCC} -B{B} -I{I} -O2 -dM -E {W}/ni.c 2>&1 | grep -c '__NO_INLINE__' ; echo END",
+		 "1\n0\nEND\n"},
+
 		{"fast_math_predef_and_fp_opts", "",
 		 "printf 'int main(void){return 0;}\\n' > {W}/fm.c && "
 		 "{MCC} -B{B} -I{I} -ffast-math -dM -E {W}/fm.c 2>&1 | grep -o '__FAST_MATH__ 1' ; "
