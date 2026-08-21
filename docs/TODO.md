@@ -16,11 +16,11 @@ _Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs
 _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/log/lin-x64.md`. Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1)._
 
 ## In progress — win-x64     ← only win-x64 writes this zone
-- STATUS + capabilities: docs/sessions/win-x64.md -- narrative: docs/log/win-x64.md -- no active win claims (T-lin-10477 optfire phantom-coverage DONE 1c09170c; 8 low-residual [S] parked in Open below).
+- STATUS + capabilities: docs/sessions/win-x64.md -- narrative: docs/log/win-x64.md -- ACTIVE: T-win-50049 [S] P1 win-PE optfire counter-cell -run leg (IN_PROGRESS, claimed 4380c274). Formalized 7 tasks this session; T-win-50055 WITHDRAWN as a T-lin-10459 dup.
 ## Open — claimable
 
 - [ ] T-win-50049 [S] P1/JIT: win-PE optfire COUNTER-cell `-run` leg — run-verify the ~11 counter-only optimizer passes (bfold/ltemp/licm/pre/range/reassoc/abs/select/divmagic/jt/bf + 3 mix_* composition cells) on native x86_64-PE, closing the contract's counter-in-run-verify-class gap the differ-only T-lin-10478-win leg left (glob counters*.txt into the if(WIN32) block under OPTFIRE_EXECVIA=run). All 11 measured fire+run-correct on this box (win-x64 2026-08-21). Test-infra only, o0-neutral.
-      OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: —
+      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: 4380c274 | TS: 2026-08-21T23:28Z | DEPS: —
       REF: DETAILS.md#t-win-50049-optfire-counter-run-win
 - [ ] T-win-50050 [S] OPTIMIZER (P2): constant-fold string/memory builtins (strlen/strcmp/strncmp/memcmp/strnlen) on literal args — mcc emits runtime calls where gcc+clang fold to constants; new `bfold-string` knob extending ast_bfold_run (mccast.c:7829). Native x86_64-PE -run-verifiable, o0-neutral (level-gated).
       OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: —
@@ -37,9 +37,6 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
 - [ ] T-win-50054 [S] Win-PE correctness harness: native `pe/torture-xoracle` — mcc-PE vs vendored winlibs-ucrt mingw-gcc over the EXTERNAL gcc-c-torture corpus at -O0/-O2 (no win cell runs the external corpus vs gcc-mingw today; this is the vein that found T-win-50046/50047/50048). Banked known-list (anti-rot) + `--mutate` control + agreement floor + cl-conformance filter. Measured yield 1488 OK / 11 DIVERGE (all already-tracked) / 49 NOCOMPILE at ~70s/16-way (win-x64 2026-08-21); validated prototype harness in scratch. o0-neutral.
       OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: —
       REF: DETAILS.md#t-win-50054-pe-torture-xoracle
-- [ ] T-win-50055 [X]win x86_64-PE `__int128`/`__float128` ungate (S2/S3 of the T-lin-10459 program) — flip MCC_HAVE_INT128/FLOAT128 for PE (mcc.h:1277-1286) + predefine __SIZEOF_INT128__ + Win64-ABI-aware libcall returns (__multi3 sret; __*tf* XMM-vs-sret). Native-PE verifiable, no wine. CAVEAT: feature PARITY — flips ZERO 10092/win reds (the 4 int128 win tests already pass by gating b7259bab). DEPS: T-lin-10458[C] (satisfied).
-      OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: T-lin-10458[C]
-      REF: DETAILS.md#t-win-50055-pe-int128-float128-ungate
 - [ ] T-win-50026 [S] `rir/rec-miss` + `rir-nofb-probe`: the empty-subject floors fire on win — provision or gate honestly
       OWNER: -- | STATE: PARKED | SHA: 8df84468 | TS: 2026-08-17T02:31Z | HEARTBEAT INTENTIONALLY STALE — VLA fix ATTEMPTED+REVERTED; cell still red (pre-existing). TTL-eligible for any session to resume.
       REF: DETAILS.md#t-win-50026-vla-nofb-fixed-cg-func-alloca-reset-2026-08-17 | DEPS: T-win-50028[S] | NOTE: ADJUDICATED (b): the 10 VLA bodies are NOT benign — forced replay SIGSEGV's the compiler in gfunc_epilog (PE-only func_alloca chain walked garbage), win-specific (SysV has no such chain). rec-miss paid earlier (adb24a36). FIX ATTEMPT c5f2e0ed (one-line cg_func_alloca reset) fixed -O0 nofb but REGRESSED -O1+ NORMAL-mode multi-alloca VLA (basic.c a/g/b = 3-link chain) → REVERTED 2d8249c7, main green. Correct fix is NOT a one-liner: func_alloca must be reconciled across nofb-keep / faithful-keep / fallback AND the -O2/RIR-arena replay path (which writes a non-oad garbage value 0x65897BE0) — full analysis + next-attempt recipe in DETAILS#t-win-50026-correction. LESSON: slice smoke test must cover BOTH normal(fallback) and forced-replay modes at O0-O3, not just nofb-keep. CELL also blocked on T-win-50028 (lin's sso replay-drops-byteswap, root-caused separately). nofb-probe green needs BOTH fixes + then §8 batch.
