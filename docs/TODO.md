@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30266   | 2026-08-21T06:15Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10458   | 2026-08-21T06:05Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10458   | 2026-08-21T06:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-21T05:56Z |
 
 ## Contracts — blocking, highest priority
@@ -29,6 +29,8 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       REF: DETAILS.md#t-mac-30028-slice-1-macho-entry | DEPS: — | NOTE: HEARTBEAT INTENTIONALLY STALE — TTL-resumable by any session
 
 ## In progress — lin-x64     ← only lin-x64 writes this zone
+
+- SESSION CHECKPOINT (lin-x64, 2026-08-21T06:45Z): **T-mac-30290 fleet-wide __GNUC__ 4→7 bump LANDED — lin leg complete (I was the final gate).** Caught TWO successive Linux-only BLOCKERs mac's macOS-SDK verification structurally couldn't see: (1) bump-alone breaks every _GNU_SOURCE TU + self-host without _Float32/_Float64 keywords; (2) even with those, still breaks on _Float32x/_Float64x (glibc strtof32x/strtof64x). Both fixed in mac's extended atomic patch (9ee3bb6a). Verified the extended patch green on lin (self-host OK, _GNU_SOURCE clean, _Float32x/64x correct, qemu-riscv64 green, native 1980/1980), then executed the lockstep x86_64 o0 rebank (740f9a20e — canonical C2_NO_EXTRA=1 flags, EXACTLY 3 files complex_cmplx_special/flt_eval_method/fp_wide_return, all exec-correct @7, rir board unchanged). All 4 o0-baseline cells green; post-bump broad suite 1934/1934. Also fixed my docref dangling-citation (t-lin-10020 anchor, 5d6ce5302). T-mac-30178 closes with this commit. Tree clean, all pushed.
 
 - SESSION CHECKPOINT (lin-x64, 2026-08-21T06:05Z): **(1) T-mac-30290 re-run → 2nd BLOCKER caught + sent.** Applied mac's combined atomic patch locally (revert 4ea50353 keywords + bump 7/5/0 + Apple pin); `_Float32`/`_Float64` now work BUT self-host + every `_GNU_SOURCE` Linux TU STILL RED on `_Float32x strtof32x` (stdlib.h:163) — mcc has _Float16/32/64/128 but LACKS **_Float32x/_Float64x/_Float128x** which glibc@7 also uses (mac's macOS-SDK verification can't see this glibc-only gap). Reported the exact fix to mac (add _Float32x→double, _Float64x→long double as non-distinct alias keywords; _Float128x unused since __HAVE_FLOAT128X=0). Reverted local patch, tree clean, self-host green. Leg RED-pending the _Float*x keywords; parked on mac. **(2) optbench/levelbench-bank fleet red FIXED (2dccc7706)** — my T-lin-10447 tree-ccp-iterate + ivopts-ptr L3 promotions lacked levelbench.tsv rows ('a shipped rung is priced by nothing'); measured both via optlevel-bench.py --only (perf instructions:u, deterministic) and banked the rows. Win-confirmed this clears the LAST real non-GPU fleet red (rir/corpus-guard was a -j6 flake). Finding: ivopts-ptr is net-negative at L3, tree-ccp-iterate cost-no-gain at geomean — flagged inline for a future ladder-review. Tree clean, all pushed.
 
