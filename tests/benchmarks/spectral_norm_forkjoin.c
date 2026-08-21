@@ -20,7 +20,7 @@
  */
 #include <threads.h>
 
-extern void *malloc(unsigned long);
+extern void *malloc(__SIZE_TYPE__);
 extern void free(void *);
 extern int atoi(const char *);
 extern int printf(const char *, ...);
