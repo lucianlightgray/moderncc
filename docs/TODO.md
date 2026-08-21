@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30268   | 2026-08-21T15:15Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30268   | 2026-08-21T15:31Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10476   | 2026-08-21T15:11Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50043   | 2026-08-21T14:52Z |
 
@@ -418,8 +418,8 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z | NOTE (mac-arm64 2026-08-21, verify-first): TWO sub-items STALE — (1) the type-narrowing is fixed: `sizeof(_Complex __float128)`==`sizeof(_Complex _Float128)`==32 on arm64-osx == gcc-16 (no longer collapsed to `_Complex float`/8); (2) `_Imaginary` rejection is a NON-BUG — mcc errors "imaginary types are not supported" byte-identical to clang, and gcc-16 doesn't recognize `_Imaginary` at all (imaginary types are optional C99 Annex G; `__STDC_IEC_559_COMPLEX__` doesn't require them). ONLY remaining = the [MED] const-fold `*`/`/` naive-formula-vs-Smith-scaled-runtime divergence (intricate, Q-lin-10012 fold side).
       REF: INVESTIGATIONS.md#r8-complex-fold | DEPS: —
 - [ ] T-mac-30045 [S] Investigate: varargs/stdarg — [MED] x86_64 SysV `__va_arg_inline` bumps `fp_offset += 16` BEFORE the capacity test for a 2-SSE aggregate (`mccdefs.h:549-560`), so with one XMM slot left the counter sticks at 176 and a later single `double`/`float` vararg (caller backfilled into XMM7 w/o bumping `nb_sse_args`, `x86_64-gen.c:1699`) is read from the overflow area not the register → silent miscompile; [MED] arm64-ELF `assert(0)` still live for size==16/align==16 non-HFA aggregate through `...` (`arm64-gen.c:1728`; the Round-1 `#codegen-arm64-vaarg-assert`, now located). Save-area/gr_offs/riscv/va_copy ROBUST
-      OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z
-      REF: INVESTIGATIONS.md#r8-varargs | DEPS: —
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: 17feab34 | TS: 2026-08-21T15:31Z
+      REF: INVESTIGATIONS.md#r8-varargs | DEPS: — | NOTE (mac-arm64 2026-08-21T15:31Z): sub-item 1 (2-SSE va_arg) REPRODUCED on x86_64-osx (mcc-x86_64-osx): `f(fmt,7 doubles,struct{double,double},double)` then `va_arg(ap,double)` → mcc reads LAST from overflow (88.1) vs oracle clang -arch x86_64 99.5. Fixing callee-side `__va_arg_inline` (test both XMM slots up-front for size==16 before consuming any). Drifts x86_64+x86_64-osx o0-baseline (arm64.c uses `va_arg(ap,struct hfa22)`) → cross-fleet rebank.
 - [ ] T-mac-30046 [S] Investigate: `-fpromote-locals`/`-finline` miss an INDIRECT `setjmp` → silent miscompile at `-O2` — [MED] `ast_body_has_setjmp` (`mccast.c:3013/4598`) matches only a direct callee whose NAME contains "setjmp"; `setjmp` via a function pointer is a name-less `Invoke` → a live local promoted into a callee-saved reg that `longjmp` restores (reproduced: `x=20` at -O0, `x=10` at -O2/-O3); auto-on at -O2 (`:2349`); [LOW] same name-based blind spot in the inliner guard `ast_fn_inlinable` (`:3049`). Inline single-eval/copy-prop/algebraic/DCE all ROBUST
       OWNER: — | STATE: OPEN | SHA: 17feab34 | TS: 2026-08-18T00:10Z
       REF: INVESTIGATIONS.md#r8-promote-setjmp | DEPS: —
