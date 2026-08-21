@@ -2571,7 +2571,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_reassoc_shlshr_env = mcc_opt(s1, MCC_OPT_REASSOC_SHLSHR);
 	ast_reassoc_shrshl_env = mcc_opt(s1, MCC_OPT_REASSOC_SHRSHL);
 	ast_reassoc_muldist_env = mcc_opt(s1, MCC_OPT_REASSOC_MULDIST);
-	ast_bfold_sqrt_env = mcc_opt(s1, MCC_OPT_BFOLD_SQRT);
+	ast_bfold_sqrt_env = mcc_opt(s1, MCC_OPT_BFOLD_SQRT) && !stdc_fenv_access(s1);
 	ast_bfold_sign_env = mcc_opt(s1, MCC_OPT_BFOLD_SIGN);
 	ast_bfold_round_env = mcc_opt(s1, MCC_OPT_BFOLD_ROUND);
 	ast_bfold_minmax_env = mcc_opt(s1, MCC_OPT_BFOLD_MINMAX);

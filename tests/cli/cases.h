@@ -1438,6 +1438,12 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'int main(void){return (U'\\''\\\\xD800\\\\xDC00'\\''==0xDC00 && U'\\''\\\\U0001F600'\\''==0x1F600)?0:1;}\\n' > {W}/u32c.c && {MCC} -B{B} -run {W}/u32c.c && echo U32C_OK",
 		 "U32C_OK\n"},
 
+		{"frounding_math_disables_sqrt_fold", "",
+		 "printf 'double f(void){return __builtin_sqrt(4.0);}\\n' > {W}/frm.c && "
+		 "{MCC} -B{B} -S -O1 {W}/frm.c -o - 2>/dev/null | grep -q sqrt && echo BAD_DEFAULT_NOT_FOLDED; "
+		 "{MCC} -B{B} -S -O1 -frounding-math {W}/frm.c -o - 2>/dev/null | grep -q sqrt && echo FRM_OK",
+		 "FRM_OK\n"},
+
 		{"dumpmachine", "os!=WIN32",
 		 "{MCC} -dumpmachine | grep -qE '^(x86_64|i386|i686|aarch64|arm64|arm|riscv64)-' && echo TRIPLE_OK",
 		 "TRIPLE_OK\n"},
