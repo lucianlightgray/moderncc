@@ -1167,6 +1167,12 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	case VT_FUNC:
 	case VT_FLOAT16:
 	case VT_BF16:
+	case VT_SFRACT:
+	case VT_FRACT:
+	case VT_LFRACT:
+	case VT_SACCUM:
+	case VT_ACCUM:
+	case VT_LACCUM:
 		return x86_64_mode_integer;
 
 	case VT_FLOAT:

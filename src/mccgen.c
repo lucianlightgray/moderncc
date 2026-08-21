@@ -1459,8 +1459,8 @@ ST_FUNC Sym *sym_push(int v, CType *type, int r, int c) { MCC_TRACE("enter\n");
 	{
 		int keep_bpbs = (type->t & VT_BITFIELD) || is_bitint_type(type);
 		int sbt = type->t & VT_BTYPE;
-		int keep_fspell = (sbt == VT_FLOAT || sbt == VT_DOUBLE ||
-											 sbt == VT_LDOUBLE) && type->bs;
+		int keep_fspell = ((sbt == VT_FLOAT || sbt == VT_DOUBLE ||
+												sbt == VT_LDOUBLE) || IS_FIXED_BT(sbt)) && type->bs;
 		s->type.bp = keep_bpbs ? type->bp : 0;
 		s->type.bs = (keep_bpbs || keep_fspell) ? type->bs : 0;
 	}
@@ -4594,6 +4594,10 @@ static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRAC
 	if ((bt1 == VT_FLOAT || bt1 == VT_DOUBLE || bt1 == VT_LDOUBLE) &&
 			bt1 == (type2->t & VT_BTYPE) && type1->bs != type2->bs)
 		{ MCC_TRACE("br\n"); return 0; }
+	/* _Sat rides FIXSAT in .bs on a fixed-point base: _Sat _Fract is distinct
+	 * from _Fract (same VT_FRACT btype) for _Generic/type-compat (T-lin-10461). */
+	if (IS_FIXED_BT(bt1) && bt1 == (type2->t & VT_BTYPE) && type1->bs != type2->bs)
+		{ MCC_TRACE("br\n"); return 0; }
 
 	t1 = type1->t & VT_TYPE;
 	t2 = type2->t & VT_TYPE;
@@ -5073,6 +5077,13 @@ redo:
 	if (is_decimal(t1) || is_decimal(t2)) { MCC_TRACE("br\n");
 		mcc_error("_Decimal arithmetic is not yet implemented "
 							"(T-lin-10460 slice 3)");
+	}
+
+	/* TR 18037 fixed-point arithmetic (scaled-int + saturation) is T-lin-10461
+	 * slice 3+; slice 1 provides the types + sizeof + _Generic only. */
+	if (IS_FIXED_BT(bt1) || IS_FIXED_BT(bt2)) { MCC_TRACE("br\n");
+		mcc_error("_Fract/_Accum arithmetic is not yet implemented "
+							"(T-lin-10461 slice 3)");
 	}
 
 	if (bt1 == VT_FUNC || bt2 == VT_FUNC) { MCC_TRACE("br\n");
@@ -5668,6 +5679,12 @@ static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 		mcc_error("_Decimal conversions are not yet implemented "
 							"(T-lin-10460 slice 3)");
 	}
+	if (IS_FIXED_BT(type->t & VT_BTYPE) || IS_FIXED_BT(vtop->type.t & VT_BTYPE)) { MCC_TRACE("br\n");
+		if ((type->t & VT_BTYPE) == (vtop->type.t & VT_BTYPE))
+			{ MCC_TRACE("br\n"); vtop->type.t = (vtop->type.t & ~VT_BTYPE) | (type->t & VT_BTYPE); return; }
+		mcc_error("_Fract/_Accum conversions are not yet implemented "
+							"(T-lin-10461 slice 3)");
+	}
 
 	/* A bit-field source must be materialized to extract its value -- except a
 	 * _BitInt constant, whose c.i already holds the reduced value; forcing it
@@ -6214,12 +6231,18 @@ static int type_size_impl(CType *type, int *a) { MCC_TRACE("enter\n");
 	} else if (bt == VT_INT128 || bt == VT_FLOAT128 || bt == VT_DEC128) { MCC_TRACE("br\n");
 		*a = 16;
 		return 16;
-	} else if (bt == VT_DEC64) { MCC_TRACE("br\n");
+	} else if (bt == VT_DEC64 || bt == VT_LACCUM) { MCC_TRACE("br\n");
 		*a = 8;
 		return 8;
-	} else if (bt == VT_DEC32) { MCC_TRACE("br\n");
+	} else if (bt == VT_DEC32 || bt == VT_LFRACT || bt == VT_ACCUM) { MCC_TRACE("br\n");
 		*a = 4;
 		return 4;
+	} else if (bt == VT_FRACT || bt == VT_SACCUM) { MCC_TRACE("br\n");
+		*a = 2;
+		return 2;
+	} else if (bt == VT_SFRACT) { MCC_TRACE("br\n");
+		*a = 1;
+		return 1;
 	} else if (bt == VT_QLONG || bt == VT_QFLOAT) { MCC_TRACE("br\n");
 		*a = 8;
 		return 16;
@@ -6448,6 +6471,12 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	case VT_DEC32:
 	case VT_DEC64:
 	case VT_DEC128:
+	case VT_SFRACT:
+	case VT_FRACT:
+	case VT_LFRACT:
+	case VT_SACCUM:
+	case VT_ACCUM:
+	case VT_LACCUM:
 	case VT_DOUBLE:
 	case VT_LDOUBLE:
 	case VT_BOOL:
@@ -9725,6 +9754,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen, ext_seen;
 	int int256_seen;
 	int bitint_seen, bitint_n;
+	int fract_seen, accum_seen, sat_seen;
 	int at_ok = auto_type_allowed;
 	Sym *s;
 	CType type1;
@@ -9737,6 +9767,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	int256_seen = 0;
 	bitint_seen = 0;
 	bitint_n = 0;
+	fract_seen = accum_seen = sat_seen = 0;
 	ext_seen = 0;
 	t = VT_INT;
 	bt = st = -1;
@@ -9869,6 +9900,28 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_DECIMAL128:
 			u = VT_DEC128;
 			goto basic_type;
+		case TOK_FRACT:
+			if (fract_seen || accum_seen)
+				{ MCC_TRACE("br\n"); mcc_error("too many basic types"); }
+			fract_seen = 1;
+			next();
+			typespec_found = 1;
+			type_found = 1;
+			break;
+		case TOK_ACCUM:
+			if (fract_seen || accum_seen)
+				{ MCC_TRACE("br\n"); mcc_error("too many basic types"); }
+			accum_seen = 1;
+			next();
+			typespec_found = 1;
+			type_found = 1;
+			break;
+		case TOK_SAT:
+			sat_seen = 1;
+			next();
+			typespec_found = 1;
+			type_found = 1;
+			break;
 		case TOK_BFLOAT16:
 			u = VT_BF16;
 			goto basic_type;
@@ -10293,6 +10346,29 @@ the_end:
 		type->t |= t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_DEFSIGN | VT_EXTERN | VT_STATIC | VT_TYPEDEF |
 										VT_INLINE);
 		return type_found;
+	}
+	if (fract_seen || accum_seen) { MCC_TRACE("br\n");
+		/* TR 18037 fixed-point (T-lin-10461 slice 1): short/long select the size
+		 * variant (VT_SFRACT/FRACT/LFRACT, VT_SACCUM/ACCUM/LACCUM), VT_UNSIGNED the
+		 * signedness, and _Sat rides FIXSAT in .bs (distinct for _Generic). */
+		int uns = (t & VT_UNSIGNED) != 0;
+		int quals = t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
+										 VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS);
+		int fxbt;
+		if (st == VT_SHORT)
+			{ MCC_TRACE("br\n"); fxbt = fract_seen ? VT_SFRACT : VT_SACCUM; }
+		else if (st == VT_LONG || (t & VT_LONG))
+			{ MCC_TRACE("br\n"); fxbt = fract_seen ? VT_LFRACT : VT_LACCUM; }
+		else
+			{ MCC_TRACE("br\n"); fxbt = fract_seen ? VT_FRACT : VT_ACCUM; }
+		type->ref = NULL;
+		type->t = fxbt | (uns ? VT_UNSIGNED : 0) | quals;
+		type->bp = 0;
+		type->bs = sat_seen ? FIXSAT : 0;
+		return type_found;
+	}
+	if (sat_seen) { MCC_TRACE("br\n");
+		mcc_error("'_Sat' requires a fixed-point type ('_Fract' or '_Accum')");
 	}
 	type->t = t;
 	if (ad->attr_vector_size && typespec_found &&
@@ -17313,6 +17389,9 @@ static int tok_starts_declspec(void) { MCC_TRACE("enter\n");
 	case TOK_DECIMAL32:
 	case TOK_DECIMAL64:
 	case TOK_DECIMAL128:
+	case TOK_FRACT:
+	case TOK_ACCUM:
+	case TOK_SAT:
 	case TOK_ENUM:
 	case TOK_STRUCT:
 	case TOK_UNION:

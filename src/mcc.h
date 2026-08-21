@@ -1247,9 +1247,19 @@ struct filespec {
 #define VT_DEC32 18		/* _Decimal32 (IEEE 754 decimal32, BID) — T-lin-10460 */
 #define VT_DEC64 19		/* _Decimal64 */
 #define VT_DEC128 20	/* _Decimal128 */
+#define VT_SFRACT 21	/* short _Fract (s.7,  1B) — TR 18037, T-lin-10461 */
+#define VT_FRACT 22		/* _Fract       (s.15, 2B) */
+#define VT_LFRACT 23	/* long _Fract  (s.31, 4B) */
+#define VT_SACCUM 24	/* short _Accum (s8.7,  2B) */
+#define VT_ACCUM 25		/* _Accum       (s16.15,4B) */
+#define VT_LACCUM 26	/* long _Accum  (s32.31,8B) */
 
 #define IS_HALF_BT(bt) ((bt) == VT_FLOAT16 || (bt) == VT_BF16)
 #define IS_DECIMAL_BT(bt) ((bt) == VT_DEC32 || (bt) == VT_DEC64 || (bt) == VT_DEC128)
+#define IS_FIXED_BT(bt) ((bt) >= VT_SFRACT && (bt) <= VT_LACCUM)
+/* _Sat (saturating) rides CType.bs on a fixed-point base (never a bitfield), like
+ * the FSPELL float tag: FIXSAT=1 => _Sat, distinct for _Generic; layout unchanged. */
+#define FIXSAT 1
 
 /* binary128 is wired where its soft-quad runtime and __*tf* helper tokens exist
    (T-lin-10007 slice 1). Other targets keep the honest __float128 refusal until
