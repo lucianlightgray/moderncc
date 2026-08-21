@@ -784,6 +784,7 @@ struct MCCState {
 	unsigned char warn_return_type;
 	unsigned char warn_shift_count_negative;
 	unsigned char warn_shift_count_overflow;
+	unsigned char warn_overflow;
 	unsigned char warn_div_by_zero;
 	unsigned char warn_old_style_definition;
 	unsigned char warn_undefined_internal;

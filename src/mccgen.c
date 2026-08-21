@@ -6431,10 +6431,34 @@ static void gen_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 		if (type_size(dt, &a1) == type_size(&vtop->type, &a2))
 			{ MCC_TRACE("br\n"); gen_vector_cast(dt); return; }
 	}
+	int ovf = 0;
+	long long ovf_x = 0;
+	char ovf_src[128], ovf_dst[128];
+	if ((mcc_state->warn_overflow & WARN_ON)) { MCC_TRACE("br\n");
+		int dbt = dt->t & VT_BTYPE, sbt = vtop->type.t & VT_BTYPE;
+		if ((vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST &&
+				(dbt == VT_BYTE || dbt == VT_SHORT || dbt == VT_INT) && !(dt->t & VT_UNSIGNED) &&
+				(sbt == VT_BYTE || sbt == VT_SHORT || sbt == VT_INT || sbt == VT_LLONG) &&
+				!IS_ENUM(dt->t) && !IS_ENUM(vtop->type.t) &&
+				!is_bitint_type(dt) && !is_bitint_type(&vtop->type)) { MCC_TRACE("br\n");
+			int w = dbt == VT_BYTE ? 8 : dbt == VT_SHORT ? 16 : 32;
+			long long val = (vtop->type.t & VT_UNSIGNED)
+					? (long long)(unsigned long long)vtop->c.i
+					: (long long)vtop->c.i;
+			if (val < -(1LL << (w - 1)) || val > ((1LL << w) - 1))
+				{ MCC_TRACE("br\n"); ovf = 1; ovf_x = val;
+					type_to_str(ovf_src, sizeof(ovf_src), &vtop->type, NULL);
+					type_to_str(ovf_dst, sizeof(ovf_dst), dt, NULL); }
+		}
+	}
 	verify_assign_cast(dt);
 	gen_cast(dt);
 	bitint_deconst();
 	wideint_deconst();
+	if (ovf)
+		{ MCC_TRACE("br\n"); mcc_warning_c(warn_overflow)(
+				"overflow in conversion from '%s' to '%s' changes value from '%lld' to '%lld'",
+				ovf_src, ovf_dst, ovf_x, (long long)vtop->c.i); }
 }
 
 /* Reinterpret the top-of-stack scalar's bits as `newt' (same size) via a stack

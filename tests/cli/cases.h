@@ -163,6 +163,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/sp.c -o {W}/sp2.o 2>&1 | grep -c 'inside' ; echo OK ; }",
 		 "around '+' inside '<<'\naround '-' inside '>>'\n0\nOK\n"},
 
+		{"overflow_const_conv_warn", "",
+		 "printf 'char c1 = 300;\\nchar c2 = -200;\\nchar c3 = 200;\\nunsigned char u = 256;\\nshort s = 70000;\\nchar c4 = (char)300;\\nlong l = 300;\\nenum E{A}; enum E e = 300;\\n' > {W}/ov.c && "
+		 "{ {MCC} -B{B} -I{I} -c {W}/ov.c -o {W}/ov.o 2>&1 | grep -c 'overflow in conversion' ; "
+		 "{MCC} -B{B} -I{I} -c {W}/ov.c -o {W}/ov.o 2>&1 | grep -oE \"from 'int' to 'char' changes value from '300' to '44'\" | head -1 ; "
+		 "{MCC} -B{B} -I{I} -Wno-overflow -c {W}/ov.c -o {W}/ov2.o 2>&1 | grep -c 'overflow' ; echo OK ; }",
+		 "3\nfrom 'int' to 'char' changes value from '300' to '44'\n0\nOK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"
