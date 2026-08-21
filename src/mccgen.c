@@ -4924,6 +4924,38 @@ static void fmt_enum_type(SValue *sv, char *buf, int size) { MCC_TRACE("enter\n"
 	}
 }
 
+static Sym *sv_addr_of_named(SValue *sv) { MCC_TRACE("enter\n");
+	if (!(sv->r & VT_SYM) || !sv->sym)
+		{ MCC_TRACE("br\n"); return NULL; }
+	if ((sv->type.t & VT_ARRAY) || (sv->type.t & VT_BTYPE) == VT_FUNC)
+		{ MCC_TRACE("br\n"); return sv->sym; }
+	return NULL;
+}
+
+static int sv_is_null_const_addr(SValue *sv) { MCC_TRACE("enter\n");
+	int bt = sv->type.t & VT_BTYPE;
+	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (bt != VT_INT && bt != VT_LLONG && bt != VT_BYTE && bt != VT_SHORT && bt != VT_PTR)
+		{ MCC_TRACE("br\n"); return 0; }
+	return sv->c.i == 0;
+}
+
+static void check_address_compare(int op) { MCC_TRACE("enter\n");
+	SValue *l = &vtop[-1], *r = &vtop[0];
+	Sym *s;
+	if (op != TOK_EQ && op != TOK_NE)
+		{ MCC_TRACE("br\n"); return; }
+	if ((s = sv_addr_of_named(l)) && sv_is_null_const_addr(r)) { MCC_TRACE("br\n");
+	} else if ((s = sv_addr_of_named(r)) && sv_is_null_const_addr(l)) { MCC_TRACE("br\n");
+	} else { MCC_TRACE("br\n");
+		return;
+	}
+	mcc_warning_c(warn_address)(
+			"the comparison will always evaluate as '%s' for the address of '%s' will never be NULL",
+			op == TOK_NE ? "true" : "false", get_tok_str(s->v & ~SYM_FIELD, NULL));
+}
+
 static void check_enum_compare(void) { MCC_TRACE("enter\n");
 	SValue *l = &vtop[-1], *r = &vtop[0];
 	Sym *lr = sv_enum_ref(l), *rr = sv_enum_ref(r);
@@ -4954,6 +4986,8 @@ ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 		check_bool_compare(op);
 		if (mcc_state->warn_enum_compare & WARN_ON)
 			{ MCC_TRACE("br\n"); check_enum_compare(); }
+		if (mcc_state->warn_address & WARN_ON)
+			{ MCC_TRACE("br\n"); check_address_compare(op); }
 	}
 
 redo:
