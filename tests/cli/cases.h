@@ -1864,6 +1864,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/width_predef.c -o {W}/width && {W}/width",
 		 "WIDTH_OK\n"},
 
+		{"enum_compare_warn", "",
+		 "printf 'enum A{X=1};\\nenum B{Y=1};\\nint f(enum A a, enum B b){ return a==b; }\\nint g(enum A a){ return a==Y; }\\nint h(enum A a, enum A a2){ return a==a2; }\\nint k(enum A a, int i){ return a==i; }\\n' > {W}/ec.c && "
+		 "{MCC} -B{B} -I{I} -Wall -c {W}/ec.c -o {W}/ec.o 2>&1 | grep -c \"comparison between 'enum A' and 'enum B'\" ; echo END",
+		 "2\nEND\n"},
+
 		{"char_subscripts_warn", "",
 		 "printf 'int f(int*p, char c){ return p[c]; }\\nint g(int*p, unsigned char u){ return p[u]; }\\nint h(int*p, signed char s){ return p[s]; }\\nint k(int*p, int i){ return p[i]; }\\n' > {W}/cs.c && "
 		 "{MCC} -B{B} -I{I} -Wall -c {W}/cs.c -o {W}/cs.o 2>&1 | grep -c \"subscript has type 'char'\" ; echo END",

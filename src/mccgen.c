@@ -4905,6 +4905,36 @@ static void check_bool_compare(int op) { MCC_TRACE("enter\n");
 			(long long)k, r0 ? "true" : "false");
 }
 
+static Sym *sv_enum_ref(SValue *sv) { MCC_TRACE("enter\n");
+	if (IS_ENUM(sv->type.t) || IS_ENUM_VAL(sv->type.t))
+		{ MCC_TRACE("br\n"); return sv->type.ref; }
+	return NULL;
+}
+
+static void fmt_enum_type(SValue *sv, char *buf, int size) { MCC_TRACE("enter\n");
+	if (IS_ENUM_VAL(sv->type.t)) { MCC_TRACE("br\n");
+		CType et;
+		et.t = VT_INT | VT_ENUM;
+		et.bp = 0;
+		et.bs = 0;
+		et.ref = sv->type.ref;
+		type_to_str(buf, size, &et, NULL);
+	} else { MCC_TRACE("br\n");
+		type_to_str(buf, size, &sv->type, NULL);
+	}
+}
+
+static void check_enum_compare(void) { MCC_TRACE("enter\n");
+	SValue *l = &vtop[-1], *r = &vtop[0];
+	Sym *lr = sv_enum_ref(l), *rr = sv_enum_ref(r);
+	if (lr && rr && lr != rr) { MCC_TRACE("br\n");
+		char b1[64], b2[64];
+		fmt_enum_type(l, b1, sizeof b1);
+		fmt_enum_type(r, b2, sizeof b2);
+		mcc_warning_c(warn_enum_compare)("comparison between '%s' and '%s'", b1, b2);
+	}
+}
+
 ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	int t1, t2, bt1, bt2, t;
 	int bs1, bs2;
@@ -4922,6 +4952,8 @@ ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	if (op_class == CMP_OP) { MCC_TRACE("br\n");
 		check_tautological_unsigned_cmp(op);
 		check_bool_compare(op);
+		if (mcc_state->warn_enum_compare & WARN_ON)
+			{ MCC_TRACE("br\n"); check_enum_compare(); }
 	}
 
 redo:
