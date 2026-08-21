@@ -4481,6 +4481,26 @@ if(MCC_BUILD_TESTS)
             endforeach()
         endif()
 
+        if(APPLE AND MCC_CPU STREQUAL "arm64")
+            add_test(NAME "ast/dse-typecov-arm64-osx"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/dse-typecov.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_CURRENT_BINARY_DIR}/dse-typecov-arm64-osx")
+            set_tests_properties("ast/dse-typecov-arm64-osx" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT LABELS "macho;native" TIMEOUT 120)
+            foreach(_tcp IN ITEMS cse licm pre)
+                add_test(NAME "ast/${_tcp}-typecov-arm64-osx"
+                    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
+                            "$<TARGET_FILE:mcc>"
+                            "${CMAKE_CURRENT_SOURCE_DIR}"
+                            "${CMAKE_CURRENT_BINARY_DIR}/${_tcp}-typecov-arm64-osx"
+                            "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/${_tcp}_typecov_subject_noi128.c")
+                set_tests_properties("ast/${_tcp}-typecov-arm64-osx" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT LABELS "macho;native" TIMEOUT 120)
+            endforeach()
+        endif()
+
         if(UNIX AND NOT CMAKE_CROSSCOMPILING AND NOT MCC_EMULATOR
            AND NOT MCC_TARGETOS STREQUAL "WIN32")
             if(MCC_ENABLE_CROSS)

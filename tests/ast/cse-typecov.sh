@@ -20,18 +20,19 @@ set -e
 MCC=$1
 SRCDIR=$2
 WORK=$3
+SUBJECT=$4
 
 if [ -z "$MCC" ] || [ -z "$SRCDIR" ] || [ -z "$WORK" ]; then
-	echo "usage: cse-typecov.sh <mcc> <srcdir> <workdir>" >&2
+	echo "usage: cse-typecov.sh <mcc> <srcdir> <workdir> [subject.c]" >&2
 	exit 2
 fi
 
 mkdir -p "$WORK"
-src=$SRCDIR/tests/misc/cse_typecov_subject.c
+src=${SUBJECT:-$SRCDIR/tests/misc/cse_typecov_subject.c}
 
 cse=$(MCC_STATS=strategy "$MCC" -O2 -c "$src" -o "$WORK/c.o" 2>&1 |
 	sed -n 's/.*[^a-z]cse=\([0-9][0-9]*\).*/\1/p' | tail -1)
-echo "cse folds (double+float+ptr+int+ldbl+i128) = $cse"
+echo "cse folds ($(basename "$src")) = $cse"
 
 if [ -z "$cse" ] || [ "$cse" -lt 6 ]; then
 	echo "FAIL: type-complete CSE did not fire on the double+float+pointer+ldouble expressions (cse=$cse, want >=6)"
@@ -47,4 +48,4 @@ if [ "$r0" != "$r2" ]; then
 	exit 1
 fi
 
-echo "ast/cse-typecov OK: CSE type-complete (cse=$cse over double+float+ptr+int+ldbl+i128), result-invariant ($r2)"
+echo "ast/cse-typecov OK: CSE type-complete (cse=$cse over $(basename "$src")), result-invariant ($r2)"
