@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30265   | 2026-08-21T02:08Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30265   | 2026-08-21T02:20Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10457   | 2026-08-21T00:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-21T02:00Z |
 
@@ -13,6 +13,8 @@
 _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b328a85a), T-lin-10427 (gated MCC_COOP_MT primitives, 87b49371), **T-lin-10428 (M:N core, 50da1e68 — both spectral_norm kernels ~3.7x toward native under mcc-coop-mn)**. Remaining coop children in Open: T-lin-10429 (TLS safety — see its note: 10428's non-migrating design largely moots the hazard) and T-lin-10430 [X]win (Win32 multi-worker); both DEPS on 10428 now satisfied._
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- FINDING (mac-arm64 2026-08-21T02:20Z, DO-NOT-REDO): mcc WARNS "unsupported option" on an unknown `-Wno-<x>` where gcc/clang are SILENT (gcc's forward-compat: `-Wno-<unknown>` always accepted). I implemented+verified the gcc-aligning fix (libmcc.c:3378 set_flag<0 -> silently accept the `no-` form) — it works — but REVERTED it: it's a DELIBERATE mcc design (warn_unsupported_option field + `-Wno-unsupported-option` suppression + the cli/unknown_w_option_is_not_fatal test), and the current behavior is already BUILD-SAFE (non-fatal even under -Werror; the test proves `-Werror -Wno-made-up` compiles). The only delta is log NOISE for legit `-Wno-*` hardening flags, vs the design's value of catching typo'd `-Wno-` names. A judgment-call FLEET design decision (build-compat noise vs typo-catching), NOT a bug — leave unless the fleet decides to gcc-align it.
+
 - SESSION CHECKPOINT (mac-arm64, 2026-08-21T01:01Z, /goal loop): all pushed, tree clean, no active mac claims. LARGE clean-completeness run this session (12 code landings): FLEET-RED cleared (T-mac-30175 O1); 3 header/predefine slices (stdbit typed-fns, `_unlocked` fallbacks, `__FLT128_*` + C23 `_WIDTH` family + `__NO_INLINE__` + `-ffast-math`/`__FAST_MATH__`+fp-opts); `[[nodiscard]]`; asm unknown-directive; and a NEW warning family T-mac-30265 — `-Wbool-compare` + `-Wchar-subscripts` + `-Wenum-compare` all ==gcc; plus this turn driver accept-and-ignore of no-op -f hint flags (56cbf41a, security flags still warn honestly). Traps AVOIDED via verify-first: __GCC_HAVE_SYNC_COMPARE_AND_SWAP (mcc CAS is external), __GCC_ASM_FLAG_OUTPUTS__ (mcc lacks '@'), -Wconstant-conversion (=-Woverflow default-on, golden-risk), __INTx_C (stdint self-contained). DEFERRED w/ direction banked: taut-compare/logical-not/sizeof-div need a parse-time shape tracker (mcc AST is rir_try_active-gated, T-mac-30202 note); minted T-mac-30264 (float128 small-magnitude literal underflow). Backlog remaining for mac is deep (codegen/cross-target/GPU/AST-pass).
 
 
