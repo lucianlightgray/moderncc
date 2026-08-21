@@ -30,4 +30,14 @@ r0=$("$WORK/r0"); r4=$("$WORK/r4")
 if [ "$r0" != "$r4" ]; then
 	echo "FAIL: -O4 output differs from -O0 ('$r4' vs '$r0')"; exit 1
 fi
+if [ -n "$MCC_TYPECOV_RUN" ]; then
+	runlo=$("$MCC" -O0 -run "$src" 2>/dev/null)
+	runhi=$("$MCC" -O4 -run "$src" 2>/dev/null)
+	if [ "$runlo" != "$r0" ] || [ "$runhi" != "$r0" ]; then
+		echo "FAIL: JIT -run mismatch (O0-run='$runlo' O4-run='$runhi' vs AOT-O0 '$r0') -- P1 (b) JIT correctness"
+		exit 1
+	fi
+	echo "  JIT -run verified (P1 b): -O0-run == -O4-run == AOT-O0 ($r0)"
+fi
+
 echo "ast/pre-typecov OK: PRE type-complete (pre=$pre over $(basename "$src")), result-invariant ($r4)"

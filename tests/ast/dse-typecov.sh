@@ -45,4 +45,14 @@ if [ "$r0" != "$r2" ]; then
 	exit 1
 fi
 
+if [ -n "$MCC_TYPECOV_RUN" ]; then
+	runlo=$("$MCC" -O0 -run "$src" 2>/dev/null)
+	runhi=$("$MCC" -O2 -ftree-dse -run "$src" 2>/dev/null)
+	if [ "$runlo" != "$r0" ] || [ "$runhi" != "$r0" ]; then
+		echo "FAIL: JIT -run mismatch (O0-run='$runlo' O2dse-run='$runhi' vs AOT-O0 '$r0') -- P1 (b) JIT correctness"
+		exit 1
+	fi
+	echo "  JIT -run verified (P1 b): -O0-run == -O2-ftree-dse-run == AOT-O0 ($r0)"
+fi
+
 echo "ast/dse-typecov OK: DSE type-complete (dse=$dse on float+ptr), width-safe, result-invariant ($r2)"

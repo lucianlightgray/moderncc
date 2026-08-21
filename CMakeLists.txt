@@ -4472,6 +4472,7 @@ if(MCC_BUILD_TESTS)
                                 "${CMAKE_CURRENT_BINARY_DIR}/${_tcp}-typecov-x86_64-osx")
                     set_tests_properties("ast/${_tcp}-typecov-x86_64-osx" PROPERTIES
                         FIXTURES_REQUIRED "MCC_BUILT;FX_optfire_x64" SKIP_RETURN_CODE 77
+                        ENVIRONMENT "MCC_TYPECOV_RUN=1"
                         LABELS "macho;native" TIMEOUT 120)
                 else()
                     mcc_skip_test("ast/${_tcp}-typecov-x86_64-osx"
@@ -4488,7 +4489,8 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_SOURCE_DIR}"
                         "${CMAKE_CURRENT_BINARY_DIR}/dse-typecov-arm64-osx")
             set_tests_properties("ast/dse-typecov-arm64-osx" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT LABELS "macho;native" TIMEOUT 120)
+                FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_TYPECOV_RUN=1"
+                LABELS "macho;native" TIMEOUT 120)
             foreach(_tcp IN ITEMS cse licm pre)
                 add_test(NAME "ast/${_tcp}-typecov-arm64-osx"
                     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
@@ -4497,7 +4499,8 @@ if(MCC_BUILD_TESTS)
                             "${CMAKE_CURRENT_BINARY_DIR}/${_tcp}-typecov-arm64-osx"
                             "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/${_tcp}_typecov_subject_noi128.c")
                 set_tests_properties("ast/${_tcp}-typecov-arm64-osx" PROPERTIES
-                    FIXTURES_REQUIRED MCC_BUILT LABELS "macho;native" TIMEOUT 120)
+                    FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_TYPECOV_RUN=1"
+                    LABELS "macho;native" TIMEOUT 120)
             endforeach()
         endif()
 

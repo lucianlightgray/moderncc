@@ -48,4 +48,14 @@ if [ "$r0" != "$r2" ]; then
 	exit 1
 fi
 
+if [ -n "$MCC_TYPECOV_RUN" ]; then
+	runlo=$("$MCC" -O0 -run "$src" 2>/dev/null)
+	runhi=$("$MCC" -O2 -run "$src" 2>/dev/null)
+	if [ "$runlo" != "$r0" ] || [ "$runhi" != "$r0" ]; then
+		echo "FAIL: JIT -run mismatch (O0-run='$runlo' O2-run='$runhi' vs AOT-O0 '$r0') -- P1 (b) JIT correctness"
+		exit 1
+	fi
+	echo "  JIT -run verified (P1 b): -O0-run == -O2-run == AOT-O0 ($r0)"
+fi
+
 echo "ast/cse-typecov OK: CSE type-complete (cse=$cse over $(basename "$src")), result-invariant ($r2)"
