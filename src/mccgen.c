@@ -4849,6 +4849,62 @@ static void check_tautological_unsigned_cmp(int op) { MCC_TRACE("enter\n");
 			"comparison of unsigned expression is always %s", always ? "true" : "false");
 }
 
+static int sv_is_bool_expr(SValue *sv) { MCC_TRACE("enter\n");
+	if ((sv->type.t & VT_BTYPE) != VT_BOOL)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) == VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	return 1;
+}
+
+static int sv_is_int_const_for_bool(SValue *sv, int64_t *kout) { MCC_TRACE("enter\n");
+	int bt = sv->type.t & VT_BTYPE;
+	if ((sv->r & (VT_VALMASK | VT_LVAL | VT_SYM | VT_NONCONST)) != VT_CONST)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (bt != VT_INT && bt != VT_LLONG && bt != VT_BYTE && bt != VT_SHORT && bt != VT_BOOL)
+		{ MCC_TRACE("br\n"); return 0; }
+	*kout = sv->c.i;
+	return 1;
+}
+
+static int bool_cmp_holds(int64_t a, int op, int64_t b) { MCC_TRACE("enter\n");
+	switch (op) { MCC_TRACE("br\n");
+	case TOK_EQ: return a == b;
+	case TOK_NE: return a != b;
+	case TOK_LT: return a < b;
+	case TOK_GT: return a > b;
+	case TOK_LE: return a <= b;
+	case TOK_GE: return a >= b;
+	}
+	return -1;
+}
+
+static void check_bool_compare(int op) { MCC_TRACE("enter\n");
+	SValue *l = &vtop[-1], *r = &vtop[0];
+	int64_t k = 0;
+	int r0, r1, bool_left;
+
+	if (sv_is_bool_expr(l) && sv_is_int_const_for_bool(r, &k)) { MCC_TRACE("br\n");
+		bool_left = 1;
+	} else if (sv_is_int_const_for_bool(l, &k) && sv_is_bool_expr(r)) { MCC_TRACE("br\n");
+		bool_left = 0;
+	} else { MCC_TRACE("br\n");
+		return;
+	}
+	if (bool_left) { MCC_TRACE("br\n");
+		r0 = bool_cmp_holds(0, op, k);
+		r1 = bool_cmp_holds(1, op, k);
+	} else { MCC_TRACE("br\n");
+		r0 = bool_cmp_holds(k, op, 0);
+		r1 = bool_cmp_holds(k, op, 1);
+	}
+	if (r0 < 0 || r0 != r1)
+		{ MCC_TRACE("br\n"); return; }
+	mcc_warning_c(warn_bool_compare)(
+			"comparison of constant '%lld' with boolean expression is always %s",
+			(long long)k, r0 ? "true" : "false");
+}
+
 ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	int t1, t2, bt1, bt2, t;
 	int bs1, bs2;
@@ -4863,8 +4919,10 @@ ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	else if (TOK_ISCOND(op))
 		{ MCC_TRACE("br\n"); op_class = CMP_OP; }
 
-	if (op_class == CMP_OP)
-		{ MCC_TRACE("br\n"); check_tautological_unsigned_cmp(op); }
+	if (op_class == CMP_OP) { MCC_TRACE("br\n");
+		check_tautological_unsigned_cmp(op);
+		check_bool_compare(op);
+	}
 
 redo:
 	t1 = vtop[-1].type.t;

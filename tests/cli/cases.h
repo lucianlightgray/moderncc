@@ -1864,6 +1864,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/width_predef.c -o {W}/width && {W}/width",
 		 "WIDTH_OK\n"},
 
+		{"bool_compare_warn", "",
+		 "printf '_Bool b;\\nint f(void){ return b == 2; }\\nint g(void){ return b < 0; }\\nint h(void){ return b == 0; }\\nint j(int x){ return x == 2; }\\n' > {W}/bc.c && "
+		 "{MCC} -B{B} -I{I} -Wall -c {W}/bc.c -o {W}/bc.o 2>&1 | grep -c 'with boolean expression is always' ; echo END",
+		 "2\nEND\n"},
+
 		{"no_inline_predef", "",
 		 "printf 'int x;\\n' > {W}/ni.c && "
 		 "{MCC} -B{B} -I{I} -dM -E {W}/ni.c 2>&1 | grep -c '__NO_INLINE__' ; "
