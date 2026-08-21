@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30268   | 2026-08-21T14:46Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10466   | 2026-08-21T12:40Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10469   | 2026-08-21T15:11Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50043   | 2026-08-21T14:52Z |
 
 ## Contracts — blocking, highest priority
@@ -121,8 +121,14 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 
 ## Open — claimable
 
-- [ ] T-lin-10459 [S] Ungate `__int128` + `__float128` across ALL triples/arches (arm64/riscv64/i386/arm + x86_64-PE/win32) — soft-float libcalls + register-pair ABI where no HW type; relax MCC_HAVE_INT128 (mcc.h:1244) / MCC_HAVE_FLOAT128 (mcc.h:1239). DEPS: T-lin-10458[C]. Per-arch verify via qemu/wine. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21
-      OWNER: — | STATE: OPEN | SHA: b59809731 | TS: 2026-08-21T12:40Z | DEPS: T-lin-10458[C]
+- [ ] T-lin-10466 [S] Optimizer test-suite: new `tests/optimizers/` — one PARTIAL per optimization (constfold1.c, dce1.c, licm1.c, cse1.c, strength_reduce1.c, …) that is unoptimized C which mcc SHOULD optimize, + mix/match programs combining partials, each asserting its optimization fired (--stats counter delta / O0-vs-On diff / gcc-O2 parity / disasm grep). DEPS: T-lin-10467 (union opt list), T-lin-10468 (mcc knob map). REF: DETAILS.md#t-lin-10466-optimizer-suite
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10467 [S] Research: exhaustive optimization catalog of the top-20 most-used languages' production compilers (GCC/LLVM/HotSpot/V8/RyuJIT/gc/GHC/LuaJIT/…) → the deduplicated UNION optimization set → DETAILS. Agent-driven (3 agents dispatched 2026-08-21T15:11Z). REF: DETAILS.md#t-lin-10467-lang-opt-catalog
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: —
+- [ ] T-lin-10468 [S] Optimizer gap-analysis: map mcc's MCC_OPT_LIST knobs (mccopt.h) to the T-lin-10467 union set; every standard optimization with NO mcc knob or NO test = a gap → mint a per-gap fix task (find/fix misses in current + future opt strategies). DEPS: T-lin-10467. REF: DETAILS.md#t-lin-10468-optimizer-gaps
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: T-lin-10467
+- [ ] T-lin-10459 [S] Ungate `__int128` + `__float128` across ALL triples/arches (arm64/riscv64/i386/arm + x86_64-PE/win32) — soft-float libcalls + register-pair ABI where no HW type; relax MCC_HAVE_INT128 (mcc.h:1244) / MCC_HAVE_FLOAT128 (mcc.h:1239). Slices 1-6 gcc-parity, 7-8 (32-bit __int128) beyond-gcc per USER (all 8). DEPS: T-lin-10458[C] (satisfied). Per-arch verify via qemu/wine. REF: DETAILS.md#t-lin-10459-ungate
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: T-lin-10458[C]
 - [ ] T-lin-10460 [S] `_Decimal32/64/128` (C23 §H / gcc _Decimal) — parse+type+sizeof(4/8/16)+ABI+`df/dd/dl` literals+arithmetic (BID software via `__bid_*`); distinct VT base code(s). DEPS: T-lin-10458[C]. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21
       OWNER: — | STATE: OPEN | SHA: b59809731 | TS: 2026-08-21T12:40Z | DEPS: T-lin-10458[C]
       SLICE 1 LANDED (4b878fb54, DETAILS#t-lin-10460-decimal-slice1): parse+type+sizeof(4/8/16)+_Generic+is_decimal+x86_64-SSE-ABI; value codegen defers honestly. REMAINING: slice2 BID const encoder + df/dd/dl suffixes; slice3 __bid_* arith/conv (exec via -lgcc). OWNER: lin-x64 | STATE: IN_PROGRESS
