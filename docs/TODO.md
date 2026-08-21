@@ -562,6 +562,73 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
         OWNER: — | STATE: OPEN | SHA: 1695806f | TS: 2026-08-14T12:40Z
         REF: DETAILS.md#t-lin-10093-cimust-run-registered-green-on-each | DEPS: T-lin-10003[C] | NOTE: BLOCKED on Windows selfhost — the ci/must-run-registered, ci/gate-contract and ci/registration-stubs cells are skip-stubbed at CMakeLists 7331 because the selfhost/census drivers need an mcc that can rebuild itself (MCC_EMBED_MCCRT, or a Darwin/mingw target); the MSVC build cannot, so they never run as live cells here (python3 IS wired). Not a quick fix — needs Windows/MSVC selfhost. The gate-contract *tool* is green when run directly (T-win-50001, 251effdc)
 
+### OPTIMIZER GAPS — ROUND 2 (4-agent audit beyond T-lin-10468, minted 2026-08-21). Full catalog + evidence: DETAILS.md#t-lin-10493-optimizer-gaps-round2. All [S], O0-neutral unless noted "rebank" (codegen-fires-at-O0 → owes cross-fleet o0-rebank).
+
+- [ ] T-lin-10493 [S] OPT ROUND2 (keystone): re-curate the -O ladder so -O2/-O3 ≈ gcc/clang -O2 — move LEVEL(4) passes (cse/copy-prop/dse/narrow/reassoc/sethi/if-conv/vrp) down to L2/L3 pass-by-pass; pure gating, each move owes a -O2/-O3 fleet rebank. Benchmarking-parity lever. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10494 [S] OPT ROUND2 (keystone): real -Os/-Oz size profile — today -Os aliases -O2 so every LEVEL(4) size win (zero-bss/narrow/dse/switch-conv) is OFF → -Os emits LARGER code. Give -Os its own knob profile. Gating-only, foundation for 10502/10501. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10495 [S] OPT ROUND2 (keystone): conservative alias/dependence oracle feeding ast_dep_base_distinct (restrict→noalias slice first; then distinct-provenance + coarse TBAA) — unblocks 10496 + sharpens LICM/DSE. `restrict` currently fully discarded (use CType.bs side-channel). REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10496 [S] OPT ROUND2: ship the DEV loop passes interchange/fusion/tiling (all real, reach apply; DEV(LEVEL(12))) onto a real -O level — inert without the oracle. Owes -O rebank on first non-inert fire. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: T-lin-10495
+- [ ] T-lin-10497 [S] OPT ROUND2: superopt (-O13) cost-model upgrade — enable the implemented-but-OFF op/spill weights, add a latency model, wire the dark forecaster (OPT_SEARCH_PREDICT) to prune combo_run, cross-fn search. 4 independent slices. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10498 [S] OPT ROUND2 (keystone for layout): static branch weights — make __builtin_expect + hot/cold attrs non-neutral (currently parsed+dropped), Ball-Larus heuristics → likely-arm fallthrough + block layout. Unblocks 10499/10500/10522. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10499 [S] OPT ROUND2: hot/cold splitting — sink cold-attributed/provably-cold blocks to .text.unlikely. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: T-lin-10498
+- [ ] T-lin-10500 [S] OPT ROUND2: partial inlining (inline hot guard/prologue, outline cold body; GCC -fpartial-inlining) — distinct from 10473 (no cloning). REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: T-lin-10499
+- [ ] T-lin-10501 [S] OPT ROUND2: identical-code folding (ICF) — hash+fold bit/structurally-identical function bodies (no_icf attr already reserved); intra-TU then a linker --icf analog. Distinct from 10475. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10502 [S] OPT ROUND2: machine outlining (-Oz flagship) — suffix-automaton over emitted stream, factor repeated sequences into outlined_N + calls. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: T-lin-10494
+- [ ] T-lin-10503 [S] OPT ROUND2: link-time constant/string merge across TUs (SHF_MERGE/__cstring dedup) in the internal linkers src/objfmt/*. Distinct from 10475 (no IR, pure section dedup). REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10504 [S] OPT ROUND2: stack-slot coloring by local/alloca lifetime (distinct from spill-slot sharing) — overlap disjoint-lifetime large locals to cut frame size. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10505 [S] OPT ROUND2: shrink-wrapping — sink prologue/epilogue callee-save spills past early-exit paths (currently fixed placement). Invasive. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10506 [S] OPT ROUND2: condition-flag (EFLAGS/NZCV) reuse / compare elimination — drop cmp/test when preceding arith already set flags. Ubiquitous. RIR/arch peephole. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10507 [S] OPT ROUND2: machine copy-propagation / redundant-move elim / register coalescing (no machine-level copy-prop exists today; only AST-level). 2-6% win. RIR layer. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10508 [S] OPT ROUND2: store-merging — coalesce adjacent narrow stores (same base, contiguous offsets, no aliasing load) into one wide store. chain-store is re-promotion, not this. RIR peephole. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10509 [S] OPT ROUND2: DivRemPairs — variable-divisor a/b + a%b → one idiv (x86 RAX/RDX) / sdiv+msub (arm64). divmagic is const-divisor only. RIR/mccgen peephole. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10510 [S] OPT ROUND2: bit-idiom recognition (rotate/funnel-shift/bswap-from-shifts, popcount/clz/ctz loops → instruction) + SWAR word-at-a-time (GP-register, size-friendly). Distinct from 10469/10470. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10511 [S] OPT ROUND2: inline small mem/str builtins for RUNTIME args (memcpy/memset/memcmp → word loads/stores) + expand-memcmp/MergeICmps (foldstr only const-folds literals today). Fires at O0 if ungated → rebank. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10512 [S] OPT ROUND2: function-attribute inference (readonly/readnone/noalias/nounwind/willreturn) as a CSE/DSE/LICM ENABLER — call-graph walk over the TU AST. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10513 [S] OPT ROUND2: GlobalOpt — single-TU static-global const-prop / localize-to-fn / internalize (beyond dead-static elim). Distinct from LTO 10475. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10514 [S] OPT ROUND2: general strength reduction — x*C→shift/add/sub trees (non-LEA C), %C beyond pow2, loop mul→add beyond single-IV; extend div-magic/reciprocal coverage. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10515 [S] OPT ROUND2: arm64/riscv64 inline struct copy + arm64 ldp/stp pair formation — non-x86_64 struct copy is a memmove LIBCALL even for 16B; ldp/stp used only in prologue. Fires at O0 → REBANK. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10516 [S] OPT ROUND2: FMA auto-contraction of a*b±c under -ffp-contract / #pragma FP_CONTRACT (both parsed then dropped; gen_fma only reached by __builtin_fma). Flag-gated (no O0 rebank). REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10517 [S] OPT ROUND2: arm64/riscv64 inline atomics (ldxr/stxr + LSE) + order-aware fences — currently every non-x86_64 __atomic_* is a libatomic call; memory_order ignored, __atomic_store never inlined. Fires at O0 → REBANK. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10518 [S] OPT ROUND2: arm64 madd/msub fusion for user a*b±c (MUL emits MADD w/ xzr; MSUB only used internally). Gate O1+. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10519 [S] OPT ROUND2: fast-math FP reassoc / a/b→a*(1/b) reciprocal / no-signed-zeros under -ffast-math (currently only complex limited-range consumes fast_math; REASSOC is int-only). Flag-gated. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10520 [S] OPT ROUND2: arm64 bitfield insert/extract (bfi/ubfx/sbfx; bitfields pre-lowered to shift+mask) + cinc/cneg/csinc cmov variants + per-fn ADRP-page dedup. bitfield fires at O0 → REBANK. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10521 [S] OPT ROUND2 (research): superopt peephole MINING (offline Souper-style) to auto-discover RIR peepholes + optional SMT verification (current legality is sampled JIT-differential, not SMT). REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10522 [S] OPT ROUND2 (research): static-PGO / -fprofile-generate/use scaffolding (branch + value profiling) — the higher-fidelity follow-on to 10498's static weights. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: T-lin-10498
+- [ ] T-lin-10523 [S] OPT ROUND2: adaptive CSE/CPROP window — size the fixed 64/128-node windows from function node count so long straight-line fns stop missing redundancy. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+- [ ] T-lin-10524 [S] OPT ROUND2 (cleanup): retire/repoint inert tree-sra — byte-neutral by construction (front end pre-folds MEMBER refs), ships OFF, and SUPPRESSES real SROA. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+
 ## Blocked — awaiting QUESTIONS.md
 
 
