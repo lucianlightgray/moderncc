@@ -112,6 +112,9 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 
 ## Open — claimable
 
+- [ ] T-mac-30290 [M] FLEET: bump mcc's reported GCC version 4.2.1 → 7.x behind cross-target validation, then unblock T-mac-30178 (`_Float32`/`_Float64` keywords). UNBLOCKED by Q-mac-30258 ANSWER (2026-08-20, user: BUMP `__GNUC__` to 7, VERIFY FIRST). Change is `src/mcc.h:24-26` `MCC_GNUC_MAJOR 4`→`7` (+MINOR/PATCHLEVEL to a real gcc-7, e.g. 7.5.0), emitted at `mccpp.c:6081-6083`. HIGH blast radius — flips every glibc/system-header feature guard between 4.2.1 and 7.x (`__GNUC_PREREQ(7,0)`/(5,…)/(4,…) sites) on ALL targets. NO fleet adoption until all legs green: [mac-arm64] native-arm64 build + arm64-osx feature-guard sweep + stage the bump behind the gate + coordinate merge order (OWNER); [lin-x64] qemu-riscv64+glibc leg — verify `__GNUC_PREREQ(7,0)` makes glibc `bits/floatn-common.h` SKIP `typedef float _Float32;`, + native-lin sweep (lin claiming this child); [win-x64] win/mingw feature-guard sweep. After all green: land the bump, then redo T-mac-30178 `_Float32`/`_Float64` keywords.
+      OWNER: mac-arm64 (coord) | STATE: OPEN | SHA: bb688431 | TS: 2026-08-21T02:58Z
+      REF: DETAILS.md#t-mac-30178-float32-keyword-reverted | DEPS: — (Q-mac-30258 ANSWERED 7a6f5e35); BLOCKS: T-mac-30178
 - [ ] T-win-50019 [S] slice/fault: rewrite the 7 GPU fault-recovery assertions to ACCEPT Windows TDR (adapter-reset) semantics; keep the lavapipe strand/mark-unusable contract for non-TDR (CPU/lavapipe) backends. UNBLOCKED by Q-win-50039 ANSWER (2026-08-21, user via lin-x64: TESTS ACCEPT TDR). suite_fault:4626-4655 (7 of 16 checks fail on RTX 2060 hardware; dispatch + the other 9 pass). Verify on the RTX 2060 (game-off).
       OWNER: — | STATE: OPEN | SHA: b57019f9 | TS: 2026-08-21T02:53Z
       REF: DETAILS.md#t-lin-10092-win-requote-b-2026-08-15-15-of-9406 | DEPS: — (Q-win-50039 ANSWERED 7a6f5e35) | NOTE: unblocked + ready; needs a game-off GPU window (the fault test triggers a TDR display reset) — win deferred it this session per user (chose T-win-50021 first)
@@ -586,8 +589,8 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 ## Blocked — awaiting QUESTIONS.md
 
 - [ ] T-mac-30178 [S] Fix: [MED cluster] `_Float32`/`_Float64` type keywords — the alias-only wiring (ebe583b8) was REVERTED (4ea50353) as a cross-target build regression: glibc `bits/floatn-common.h` typedefs `_Float32`/`_Float64` when `!__GNUC_PREREQ(7,0)` (mcc reports __GNUC__ 4), so a `_Float32` keyword makes `typedef float _Float32;` → "too many basic types" → every glibc `#include <stdio.h>` fails on lin+riscv64. mac gates missed it (freestanding + macOS-SDK-guarded). Proper redo needs a FLEET decision (see Q-mac-30258): bump mcc's __GNUC__ to ≥7 (flips many glibc feature guards, needs cross-target verify — lin offered qemu-riscv64+glibc) OR a Linux-scoped approach. `__fp16` already works (needs nothing); `_Decimal*` is a separate large feature; T-mac-30177's f32/f64 suffix residual restored. DETAILS#t-mac-30178-float32-keyword-reverted.
-      OWNER: — | STATE: BLOCKED | SHA: 4ea50353 | TS: 2026-08-20T05:30Z
-      REF: DETAILS.md#t-mac-30178-float32-keyword-reverted | BLOCKS-ON: Q-mac-30258
+      OWNER: — | STATE: BLOCKED (on T-mac-30290, not the Q) | SHA: 4ea50353 | TS: 2026-08-21T02:58Z
+      REF: DETAILS.md#t-mac-30178-float32-keyword-reverted | BLOCKS-ON: T-mac-30290 (Q-mac-30258 ANSWERED 7a6f5e35 → bump __GNUC__→7 first, then redo)
 
 
 ## Invalidations             ← shared, append-only; removed only on re-scope (§5.2)
