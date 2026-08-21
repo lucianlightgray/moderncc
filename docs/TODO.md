@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30266   | 2026-08-21T08:48Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30266   | 2026-08-21T09:15Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10458   | 2026-08-21T07:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-21T06:16Z |
 
@@ -320,7 +320,6 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 - [ ] T-mac-30102 [S] Fix: [LOW cluster] (1) VLA scope-tracker overflow (>512 open VLAs) FAIL-OPENS the jump-into-VLA-scope check — sticky `vla_track_ovf` (`mccgen.c:17751-17754,17776-17779,17829-17832`, reset only at fn entry `:18067`) makes `vla_scope_open()` return 1/"legal" (`:15439-15440`), so goto (`:16326-16327`) + switch (`:16283-16295`) into-VLA checks never fire → accepts illegal code, runs w/ uninitialized VLA ptr (clang errors). Fix: return 0 (reject) on overflow, or grow tracker. (2) `noreturn`-fall-off-end undiagnosed — explicit `return` warns (`mccgen.c:16052-16053`) but `check_func_return` VT_VOID early-return (`:15054-15056`) skips fall-off; add a noreturn+reachable warning (relates T-mac-30052).
       OWNER: — | STATE: OPEN | SHA: 12b38cd6 | TS: 2026-08-18T04:30Z
       REF: INVESTIGATIONS.md#r18-low-cluster | DEPS: —
-- [ ] T-mac-30253 [S] Fix: [MED] arm64-Darwin: 2+ CONSECUTIVE 1-byte (char) scalars on the stack still mismatch clang cross-module — the stack-arg encoding `a[i]` reserves its low bit as the by-ref marker (`gfunc_prolog` decodes `((a[i]-32)>>1<<1)`, passes `a[i]&1`; `arm64-gen.c`), so T-mac-30080 rounds named scalar stack offsets to min-align-2 and a 2nd adjacent char that Apple places at an odd offset lands 1 byte high. Every non-adjacent-char case is exact. Fix needs widening the `a[]`/by-ref encoding so odd stack offsets are representable, then pack char to align 1. Repro: `adj(a1..a8,char,char,char,int)` → 5233 not 6543 (mcc caller ↔ clang callee). Split from T-mac-30080 (DETAILS#t-mac-30080-arm64-macho-stack-pack).
 - [ ] T-mac-30254 [S] Fix: [MED] arm64-Darwin: named sub-8-byte stack args of a VARIADIC function are 8-slotted and mismatch clang cross-module (PRE-EXISTING — reproduces on pristine mcc, independent of T-mac-30080 which only packs non-variadic calls). The named/variadic boundary in `arm64_pcs_aux` and the va_list gr/vr save-area layout (`gfunc_prolog`) must be reconciled so named stack args before `...` pack to natural size/align while variadic args stay 8-slotted. Repro: `vsum(a1..a8,char named,int cnt,...)` clang callee ↔ mcc caller drops/shifts the variadic run (got 505 not 605). Split from T-mac-30080 (DETAILS#t-mac-30080-arm64-macho-stack-pack).
       OWNER: — | STATE: OPEN | SHA: 86c665d8 | TS: 2026-08-18T03:40Z
       REF: INVESTIGATIONS.md#r16-arm64-darwin-stackpack | DEPS: —
