@@ -1244,8 +1244,12 @@ struct filespec {
 #define VT_FLOAT16 15
 #define VT_BF16 16
 #define VT_FLOAT128 17
+#define VT_DEC32 18		/* _Decimal32 (IEEE 754 decimal32, BID) — T-lin-10460 */
+#define VT_DEC64 19		/* _Decimal64 */
+#define VT_DEC128 20	/* _Decimal128 */
 
 #define IS_HALF_BT(bt) ((bt) == VT_FLOAT16 || (bt) == VT_BF16)
+#define IS_DECIMAL_BT(bt) ((bt) == VT_DEC32 || (bt) == VT_DEC64 || (bt) == VT_DEC128)
 
 /* binary128 is wired where its soft-quad runtime and __*tf* helper tokens exist
    (T-lin-10007 slice 1). Other targets keep the honest __float128 refusal until

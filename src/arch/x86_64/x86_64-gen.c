@@ -1172,6 +1172,9 @@ static X86_64_Mode classify_x86_64_inner(CType *ty) { MCC_TRACE("enter\n");
 	case VT_FLOAT:
 	case VT_DOUBLE:
 	case VT_FLOAT128:
+	case VT_DEC32:
+	case VT_DEC64:
+	case VT_DEC128:
 		return x86_64_mode_sse;
 
 	case VT_LDOUBLE:

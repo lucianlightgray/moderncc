@@ -678,6 +678,10 @@ ST_INLN int is_float16(int t) { MCC_TRACE("enter\n");
 	return IS_HALF_BT(t & VT_BTYPE);
 }
 
+ST_INLN int is_decimal(int t) { MCC_TRACE("enter\n");
+	return IS_DECIMAL_BT(t & VT_BTYPE);
+}
+
 ST_INLN int is_float_abi(int t) { MCC_TRACE("enter\n");
 	return is_float(t) && !IS_HALF_BT(t & VT_BTYPE);
 }
@@ -5064,6 +5068,13 @@ redo:
 		return;
 	}
 
+	/* _Decimal arithmetic is BID-libcall lowering (T-lin-10460 slice 3); slice 1
+	 * provides the types + sizeof + _Generic only.  Honest deferral, no wrong code. */
+	if (is_decimal(t1) || is_decimal(t2)) { MCC_TRACE("br\n");
+		mcc_error("_Decimal arithmetic is not yet implemented "
+							"(T-lin-10460 slice 3)");
+	}
+
 	if (bt1 == VT_FUNC || bt2 == VT_FUNC) { MCC_TRACE("br\n");
 		if (bt2 == VT_FUNC) { MCC_TRACE("br\n");
 			mk_pointer(&vtop->type);
@@ -5647,6 +5658,17 @@ static void gen_cast(CType *type) { MCC_TRACE("enter\n");
 		return;
 	}
 
+	/* _Decimal32/64/128 (T-lin-10460 slice 1): the types parse, size, and are
+	 * distinct for _Generic, but BID value codegen (conversions via __bid_*) is
+	 * slice 3.  A same-type decimal cast is identity; any other conversion is an
+	 * honest not-yet-implemented rather than a silent wrong result. */
+	if (is_decimal(type->t) || is_decimal(vtop->type.t)) { MCC_TRACE("br\n");
+		if ((type->t & VT_BTYPE) == (vtop->type.t & VT_BTYPE))
+			{ MCC_TRACE("br\n"); vtop->type.t = (vtop->type.t & ~VT_BTYPE) | (type->t & VT_BTYPE); return; }
+		mcc_error("_Decimal conversions are not yet implemented "
+							"(T-lin-10460 slice 3)");
+	}
+
 	/* A bit-field source must be materialized to extract its value -- except a
 	 * _BitInt constant, whose c.i already holds the reduced value; forcing it
 	 * into a register would make casts like `(int)(_BitInt(16))70000` non-const
@@ -6189,9 +6211,15 @@ static int type_size_impl(CType *type, int *a) { MCC_TRACE("enter\n");
 	} else if (bt == VT_SHORT || bt == VT_FLOAT16 || bt == VT_BF16) { MCC_TRACE("br\n");
 		*a = 2;
 		return 2;
-	} else if (bt == VT_INT128 || bt == VT_FLOAT128) { MCC_TRACE("br\n");
+	} else if (bt == VT_INT128 || bt == VT_FLOAT128 || bt == VT_DEC128) { MCC_TRACE("br\n");
 		*a = 16;
 		return 16;
+	} else if (bt == VT_DEC64) { MCC_TRACE("br\n");
+		*a = 8;
+		return 8;
+	} else if (bt == VT_DEC32) { MCC_TRACE("br\n");
+		*a = 4;
+		return 4;
 	} else if (bt == VT_QLONG || bt == VT_QFLOAT) { MCC_TRACE("br\n");
 		*a = 8;
 		return 16;
@@ -6417,6 +6445,9 @@ static void verify_assign_cast(CType *dt) { MCC_TRACE("enter\n");
 	case VT_FLOAT16:
 	case VT_BF16:
 	case VT_FLOAT128:
+	case VT_DEC32:
+	case VT_DEC64:
+	case VT_DEC128:
 	case VT_DOUBLE:
 	case VT_LDOUBLE:
 	case VT_BOOL:
@@ -9828,6 +9859,15 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 		case TOK_FLOAT64X:
 			u = VT_LDOUBLE;
 			type->bs = FSPELL_F64X;
+			goto basic_type;
+		case TOK_DECIMAL32:
+			u = VT_DEC32;
+			goto basic_type;
+		case TOK_DECIMAL64:
+			u = VT_DEC64;
+			goto basic_type;
+		case TOK_DECIMAL128:
+			u = VT_DEC128;
 			goto basic_type;
 		case TOK_BFLOAT16:
 			u = VT_BF16;
@@ -17270,6 +17310,9 @@ static int tok_starts_declspec(void) { MCC_TRACE("enter\n");
 	case TOK_BFLOAT16:
 	case TOK_FLOAT128:
 	case TOK_FLOAT128X:
+	case TOK_DECIMAL32:
+	case TOK_DECIMAL64:
+	case TOK_DECIMAL128:
 	case TOK_ENUM:
 	case TOK_STRUCT:
 	case TOK_UNION:
