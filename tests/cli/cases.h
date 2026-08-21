@@ -351,6 +351,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O1 -run {W}/pxb.c && echo RUNOK",
 		 "0\n1\nRUNOK\n"},
 
+		{"u64_to_double_inline", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'double u2d(unsigned long x){return (double)x;}int "
+		 "main(void){unsigned long v=0xFFFFFFFFFFFFFFFFUL;return "
+		 "u2d(v)==18446744073709551616.0?0:1;}\\n' > {W}/ud.c && "
+		 "{MCC} -B{B} -I{I} -O0 -S {W}/ud.c -o {W}/ud0.s && "
+		 "{MCC} -B{B} -I{I} -O1 -S {W}/ud.c -o {W}/ud1.s && "
+		 "grep -c __floatundidf {W}/ud0.s ; grep -c __floatundidf {W}/ud1.s ; "
+		 "grep -cw cvtsi2sd {W}/ud1.s ; "
+		 "{MCC} -B{B} -I{I} -O1 -run {W}/ud.c && echo RUNOK",
+		 "1\n0\n2\nRUNOK\n"},
+
 		{"mul_const_lea_strength", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'int m3(int x){return x*3;}int m5(int x){return x*5;}int "
 		 "m9(int x){return x*9;}int m7(int x){return x*7;}int main(void){"

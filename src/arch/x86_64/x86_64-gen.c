@@ -3273,6 +3273,44 @@ void gen_cvt_itof(int t) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		int r = get_reg(MCC_RC_FLOAT);
 		gv(MCC_RC_INT);
+		if (mcc_state && mcc_state->optimize >= 1 &&
+				(vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
+						(VT_LLONG | VT_UNSIGNED)) { MCC_TRACE("br\n");
+			int pf = (t & VT_BTYPE) == VT_FLOAT ? 0xf3 : 0xf2;
+			int s = vtop->r & VT_VALMASK;
+			int t2, jhi, jend;
+			uint64_t save_pin = ast_pinned_regs;
+			ast_pinned_regs |= (uint64_t)1 << s;
+			t2 = get_reg(MCC_RC_INT);
+			ast_pinned_regs = save_pin;
+			orex(1, s, s, 0x85);
+			o(0xc0 | (REG_VALUE(s) << 3) | REG_VALUE(s));
+			o(0x0f);
+			jhi = gjmp2(0x88, 0);
+			o(0x66); sse_rex(r, r); o(0xef0f);
+			o(0xc0 | (REG_VALUE(r) << 3) | REG_VALUE(r));
+			o(pf); o(0x48 | (REX_BASE(r) << 2) | REX_BASE(s)); o(0x2a0f);
+			o(0xc0 | REG_VALUE(s) | (REG_VALUE(r) << 3));
+			jend = gjmp2(0xe9, 0);
+			gsym(jhi);
+			orex(1, s, t2, 0x89);
+			o(0xc0 | (REG_VALUE(s) << 3) | REG_VALUE(t2));
+			orex(1, 0, t2, 0xd1); o(0xe8 | REG_VALUE(t2));
+			orex(1, 0, s, 0x83); o(0xe0 | REG_VALUE(s)); g(1);
+			orex(1, s, t2, 0x09);
+			o(0xc0 | (REG_VALUE(s) << 3) | REG_VALUE(t2));
+			o(0x66); sse_rex(r, r); o(0xef0f);
+			o(0xc0 | (REG_VALUE(r) << 3) | REG_VALUE(r));
+			o(pf); o(0x48 | (REX_BASE(r) << 2) | REX_BASE(t2)); o(0x2a0f);
+			o(0xc0 | REG_VALUE(t2) | (REG_VALUE(r) << 3));
+			o(pf);
+			if (REX_BASE(r))
+				{ MCC_TRACE("br\n"); o(0x40 | (REX_BASE(r) << 2) | REX_BASE(r)); }
+			o(0x580f); o(0xc0 | (REG_VALUE(r) << 3) | REG_VALUE(r));
+			gsym(jend);
+			vtop->r = r;
+			return;
+		}
 		int w = ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
 										(VT_INT | VT_UNSIGNED) ||
 								(vtop->type.t & VT_BTYPE) == VT_LLONG)

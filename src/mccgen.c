@@ -5445,7 +5445,12 @@ static int gen_cvt_itof1_helper(void) { MCC_TRACE("enter\n");
 }
 static void gen_cvt_itof1(int t) { MCC_TRACE("enter\n");
 	if ((vtop->type.t & (VT_BTYPE | VT_UNSIGNED)) ==
-			(VT_LLONG | VT_UNSIGNED)) { MCC_TRACE("br\n");
+			(VT_LLONG | VT_UNSIGNED)
+#ifdef MCC_TARGET_X86_64
+			&& !(mcc_state && mcc_state->optimize >= 1 &&
+					 (t == VT_FLOAT || t == VT_DOUBLE))
+#endif
+			) { MCC_TRACE("br\n");
 		if (t == VT_FLOAT)
 			{ MCC_TRACE("br\n"); vpush_helper_func(TOK___floatundisf); }
 #if MCC_LDOUBLE_SIZE != 8
