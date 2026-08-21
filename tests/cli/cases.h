@@ -1864,6 +1864,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {D}/width_predef.c -o {W}/width && {W}/width",
 		 "WIDTH_OK\n"},
 
+		{"char_subscripts_warn", "",
+		 "printf 'int f(int*p, char c){ return p[c]; }\\nint g(int*p, unsigned char u){ return p[u]; }\\nint h(int*p, signed char s){ return p[s]; }\\nint k(int*p, int i){ return p[i]; }\\n' > {W}/cs.c && "
+		 "{MCC} -B{B} -I{I} -Wall -c {W}/cs.c -o {W}/cs.o 2>&1 | grep -c \"subscript has type 'char'\" ; echo END",
+		 "1\nEND\n"},
+
 		{"bool_compare_warn", "",
 		 "printf '_Bool b;\\nint f(void){ return b == 2; }\\nint g(void){ return b < 0; }\\nint h(void){ return b == 0; }\\nint j(int x){ return x == 2; }\\n' > {W}/bc.c && "
 		 "{MCC} -B{B} -I{I} -Wall -c {W}/bc.c -o {W}/bc.o 2>&1 | grep -c 'with boolean expression is always' ; echo END",

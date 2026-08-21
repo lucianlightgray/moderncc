@@ -15487,6 +15487,10 @@ tok_next:
 				indir();
 			} else { MCC_TRACE("br\n");
 				gexpr();
+				if ((mcc_state->warn_char_subscripts & WARN_ON) &&
+						(vtop->type.t & (VT_BTYPE | VT_DEFSIGN | VT_UNSIGNED)) == VT_BYTE)
+					{ MCC_TRACE("br\n"); mcc_warning_c(warn_char_subscripts)(
+							"array subscript has type 'char'"); }
 				gen_op('+');
 				if ((vtop->type.t & VT_BTYPE) == VT_PTR &&
 						(pointed_type(&vtop->type)->t & VT_BTYPE) == VT_FUNC)

@@ -761,6 +761,7 @@ struct MCCState {
 	unsigned char warn_sign_compare;
 	unsigned char warn_type_limits;
 	unsigned char warn_bool_compare;
+	unsigned char warn_char_subscripts;
 	unsigned char warn_pointer_sign;
 	unsigned char warn_parentheses;
 	unsigned char warn_switch;
