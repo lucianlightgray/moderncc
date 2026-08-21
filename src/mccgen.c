@@ -1683,12 +1683,16 @@ static void vset_VT_JMP(void) { MCC_TRACE("enter\n");
 	}
 }
 
+static int addr_bool_test_ctx;
+
 static void gvtst_set(int inv, int t) { MCC_TRACE("enter\n");
 	int *p;
 
 	if (vtop->r != VT_CMP) { MCC_TRACE("br\n");
 		vpushi(0);
+		addr_bool_test_ctx = 1;
 		gen_op(TOK_NE);
+		addr_bool_test_ctx = 0;
 		if (vtop->r != VT_CMP) { MCC_TRACE("br\n");
 			/* gen_op left a value rather than a lazy VT_CMP.  If it folded to a
 			 * compile-time constant, its c.i holds the truth value; but a wide
@@ -1740,7 +1744,9 @@ static void gen_test_zero(int op) { MCC_TRACE("enter\n");
 		}
 	} else { MCC_TRACE("br\n");
 		vpushi(0);
+		addr_bool_test_ctx = 1;
 		gen_op(op);
+		addr_bool_test_ctx = 0;
 	}
 }
 
@@ -4951,9 +4957,15 @@ static void check_address_compare(int op) { MCC_TRACE("enter\n");
 	} else { MCC_TRACE("br\n");
 		return;
 	}
-	mcc_warning_c(warn_address)(
-			"the comparison will always evaluate as '%s' for the address of '%s' will never be NULL",
-			op == TOK_NE ? "true" : "false", get_tok_str(s->v & ~SYM_FIELD, NULL));
+	if (addr_bool_test_ctx) { MCC_TRACE("br\n");
+		mcc_warning_c(warn_address)(
+				"the address of '%s' will always evaluate as 'true'",
+				get_tok_str(s->v & ~SYM_FIELD, NULL));
+	} else { MCC_TRACE("br\n");
+		mcc_warning_c(warn_address)(
+				"the comparison will always evaluate as '%s' for the address of '%s' will never be NULL",
+				op == TOK_NE ? "true" : "false", get_tok_str(s->v & ~SYM_FIELD, NULL));
+	}
 }
 
 static void check_enum_compare(void) { MCC_TRACE("enter\n");
