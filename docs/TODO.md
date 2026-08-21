@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30265   | 2026-08-21T02:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30265   | 2026-08-21T03:32Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10457   | 2026-08-21T00:45Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-21T03:11Z |
 
@@ -114,7 +114,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
 ## Open — claimable
 
 - [ ] T-mac-30290 [M] FLEET: bump mcc's reported GCC version 4.2.1 → 7.x behind cross-target validation, then unblock T-mac-30178 (`_Float32`/`_Float64` keywords). UNBLOCKED by Q-mac-30258 ANSWER (2026-08-20, user: BUMP `__GNUC__` to 7, VERIFY FIRST). Change is `src/mcc.h:24-26` `MCC_GNUC_MAJOR 4`→`7` (+MINOR/PATCHLEVEL to a real gcc-7, e.g. 7.5.0), emitted at `mccpp.c:6081-6083`. HIGH blast radius — flips every glibc/system-header feature guard between 4.2.1 and 7.x (`__GNUC_PREREQ(7,0)`/(5,…)/(4,…) sites) on ALL targets. NO fleet adoption until all legs green: [mac-arm64] native-arm64 build + arm64-osx feature-guard sweep + stage the bump behind the gate + coordinate merge order (OWNER); [lin-x64] qemu-riscv64+glibc leg — verify `__GNUC_PREREQ(7,0)` makes glibc `bits/floatn-common.h` SKIP `typedef float _Float32;`, + native-lin sweep (lin claiming this child); [win-x64] win/mingw feature-guard sweep. After all green: land the bump, then redo T-mac-30178 `_Float32`/`_Float64` keywords.
-      OWNER: mac-arm64 (coord) | STATE: OPEN | SHA: bb688431 | TS: 2026-08-21T02:58Z
+      OWNER: mac-arm64 (coord) | STATE: IN_PROGRESS | SHA: bb688431 | TS: 2026-08-21T03:32Z
       REF: DETAILS.md#t-mac-30178-float32-keyword-reverted | DEPS: — (Q-mac-30258 ANSWERED 7a6f5e35); BLOCKS: T-mac-30178
 - [ ] T-win-50019 [S] slice/fault: rewrite the 7 GPU fault-recovery assertions to ACCEPT Windows TDR (adapter-reset) semantics; keep the lavapipe strand/mark-unusable contract for non-TDR (CPU/lavapipe) backends. UNBLOCKED by Q-win-50039 ANSWER (2026-08-21, user via lin-x64: TESTS ACCEPT TDR). suite_fault:4626-4655 (7 of 16 checks fail on RTX 2060 hardware; dispatch + the other 9 pass). Verify on the RTX 2060 (game-off).
       OWNER: — | STATE: OPEN | SHA: b57019f9 | TS: 2026-08-21T02:53Z
