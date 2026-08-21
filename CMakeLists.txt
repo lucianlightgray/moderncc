@@ -5629,6 +5629,14 @@ if(MCC_BUILD_TESTS)
             FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
             PASS_REGULAR_EXPRESSION "const write faults under -run")
 
+        add_test(NAME "jit/blind-retype-safe"
+            COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/benchmarks/retype_superopt/jit_blind.sh")
+        set_tests_properties("jit/blind-retype-safe" PROPERTIES
+            FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+            ENVIRONMENT "MCC=${_mcc_exe};MB=${CMAKE_CURRENT_BINARY_DIR}"
+            PASS_REGULAR_EXPRESSION "jit_blind: PASS"
+            FAIL_REGULAR_EXPRESSION "MISMATCH")
+
         # T-mac-30192: _Alignof(void) is a GNU void-size extension (value 1),
         # not a hard error — parity with sizeof(void).
         add_test(NAME "sizeof/alignof-void"

@@ -22356,8 +22356,12 @@ int mccjit_ast_blind_retype(AstArena *ast) { MCC_TRACE("enter\n");
 	ast_vlat_env = saved_env;
 	ast_cur = sv;
 	if (fallback != AST_NONE) { MCC_TRACE("br\n");
-		int t = ast_type_t(ast, fallback);
-		ast_set_type(ast, fallback, (t & ~VT_BTYPE) | VT_INT, 0);
+		for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+			int t = ast_type_t(ast, n);
+			if ((t & VT_BTYPE) != VT_LLONG)
+				{ MCC_TRACE("br\n"); continue; }
+			ast_set_type(ast, n, (t & ~VT_BTYPE) | VT_INT, 0);
+		}
 		return 1;
 	}
 	return 0;
