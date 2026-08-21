@@ -3671,15 +3671,7 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 				c = (int)((uint32_t *)tokcstr.data)[i];
 				nchars++;
 #else
-				unsigned int u = (unsigned int)((nwchar_t *)tokcstr.data)[i];
-				if (u >= 0xD800 && u <= 0xDBFF && i + 1 < n) { MCC_TRACE("br\n");
-					unsigned int lo = (unsigned int)((nwchar_t *)tokcstr.data)[i + 1] & 0xFFFFu;
-					if (lo >= 0xDC00 && lo <= 0xDFFF) { MCC_TRACE("br\n");
-						u = 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
-						i++;
-					}
-				}
-				c = (int)u;
+				c = (int)(unsigned int)((nwchar_t *)tokcstr.data)[i];
 				nchars++;
 #endif
 			}

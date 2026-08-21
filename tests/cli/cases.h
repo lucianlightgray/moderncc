@@ -1434,6 +1434,10 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'int f(void){int x=0;asm volatile(\"\":\"=m\"(x)::);asm volatile(\"\":::);return x;}\\n' > {W}/aec.c && {MCC} -B{B} -c {W}/aec.c -o {W}/aec.o && echo AEC_OK",
 		 "AEC_OK\n"},
 
+		{"u32char_no_surrogate_fuse", "",
+		 "printf 'int main(void){return (U'\\''\\\\xD800\\\\xDC00'\\''==0xDC00 && U'\\''\\\\U0001F600'\\''==0x1F600)?0:1;}\\n' > {W}/u32c.c && {MCC} -B{B} -run {W}/u32c.c && echo U32C_OK",
+		 "U32C_OK\n"},
+
 		{"dumpmachine", "os!=WIN32",
 		 "{MCC} -dumpmachine | grep -qE '^(x86_64|i386|i686|aarch64|arm64|arm|riscv64)-' && echo TRIPLE_OK",
 		 "TRIPLE_OK\n"},
