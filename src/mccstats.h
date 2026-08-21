@@ -36,7 +36,8 @@ void mcc_stats_search_memo(int hit);
 void mcc_stats_strat_hits(const int *sf, int n);
 
 void mcc_stats_jit_recompile(void);
-void mcc_stats_jit_blind(int n);
+void mcc_stats_jit_blind(int n, int proven);
+void mcc_stats_jit_blind_promote(void);
 void mcc_stats_jit_kgc_hit(void);
 void mcc_stats_jit_kgc_miss(void);
 void mcc_stats_jit_poison(void);

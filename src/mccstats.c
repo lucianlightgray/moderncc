@@ -116,6 +116,8 @@ typedef struct McccStats {
 
 	unsigned long jit_recompiles;
 	unsigned long jit_blind_variants;
+	unsigned long jit_blind_proven;
+	unsigned long jit_blind_promoted;
 	unsigned long jit_kgc_hits;
 	unsigned long jit_kgc_misses;
 	unsigned long jit_poison;
@@ -409,6 +411,9 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 			mccstats_row(r, "          blind retype: %lu variants tried  %lu/%llu calls matched original (%u%% accurate)",
 									 mcs.jit_blind_variants, mcs.jit_kgc_hits,
 									 (unsigned long long)tot, pct);
+			mccstats_row(r, "          blind promote: %lu vlat-proven  %lu hard-promoted (baseline skipped)  %lu shadow-compared",
+									 mcs.jit_blind_proven, mcs.jit_blind_promoted,
+									 mcs.jit_blind_variants - mcs.jit_blind_promoted);
 		}
 		if (mcs.jit_nearmatch || mcs.jit_kgc_corrections) { MCC_TRACE("br\n");
 			mccstats_row(r, "          near-match: %lu variants kept  %lu corrections patched",
@@ -703,10 +708,18 @@ void mcc_stats_jit_recompile(void) { MCC_TRACE("enter\n");
 	mcs.jit_recompiles++;
 }
 
-void mcc_stats_jit_blind(int n) { MCC_TRACE("enter\n");
+void mcc_stats_jit_blind(int n, int proven) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_blind_variants += (unsigned long)n;
+	if (proven)
+		{ MCC_TRACE("br\n"); mcs.jit_blind_proven += (unsigned long)n; }
+}
+
+void mcc_stats_jit_blind_promote(void) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	mcs.jit_blind_promoted++;
 }
 
 void mcc_stats_jit_kgc_hit(void) { MCC_TRACE("enter\n");

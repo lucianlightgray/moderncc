@@ -14,5 +14,5 @@ for k in fits needs64; do
 	safe=$([ "$off" = "$on" ] && echo SAFE-IDENTICAL || echo "MISMATCH($off/$on)")
 	echo "### $k   result=$off   blind-on-vs-off: $safe"
 	env $WIDE MCC_STATS_FORCE=1 MCC_JIT=1 MCC_JIT_BLIND_RETYPE=1 "$MCC" -B"$MB" -O2 --stats=2 -run "$src" 2>&1 \
-		| grep -iE 'blind retype:|kgc hits|poison=' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g; s/^\[2K//; s/^/  /'
+		| grep -iE 'blind retype:|blind promote:|kgc hits|poison=' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g; s/^\[2K//; s/^/  /'
 done

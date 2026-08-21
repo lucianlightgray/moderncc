@@ -443,6 +443,7 @@ static int mccjit_internal_compile;
 static uint64_t mccjit_recompile_gate_mask;
 static int mccjit_recompile_use_gates;
 static int mccjit_recompile_blind_retype;
+static int mccjit_last_blind_proven;
 static unsigned long mccjit_search_budget_baked_s;
 
 typedef struct MccjitOverride {
@@ -741,8 +742,11 @@ static void *mccjit_recompile_common(const void *buf, size_t len, int do_spec,
 			mccjit_slice_hotpatch(it.arena);
 			if (mccjit_recompile_blind_retype) { MCC_TRACE("br\n");
 				int rt = mccjit_ast_blind_retype(it.arena);
+				mccjit_last_blind_proven = (rt == 2);
 				if (rt && mcc_stats_mask)
-					{ MCC_TRACE("br\n"); mcc_stats_jit_blind(rt); }
+					{ MCC_TRACE("br\n"); mcc_stats_jit_blind(1, rt == 2); }
+			} else { MCC_TRACE("br\n");
+				mccjit_last_blind_proven = 0;
 			}
 			if (mccjit_recompile_use_gates)
 				{ MCC_TRACE("br\n"); ast_reemit_with_gates(sym, it.arena, mccjit_recompile_gate_mask); }
@@ -1040,7 +1044,16 @@ static void mccjit_boot_swap_run(void **slot, const void *blob, unsigned long le
 									: mcc_env_on("MCC_JIT_BLIND_RETYPE")
 											? mcc_jit_recompile_blob_retype(blob, (size_t)len)
 											: mcc_jit_recompile_blob(blob, (size_t)len);
-		if (variant && !no_kgc && mccjit_last_kgc_ok) { MCC_TRACE("br\n");
+		if (variant && mcc_env_on("MCC_JIT_BLIND_RETYPE") &&
+				mccjit_last_blind_proven) { MCC_TRACE("br\n");
+			entry = mccjit_make_trampoline(variant);
+			if (entry) { MCC_TRACE("br\n");
+				routed = 1;
+				if (mcc_stats_mask)
+					{ MCC_TRACE("br\n"); mcc_stats_jit_blind_promote(); }
+			}
+		}
+		if (!entry && variant && !no_kgc && mccjit_last_kgc_ok) { MCC_TRACE("br\n");
 			int memoize_ok;
 			uint32_t nargs = mccjit_last_nparam;
 			int ret_wide = mccjit_last_ret_wide;
@@ -1171,9 +1184,17 @@ static void *mccjit_lazy_build_masked(const void *blob, unsigned long len,
 															? mcc_jit_recompile_blob_gated(blob, (size_t)len, gate_mask)
 															: mcc_jit_recompile_blob(blob, (size_t)len);
 	void *entry = NULL;
+	int blind_proven = mcc_env_on("MCC_JIT_BLIND_RETYPE") && mccjit_last_blind_proven;
 	mccjit_variant_cost = mccjit_last_cost;
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = 0; }
+	if (variant && blind_proven) { MCC_TRACE("br\n");
+		entry = mccjit_make_trampoline(variant);
+		if (entry && mcc_stats_mask)
+			{ MCC_TRACE("br\n"); mcc_stats_jit_blind_promote(); }
+		if (entry)
+			{ MCC_TRACE("br\n"); return entry; }
+	}
 	if (variant && !no_kgc && mccjit_last_kgc_ok) { MCC_TRACE("br\n");
 		uint32_t nargs = mccjit_last_nparam;
 		int ret_wide = mccjit_last_ret_wide;

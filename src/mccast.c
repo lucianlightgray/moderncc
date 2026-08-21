@@ -22329,15 +22329,36 @@ void ast_reemit_with_gates(Sym *sym, AstArena *ast, uint64_t gate_mask) { MCC_TR
 
 int mccjit_ast_blind_retype(AstArena *ast) { MCC_TRACE("enter\n");
 	AstLocal n, nn;
+	AstLocal fallback = AST_NONE;
+	AstArena *sv = ast_cur;
+	int saved_env;
 	if (!ast)
 		{ MCC_TRACE("br\n"); return 0; }
+	ast_cur = ast;
+	saved_env = ast_vlat_env;
+	ast_vlat_env = 1;
 	nn = ast->count;
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
 		int t = ast_type_t(ast, n);
-		if ((t & VT_BTYPE) == VT_LLONG) { MCC_TRACE("br\n");
+		int off, kt;
+		if ((t & VT_BTYPE) != VT_LLONG)
+			{ MCC_TRACE("br\n"); continue; }
+		if (fallback == AST_NONE)
+			{ MCC_TRACE("br\n"); fallback = n; }
+		if (ast_vlat_use_of(ast, n, &off, &kt) &&
+				ast_vlat_narrowing(ast, off, VT_INT)) { MCC_TRACE("br\n");
 			ast_set_type(ast, n, (t & ~VT_BTYPE) | VT_INT, 0);
-			return 1;
+			ast_vlat_env = saved_env;
+			ast_cur = sv;
+			return 2;
 		}
+	}
+	ast_vlat_env = saved_env;
+	ast_cur = sv;
+	if (fallback != AST_NONE) { MCC_TRACE("br\n");
+		int t = ast_type_t(ast, fallback);
+		ast_set_type(ast, fallback, (t & ~VT_BTYPE) | VT_INT, 0);
+		return 1;
 	}
 	return 0;
 }
