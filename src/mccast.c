@@ -99,6 +99,11 @@ typedef char ast_vt_bitfield_check[VT_BITFIELD == 0x0100 ? 1 : -1];
  * AST_FB_STORE_CMP_GV and corrupts bit-field stores under the -O1 optimizer); replay
  * translates it back to VT_REVSO on the SValue.  See mccgen.c:13958 (parser origin). */
 #define AST_FB_MEMBER_REVSO 16777216u
+/* T-lin-10457 (3): a blind-retype-narrowed COMPUTATION node whose int arithmetic
+ * must be overflow-guarded — the reemit emits `seto; or -> mccjit_boundary_hit`
+ * after the op, and the KGC stub deopts to baseline on any hit. Set only under
+ * MCC_JIT_BLIND_RETYPE (default off) -> o0-neutral. */
+#define AST_FB_JIT_GUARD 33554432u
 
 struct AstArena {
 	uint16_t *kind;
@@ -22364,6 +22369,12 @@ int mccjit_ast_blind_retype(AstArena *ast) { MCC_TRACE("enter\n");
 						ast_vlat_use_of(ast, n, &off, &kt));
 			}
 			ast_set_type(ast, n, (t & ~VT_BTYPE) | VT_INT, 0);
+			if (ast_kind(ast, n) == AST_Binary) { MCC_TRACE("br\n");
+				int bop = ast_op(ast, n);
+				if (bop == '+' || bop == '-' || bop == '*')
+					{ MCC_TRACE("br\n"); ast_set_fbits(ast, n,
+							ast_fbits(ast, n) | AST_FB_JIT_GUARD); }
+			}
 		}
 		ast_vlat_env = saved_env;
 		ast_cur = sv;
