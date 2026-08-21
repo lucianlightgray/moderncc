@@ -121,6 +121,19 @@ differ)
 		if [ "$EXECVIA" = "run" ]; then
 			out=$(env $EENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" -run "$SRC" $LDF 2>&1) ||
 				{ echo "FAIL $NAME: $gflag -run failed"; echo "  output: $out"; exit 1; }
+			if [ "${OPTFIRE_AOT:-0}" = "1" ]; then
+				env $EENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" "$SRC" -o "$opt.aot.$v" $LDF \
+					>"$WORK/$NAME.aot.$v.err" 2>&1 ||
+					{ echo "FAIL $NAME: $gflag AOT build failed"; ofdiag "$WORK/$NAME.aot.$v.err"; exit 1; }
+				aout=$(env $EENV $RUN "$opt.aot.$v" 2>&1) ||
+					{ echo "FAIL $NAME: $gflag AOT run failed"; echo "  output: $aout"; exit 1; }
+				[ "$aout" = "$out" ] || {
+					echo "FAIL $NAME: $gflag AOT-vs-JIT mismatch (internal-reloc -run != AOT binary)"
+					echo "  JIT(-run): $out"
+					echo "  AOT(exec): $aout"
+					exit 1
+				}
+			fi
 		else
 			env $EENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" "$SRC" -o "$opt.$v" $LDF \
 				>"$WORK/$NAME.$v.err" 2>&1 ||

@@ -6777,7 +6777,7 @@ if(MCC_BUILD_TESTS)
                                                     "${_ofopt}" "${_ofarg}" "${_ofextra}" "-")
                                         set_tests_properties("optfire-${_ofm_leg}/${_ofname}" PROPERTIES
                                             FIXTURES_REQUIRED "${_ofm_fix}" SKIP_RETURN_CODE 77 LABELS "macho;native"
-                                            ENVIRONMENT "OPTFIRE_EXECVIA=run;OPTFIRE_RUN=${_ofm_runpfx};OPTFIRE_MCCFLAGS=-B${_ofm_bdir}")
+                                            ENVIRONMENT "OPTFIRE_EXECVIA=run;OPTFIRE_AOT=1;OPTFIRE_RUN=${_ofm_runpfx};OPTFIRE_MCCFLAGS=-B${_ofm_bdir}")
                                     else()
                                         mcc_skip_test("optfire-${_ofm_leg}/${_ofname}"
                                             "no cmake-macos-x64/mcc (x86_64 Rosetta backend build) on this host, so the x86_64-osx JIT -run leg can't register; build it with: CC=/usr/bin/cc cmake -S . -B cmake-macos-x64 -G Ninja -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64 && ninja -C cmake-macos-x64 mcc runmain.o libmccrt.a"
