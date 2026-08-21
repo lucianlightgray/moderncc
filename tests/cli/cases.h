@@ -1495,6 +1495,13 @@ static const cli_case_t cli_cases[] = {
 		 "{ [ \"$c\" -eq \"$b\" ] && echo prob=nobloat || echo prob=BLOAT; }; echo END",
 		 "expect=nobloat\nprob=nobloat\nEND\n"},
 
+		{"always_inline_out_of_line_emit", "",
+		 "printf 'inline __attribute__((always_inline)) int add(int a,int b){ return a+b; }\\nint main(void){ return add(2,3)==5 ? 0 : 1; }\\n' > {W}/ai.c && "
+		 "printf 'inline int pf(int a){ return a+1; }\\nint main(void){ return pf(4); }\\n' > {W}/pi.c && "
+		 "{ {MCC} -B{B} -nostdinc {W}/ai.c -o {W}/ai && {W}/ai && echo ai=OK || echo ai=FAIL; "
+		 "{MCC} -B{B} -nostdinc {W}/pi.c -o {W}/pi 2>/dev/null && echo pi=LINK || echo pi=noemit; }",
+		 "ai=OK\npi=noemit\n"},
+
 		{"local_label_address", "",
 		 "printf 'int f(int x){ __label__ a,b; static void*jt[2]; jt[0]=&&a; jt[1]=&&b; goto *jt[x]; a: return 1; b: return 2; }\\nint main(void){ return (f(0)==1 && f(1)==2) ? 0 : 1; }\\n' > {W}/ll.c && "
 		 "{ {MCC} -B{B} -nostdinc {W}/ll.c -o {W}/ll && {W}/ll && echo OK || echo FAIL; }",

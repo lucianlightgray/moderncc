@@ -19977,7 +19977,8 @@ static void gen_inline_functions(MCCState *s) {
 				{ MCC_TRACE("br\n"); continue; }
 			int emit = !(sym->type.t & VT_INLINE) ||
 								 ((sym->type.t & VT_STATIC) && (sym->c || sym->a.retain));
-			if (mcc_state->c99_inline_body && !emit && sym->c &&
+			if ((mcc_state->c99_inline_body ||
+						 (sym->type.ref && sym->type.ref->f.func_alwinl)) && !emit && sym->c &&
 					(sym->type.t & VT_INLINE) && !(sym->type.t & VT_STATIC)) { MCC_TRACE("br\n");
 				sym->type.t &= ~VT_INLINE;
 				sym->a.weak = 1;
