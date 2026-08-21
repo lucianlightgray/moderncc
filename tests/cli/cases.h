@@ -146,6 +146,11 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -Wimplicit-fallthrough -c {W}/ifa.c -o {W}/ifa.o 2>&1 | grep -c 'fall through' ; echo OK ; }",
 		 "this statement may fall through\n0\n0\n0\n0\nOK\n"},
 
+		{"nonnull_null_arg_warn", "",
+		 "printf '__attribute__((nonnull(1))) void h(int*);\\n__attribute__((nonnull)) void h2(int*,int*);\\n__attribute__((nonnull(2))) void h3(int,int*);\\nvoid u(void){ h(0); h2(0,0); h3(0,0); int a; h(&a); int*p=0; h(p); }\\n' > {W}/nn.c && "
+		 "{ {MCC} -B{B} -I{I} -Wall -c {W}/nn.c -o {W}/nn.o 2>&1 | grep -c 'null where non-null' ; echo OK ; }",
+		 "4\nOK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"

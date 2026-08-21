@@ -15667,6 +15667,7 @@ tok_next:
 			next();
 			sa = s->next;
 			nb_args = regsize = 0;
+			unsigned nn_null = 0;
 			ret.r2 = VT_CONST;
 			if ((s->type.t & VT_BTYPE) == VT_STRUCT) { MCC_TRACE("br\n");
 				variadic = (s->f.func_type == FUNC_ELLIPSIS);
@@ -15717,6 +15718,8 @@ tok_next:
 					} else { MCC_TRACE("br\n");
 						int pre_seq;
 						expr_eq();
+						if (nb_args < 16 && is_null_pointer(vtop))
+							{ MCC_TRACE("br\n"); nn_null |= 1u << nb_args; }
 						pre_seq = rir_cast_seq;
 						gfunc_param_typed(s, sa);
 						rir_hook_call_argcast(pre_seq);
@@ -15789,7 +15792,7 @@ tok_next:
 							{ MCC_TRACE("br\n"); is_nn = pa && (pa->type.t & VT_BTYPE) == VT_PTR; }
 						else if (k <= 16)
 							{ MCC_TRACE("br\n"); is_nn = (ca.nonnull_mask >> (k - 1)) & 1; }
-						if (is_nn && is_null_pointer(vtop - (nb_args - k)))
+						if (is_nn && k <= 16 && ((nn_null >> (k - 1)) & 1))
 							{ MCC_TRACE("br\n"); mcc_warning_c(warn_nonnull)(
 									"argument %d null where non-null expected", k); }
 						if (pa)
