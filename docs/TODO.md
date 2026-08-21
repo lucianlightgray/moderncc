@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30269   | 2026-08-21T16:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30269   | 2026-08-21T16:33Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10476   | 2026-08-21T16:04Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50044   | 2026-08-21T15:59Z |
 
@@ -408,8 +408,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       OWNER: — | STATE: OPEN | SHA: ef7e016a | TS: 2026-08-18T00:32Z
       REF: INVESTIGATIONS.md#r9-run-loader | DEPS: —
 - [ ] T-mac-30050 [S] Investigate: type compatibility/qualifiers — [MED] `_Atomic` swept into `VT_QUALIFY` (`mcc.h:1213`) so it's stripped by the unqualified param compare (`mccgen.c:4481`) → `void f(_Atomic int); void f(int);` silently accepted (clang: conflicting types); `_Atomic` is a distinct type not a mere qualifier, unlike the deliberately-ignored top-level const/volatile params (DETAILS:10328); [LOW/latent] enum→underlying substitution in `compare_types` drops the enum operand's own const/volatile (`mccgen.c:4452/4454`). const-discard/`const char**`/func/tag/array compat all ROBUST
-      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: ef7e016a | TS: 2026-08-21T16:20Z
-      REF: INVESTIGATIONS.md#r9-type-compat | DEPS: — | NOTE (mac-arm64 2026-08-21): claimed — verified vs BOTH oracles: `void f(_Atomic int); void f(int);` → gcc-16 AND clang both "conflicting types", mcc rc0 (silently accepts). Fixing `compare_types` to treat VT_ATOMIC_BIT as a distinctness bit (not stripped by unqualified), mirroring the _BitInt/_FloatN/_Sat distinctness checks.
+      OWNER: — | STATE: OPEN | SHA: 21fe327e | TS: 2026-08-21T16:33Z | NOTE (mac-arm64 2026-08-21): **PRIMARY [MED] SLICE DONE (21fe327e)** — `void f(_Atomic int); void f(int);` now rejected "incompatible types for redefinition" == gcc-16 AND clang (were both "conflicting types"; mcc silently accepted). FIX: `is_compatible_param` returns 0 on `VT_ATOMIC_BIT` mismatch (scoped to param/func-ptr compat). **FALSE START banked:** putting it in `compare_types` broke atomic struct-store (compare_types is shared with the assignment CONVERTIBILITY gate where struct→_Atomic struct must pass) — DETAILS#t-mac-30050-atomic-param-distinct. Valid atomic code + _Generic unaffected; o0-baseline NEUTRAL; cli/atomic_param_type_distinct (no filter, all boxes); full native suite green (cli 466/exec 374/treegate 13/diff3). RESIDUALS (task stays OPEN): (a) atomic-mismatched POINTER assign still unwarned (separate assign-compat path); (b) return-type atomic mismatch unchecked (is_compatible_unqualified_types, not is_compatible_param); (c) sub-item 2 enum const/volatile-drop (mccgen.c:4452/4454) untouched.
 - [ ] T-mac-30051 [S] Investigate: i386 call-site frame alignment + `get_reg` fail-safe (arm64/x86_64 spill/frame ROBUST, differential-verified) — [MED] i386 frame rounds only 4-byte (`(-loc+3)&-4`, `i386-gen.c:826`) + `gfunc_call` cleanup does no 16/8-byte outgoing-frame alignment (unconditional, incl. non-leaf) → violates 16-byte SysV/Darwin i386 call-site ABI, non-leaf into SSE-aligned code can fault (contrast arm32=8/x86_64/arm64=16); [LOW/latent] `get_reg` returns -1 on class exhaustion, 11 call sites use it unchecked (`mccgen.c:2140` → `load(-1)`/`reg_classes[-1]`) — unreachable today (promote-locals only pins callee-saved), should hard-error to fail safe
       OWNER: — | STATE: OPEN | SHA: ef7e016a | TS: 2026-08-18T00:32Z
       REF: INVESTIGATIONS.md#r9-i386-frame-align | DEPS: —
