@@ -309,6 +309,7 @@ struct SymAttr {
 			nodebug : 1,
 			transp_union : 1,
 			is_complex : 1,
+			is_imaginary : 1,
 			is_vector : 1,
 			is_wideint : 1,
 			is_bitint : 1,
@@ -1093,6 +1094,9 @@ struct MCCState {
 	int gen_complex_re_tok, gen_complex_im_tok;
 	CType gen_complex_type_cache[32];
 	int gen_complex_type_cache_n;
+	int gen_imaginary_im_tok;
+	CType gen_imaginary_type_cache[32];
+	int gen_imaginary_type_cache_n;
 	CType gen_vector_type_cache[64];
 	int gen_vector_type_cache_n;
 	CType gen_wideint_type_cache[4];

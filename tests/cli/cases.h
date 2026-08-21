@@ -63,6 +63,24 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/g128.c && echo OK",
 		 "OK\n"},
 
+		{"imaginary_type", "",
+		 "printf 'int main(void){"
+		 "_Imaginary float xf;_Imaginary double xd;_Imaginary long double xl;_Imaginary xdef;"
+		 "int ok=sizeof(xf)==sizeof(float)&&sizeof(xd)==sizeof(double)"
+		 "&&sizeof(xl)==sizeof(long double)&&sizeof(xdef)==sizeof(double)"
+		 "&&_Alignof(_Imaginary float)==_Alignof(float)"
+		 "&&_Generic(xf,_Imaginary float:1,float:0,_Complex float:0,_Imaginary double:0,default:9)==1"
+		 "&&_Generic((float)0,_Imaginary float:0,float:1,default:9)==1"
+		 "&&_Generic((_Complex float)0,_Imaginary float:0,_Complex float:1,default:9)==1"
+		 "&&_Generic(xd,_Imaginary float:0,_Imaginary double:1,default:9)==1"
+		 "&&__builtin_types_compatible_p(_Imaginary float,float)==0"
+		 "&&__builtin_types_compatible_p(_Imaginary float,_Complex float)==0"
+		 "&&__builtin_types_compatible_p(_Imaginary float,_Imaginary double)==0"
+		 "&&__builtin_types_compatible_p(_Imaginary float,_Imaginary float)==1;"
+		 "return ok?0:1;}\\n' > {W}/imag.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/imag.c && echo OK",
+		 "OK\n"},
+
 		{"complex_bitint", "",
 		 "printf 'int main(void){"
 		 "_Complex _BitInt(20) z=2+3i,w=4+5i,s=z+w,p=z*w;"
@@ -2472,13 +2490,16 @@ static const cli_case_t cli_cases[] = {
 		 "nm {W}/ia.o | grep -oE 'U __atomic_(store|load)' | sort -u",
 		 "U __atomic_load\nU __atomic_store\n"},
 
-		{"imaginary_not_supported", "",
-		 "printf '_Imaginary float x;\\n' > {W}/im.c && "
-		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/im.c -o {W}/im.o 2>&1 | "
-		 "grep -oE 'imaginary types are not supported'; "
+		{"imaginary_type_errors", "",
+		 "printf '_Imaginary int x;\\n' > {W}/im1.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/im1.c -o {W}/im1.o 2>&1 | "
+		 "grep -oE 'requires a floating-point type'; "
+		 "printf '_Complex _Imaginary double y;\\n' > {W}/im2.c && "
+		 "{MCC} -B{B} -I{I} -c {W}/im2.c -o {W}/im2.o 2>&1 | "
+		 "grep -oE '_Complex _Imaginary' | head -1; "
 		 "printf '#include <complex.h>\\ndouble _Complex z=1.0;\\nint main(void){return 0;}\\n' > {W}/cx.c && "
 		 "{MCC} -B{B} -I{I} -std=c11 {W}/cx.c -o {W}/cx && echo COMPLEX_OK",
-		 "imaginary types are not supported\nCOMPLEX_OK\n"},
+		 "requires a floating-point type\n_Complex _Imaginary\nCOMPLEX_OK\n"},
 
 		{"noreturn_returns", "",
 		 "printf '_Noreturn void f(int x){ if(x) return; for(;;); }\\n"

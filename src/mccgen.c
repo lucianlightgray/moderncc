@@ -693,6 +693,10 @@ static inline int is_complex_type(CType *type) { MCC_TRACE("enter\n");
 	return (type->t & VT_BTYPE) == VT_STRUCT && type->ref->a.is_complex;
 }
 
+static inline int is_imaginary_type(CType *type) { MCC_TRACE("enter\n");
+	return (type->t & VT_BTYPE) == VT_STRUCT && type->ref->a.is_imaginary;
+}
+
 static inline int is_vector_type(CType *type) { MCC_TRACE("enter\n");
 	return (type->t & VT_BTYPE) == VT_STRUCT && type->ref->a.is_vector;
 }
@@ -8471,6 +8475,40 @@ static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); cache[mcc_state->gen_complex_type_cache_n++] = *type; }
 }
 
+static void mk_imaginary_type(CType *type, CType *base) { MCC_TRACE("enter\n");
+	CType *cache = mcc_state->gen_imaginary_type_cache;
+	int i, n = mcc_state->gen_imaginary_type_cache_n;
+	int bkey = base->t & (VT_BTYPE | VT_LONG | VT_UNSIGNED);
+	Sym *s, *f0;
+	AttributeDef ad;
+
+	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
+		Sym *e = cache[i].ref->next;
+		if ((e->type.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED)) == bkey &&
+				e->type.ref == base->ref) { MCC_TRACE("br\n");
+			*type = cache[i];
+			return;
+		}
+	}
+	if (!mcc_state->gen_imaginary_im_tok) { MCC_TRACE("br\n");
+		mcc_state->gen_imaginary_im_tok = tok_alloc_const("__imag");
+	}
+	s = sym_push2(&global_stack, anon_sym++ | SYM_STRUCT, VT_STRUCT, -1);
+	s->r = 0;
+	s->a.is_imaginary = 1;
+	f0 = sym_push2(&global_stack, mcc_state->gen_imaginary_im_tok | SYM_FIELD, base->t, 0);
+	f0->type.ref = base->ref;
+	f0->type.bp = 0;
+	f0->type.bs = 0;
+	s->next = f0, f0->next = NULL;
+	type->t = VT_STRUCT;
+	type->ref = s;
+	memset(&ad, 0, sizeof ad);
+	struct_layout(type, &ad);
+	if (n < (int)(sizeof(mcc_state->gen_imaginary_type_cache) / sizeof(CType)))
+		{ MCC_TRACE("br\n"); cache[mcc_state->gen_imaginary_type_cache_n++] = *type; }
+}
+
 static void mk_vector_type(CType *type, CType *base, int nelem) { MCC_TRACE("enter\n");
 	Sym *s, *f, *prev = NULL;
 	AttributeDef ad;
@@ -9772,6 +9810,7 @@ static int apply_attr_mode(int t, int attr_mode) { MCC_TRACE("enter\n");
 
 static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TRACE("enter\n");
 	int t, u, bt, st, type_found, typespec_found, g, n, complex_seen, ext_seen;
+	int imaginary_seen;
 	int int256_seen;
 	int bitint_seen, bitint_n;
 	int fract_seen, accum_seen, sat_seen;
@@ -9784,6 +9823,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	type_found = 0;
 	typespec_found = 0;
 	complex_seen = 0;
+	imaginary_seen = 0;
 	int256_seen = 0;
 	bitint_seen = 0;
 	bitint_n = 0;
@@ -9992,7 +10032,11 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			typespec_found = 1;
 			break;
 		case TOK_IMAGINARY:
-			mcc_error("imaginary types are not supported");
+			if (mcc_state->cversion < 199901)
+				{ MCC_TRACE("br\n"); mcc_pedantic("'_Imaginary' is a C99 feature"); }
+			imaginary_seen = 1;
+			next();
+			typespec_found = 1;
 			break;
 		case TOK_FLOAT:
 			u = VT_FLOAT;
@@ -10276,7 +10320,9 @@ the_end:
 		{ MCC_TRACE("br\n"); ad->implicit_int = 1; }
 	if (int256_seen && (bt != -1 || st != -1))
 		{ MCC_TRACE("br\n"); mcc_error("too many basic types"); }
-	if (complex_seen && bt == -1 && st == -1 && !(t & VT_DEFSIGN))
+	if (complex_seen && imaginary_seen)
+		{ MCC_TRACE("br\n"); mcc_error("'_Complex _Imaginary' is invalid"); }
+	if ((complex_seen || imaginary_seen) && bt == -1 && st == -1 && !(t & VT_DEFSIGN))
 		{ MCC_TRACE("br\n"); t = (t & ~(VT_BTYPE | VT_LONG)) | VT_DOUBLE; }
 	if (mcc_state->char_is_unsigned) { MCC_TRACE("br\n");
 		if ((t & (VT_DEFSIGN | VT_BTYPE)) == VT_BYTE)
@@ -10292,6 +10338,8 @@ the_end:
 	if (int256_seen) { MCC_TRACE("br\n");
 		if (complex_seen)
 			{ MCC_TRACE("br\n"); mcc_error("'_Complex __int256' is not supported"); }
+		if (imaginary_seen)
+			{ MCC_TRACE("br\n"); mcc_error("'_Imaginary __int256' is not supported"); }
 		mk_wideint_type(type, (t & VT_UNSIGNED) != 0, 4);
 		type->t |= t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_EXTERN |
 										VT_STATIC | VT_TYPEDEF | VT_INLINE | VT_TLS);
@@ -10300,6 +10348,8 @@ the_end:
 	if (bitint_seen) { MCC_TRACE("br\n");
 		int uns = (t & VT_UNSIGNED) != 0;
 		int sbt;
+		if (imaginary_seen)
+			{ MCC_TRACE("br\n"); mcc_error("'_Imaginary _BitInt' is not supported"); }
 		/* C23 6.2.5p11: a signed _BitInt needs at least 2 bits (one sign, one
 		 * value); an unsigned _BitInt at least 1. */
 		if (bitint_n < 1 + !uns)
@@ -10363,6 +10413,19 @@ the_end:
 		else if (!is_float(base.t))
 			{ MCC_TRACE("br\n"); mcc_pedantic("ISO C does not support complex integer types"); }
 		mk_complex_type(type, &base);
+		type->t |= t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_DEFSIGN | VT_EXTERN | VT_STATIC | VT_TYPEDEF |
+										VT_INLINE);
+		return type_found;
+	}
+	if (imaginary_seen) { MCC_TRACE("br\n");
+		CType base;
+		base.t = t & (VT_BTYPE | VT_LONG | VT_UNSIGNED);
+		base.ref = NULL;
+		if ((base.t & VT_BTYPE) == VT_BOOL)
+			{ MCC_TRACE("br\n"); mcc_error("_Imaginary _Bool is invalid"); }
+		else if (!is_float(base.t))
+			{ MCC_TRACE("br\n"); mcc_error("_Imaginary requires a floating-point type"); }
+		mk_imaginary_type(type, &base);
 		type->t |= t & (VT_CONSTANT | VT_VOLATILE | VT_ATOMIC_BIT | VT_DEFSIGN | VT_EXTERN | VT_STATIC | VT_TYPEDEF |
 										VT_INLINE);
 		return type_found;
