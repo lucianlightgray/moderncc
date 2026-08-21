@@ -121,6 +121,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       OWNER: — | STATE: OPEN | SHA: b59809731 | TS: 2026-08-21T12:40Z | DEPS: T-lin-10458[C]
 - [ ] T-lin-10460 [S] `_Decimal32/64/128` (C23 §H / gcc _Decimal) — parse+type+sizeof(4/8/16)+ABI+`df/dd/dl` literals+arithmetic (BID software via `__bid_*`); distinct VT base code(s). DEPS: T-lin-10458[C]. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21
       OWNER: — | STATE: OPEN | SHA: b59809731 | TS: 2026-08-21T12:40Z | DEPS: T-lin-10458[C]
+      SLICE 1 LANDED (4b878fb54, DETAILS#t-lin-10460-decimal-slice1): parse+type+sizeof(4/8/16)+_Generic+is_decimal+x86_64-SSE-ABI; value codegen defers honestly. REMAINING: slice2 BID const encoder + df/dd/dl suffixes; slice3 __bid_* arith/conv (exec via -lgcc). OWNER: lin-x64 | STATE: IN_PROGRESS
 - [ ] T-lin-10461 [S] `_Fract/_Accum/_Sat` fixed-point (ISO TR 18037) — short/long variants, signed/unsigned, `_Sat` saturating; hr/r/lr/hk/k/lk + uhr… literals; fixed-point codegen (scaled int + saturation). DEPS: T-lin-10458[C]. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21
       OWNER: — | STATE: OPEN | SHA: b59809731 | TS: 2026-08-21T12:40Z | DEPS: T-lin-10458[C]
 - [ ] T-lin-10462 [S] `_Imaginary` type keyword (C Annex G) — lift the mccgen.c:9856 refusal; extend the existing complex/`gen_imaginary_complex` machinery to a first-class imaginary type + `_Imaginary`×`_Complex` arithmetic. DEPS: T-lin-10458[C]. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21
