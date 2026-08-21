@@ -47,12 +47,20 @@ static const cli_case_t cli_cases[] = {
 		 "&&__builtin_types_compatible_p(_Float32,float)==0"
 		 "&&__builtin_types_compatible_p(_Float32x,_Float64)==0"
 		 "&&__builtin_types_compatible_p(_Float64x,long double)==0"
-		 "&&__builtin_types_compatible_p(_Float128,__float128)==1"
 		 "&&__builtin_types_compatible_p(_Float32,_Float32)==1"
 		 "&&sizeof(_Float32)==4&&sizeof(_Float64)==8;"
 		 "_Float32 g=1.5f;float h=g;ok=ok&&(h==1.5f);"
 		 "return ok?0:1;}\\n' > {W}/gfn.c && "
 		 "{MCC} -B{B} -I{I} -run {W}/gfn.c && echo OK",
+		 "OK\n"},
+
+		{"generic_float128_alias", "os!=WIN32:no __float128 on PE (MCC_HAVE_FLOAT128 off, mcc.h)",
+		 "printf 'int main(void){"
+		 "int ok=__builtin_types_compatible_p(_Float128,__float128)==1"
+		 "&&__builtin_types_compatible_p(_Float128,double)==0"
+		 "&&sizeof(__float128)==16;"
+		 "return ok?0:1;}\\n' > {W}/g128.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/g128.c && echo OK",
 		 "OK\n"},
 
 		{"complex_bitint", "",
