@@ -21,7 +21,7 @@ _Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs
 _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/log/lin-x64.md`. Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1)._
 
 ## In progress — win-x64     ← only win-x64 writes this zone
-- STATUS + capabilities: docs/sessions/win-x64.md -- narrative: docs/log/win-x64.md -- no active win claims (8 low-residual [S] parked into Open below).
+- STATUS + capabilities: docs/sessions/win-x64.md -- narrative: docs/log/win-x64.md -- no active win claims (T-lin-10477 optfire phantom-coverage DONE 1c09170c; 8 low-residual [S] parked in Open below).
 ## Open — claimable
 
 - [ ] T-win-50026 [S] `rir/rec-miss` + `rir-nofb-probe`: the empty-subject floors fire on win — provision or gate honestly
@@ -55,8 +55,6 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
       OWNER: -- | STATE: OPEN | SHA: 6552e0a8 | TS: 2026-08-21T19:26Z | DEPS: --
 - [ ] T-lin-10491 [S] Wire the test harnesses (run-opt.sh, run-tier.sh, xsuite.py) + a ctest consumer to read docs/KNOWN_RED.md instead of private `KNOWN_RED=` strings; port the anti-vacuity delist-on-green rule uniformly; migrate existing entries + quarantine the ctest `builtin_expect_is_code_neutral` from one place. Test-infra only (o0-neutral); needs a full run-opt/run-tier/ctest validation. Follow-up to the 2026-08-21 process overhaul. REF: DETAILS.md#t-lin-10491-known-red-harness
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T19:55Z | DEPS: —
-- [ ] T-lin-10477 [S] P1/JIT: fix optfire PHANTOM-COVERAGE cells — switch-jumptable (id79) has NO `switch` in tests/optfire/src; loop-deletion (id49) no dead loop; const-hoist (id77) tests string-dedup/.bss not invariant hoist; block-layout (id75) asserts size not hot/cold reorder; jump-threading/cfg-simplify (id22/id10) rest on a both-arms branch-fold; remat (id78) unguarded. Add real exercising cells so the coverage matrix tests the labeled pass. REF: DETAILS.md#t-lin-10476-optfire-audit
-      OWNER: win-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-21T21:53Z | DEPS: —
 - [ ] T-lin-10478 [P] P1/JIT: run-verify EVERY optimizer cell through the JIT (`-run`) on every triple — each cell must (a) fire AND (b) `-run`-execute correct vs -O0 on that OS/arch. Fans into /lin (x86_64-ELF native + arm64/riscv64-ELF via qemu-user), /mac (arm64-osx native + x86_64-osx Rosetta + x86_64-PE wine), /win (x86_64-PE native). Parent closes when all three legs green + coverage recorded. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T17:38Z | DEPS: T-lin-10476[C]
   - [x] T-lin-10478/mac [P] P1/JIT Mach-O -run legs DONE (13f5e8c77) — optfire differ cells run-verified via mcc `-run` on optfire-arm64-osx (native) + optfire-x86_64-osx (Rosetta), 92/92 green; arch.txt pins respected, OS-qualified names, x64boot freshness fixture, gate-symmetric skips. Native optfire 149/149 unchanged. REF: DETAILS.md#t-lin-10478-mac-coverage

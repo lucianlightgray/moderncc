@@ -19,3 +19,45 @@ per-session checkpoints (pre-2026-08-21T20:00Z) live in git history on the
 **Fresh win-PE gcc-c-torture -O2 differential (1694 tests):** 1477 ok, 11 candidates — 8 mac-known (FORTIFY/QoI/int128). 3 fresh: (a) bf-sign-2 → **T-win-50046 WITHDRAWN** — NOT a bug, intended cl-conformance 8d4f0a80; implemented a combine_types "fix", the full-exec gate reddened integer_promotion+bitfields_ms (expect_win32 arms), reverted. (b) pr23324 → **T-win-50047** real Win64 struct-ABI SEGV, isolated to caller_bf6 (struct et6 by-value + empty-union return; SEGV inside callee member reads = bad struct-arg pointer, likely sret/by-ref register interaction); resists minimization (simplified structs pass) → focused debugger/disasm session. (c) pr36321 → **T-win-50048** alloca(0) spacing impl-defined, LOW.
 
 **Migrated to INSTRUCTIONS.md rev-2 per-session files.** No active win claims. RESTART POINTERS: P1 T-lin-10478/win (native-PE optimizer -run coverage) opens when lin lands T-lin-10476[C]; game-off GPU window → T-win-50019/50003; i386 toolchain → T-mac-30019 part-2; arm64-WoA CI → T-win-50041; the 8 parked win [S] tasks (T-win-50026, T-mac-30059/30097/30039/30065/30058/30223/30211) are low-residual, claimable.
+
+## 2026-08-21T22:33Z — T-lin-10477 optfire phantom-coverage cells DONE
+
+Claimed + landed T-lin-10477 (P1/JIT, the T-lin-10476 audit's prerequisite). A
+subagent produced a source-verified firing-signal map (mcc `--stats` counters are
+AST-strategy-only; switch-lowering/block-layout/remat are backend with no counter),
+and my own PE probes confirmed it. KEY: four of the six audited passes are simply
+UNIMPLEMENTED in mcc, so no "real exercising cell" is possible — the honest fix is
+accurate reclassification, not a fabricated cell.
+
+- Slice 1 (2c171311, test-only, o0-neutral): id10 covered|jt,sccp; id22 partial|jt
+  (jt = local branch-fold, not correlated threading); id49 partial|unroll (only a
+  const-trip loop is removed, via unroll; the prior partial|dse note was factually
+  wrong); id75 base (no BB reorder; __builtin_expect is code-neutral); id77 partial
+  (data merge/.bss, not LLVM materialization hoist). id78 remat already honest (base).
+- Slice 2 (8934f442 cell + 1c09170c flag): id79 switch-jumptable is the ONE audited
+  pass that genuinely exists (env/opt-search-gated `gcase_jumptable`). Exposed it as
+  a first-class `-fswitch-jumptable` knob (MCC_OPT_SWITCH_JUMPTABLE, MCC_OPTD_SPECIAL
+  whose default reproduces the exact prior env/opt-search gate) so default codegen is
+  byte-identical -> o0- AND shipped-On-neutral, no rebank needed. New run-verified
+  differ cell `switch_jt`. NB `-ftree-switch-conversion` is a red herring (drives the
+  `bf` bitflag strat, not switch tables). cover3.txt regen also fixed PRE-EXISTING
+  staleness (T-lin-10469's unroll-loops flag was never regenerated into the array).
+
+VERIFY (win): optfire-x86_64/switch_jt PASS via mcc -run on native PE (real ctest
+cell after reconfigure with MCC_TEST_SH); default==-fno byte-identical; env compat +
+-fno-override proven; cli 474/474, exec 374/374, smoke/mcctest/treegate/gate 23/23,
+optfire-x86_64 48/48; cover3 verify + coverage-check green. Full-suite requote not
+re-run (proven-neutral change; GPU/device/selfhost cells orthogonal).
+
+COORDINATION: mac-arm64 caught + fixed a pre-existing regstub-lint red in my
+T-lin-10478/win block (8cfb8751, glob-based per-row skip-stubs) so my new differ rows
+auto-cover on every host; I reconfigured + confirmed the PE side clean (48/48) and
+ack'd. The switch_jt differ row will auto-register the ELF/Mach-O -run legs on lin/mac
+via the differs glob.
+
+TOOLCHAIN NOTE (successors): MCC_TEST_SH for the win optfire-x86_64 cells = a git-bash
+sh, e.g. the scoop git sh; coverage-check.sh + cover3.py both run locally on win via
+that sh / python. GOTCHA: `git commit -m @'...'@` here-strings mangle multi-line/
+apostrophe messages under PowerShell 5.1 and an autostash on a same-command
+`pull --rebase` can split a commit — use `git commit -F <file>` and pull/push as
+separate commands.
