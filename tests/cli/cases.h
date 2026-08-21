@@ -151,6 +151,12 @@ static const cli_case_t cli_cases[] = {
 		 "{ {MCC} -B{B} -I{I} -Wall -c {W}/nn.c -o {W}/nn.o 2>&1 | grep -c 'null where non-null' ; echo OK ; }",
 		 "4\nOK\n"},
 
+		{"dangling_else_warn", "",
+		 "printf 'int a,b;\\nint f1(void){ if(a) if(b) return 1; else return 2; return 0; }\\nint f2(void){ if(a){ if(b) return 1; else return 2; } return 0; }\\nint f3(void){ if(a) return 1; else if(b) return 2; return 0; }\\nint f4(void){ for(;a;) if(b) return 1; else return 2; return 0; }\\n' > {W}/de.c && "
+		 "{ {MCC} -B{B} -I{I} -Wall -c {W}/de.c -o {W}/de.o 2>&1 | grep -c \"ambiguous 'else'\" ; "
+		 "{MCC} -B{B} -I{I} -c {W}/de.c -o {W}/de2.o 2>&1 | grep -c 'ambiguous' ; echo OK ; }",
+		 "1\n0\nOK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"

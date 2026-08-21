@@ -17268,6 +17268,8 @@ static void warn_return_local_addr(void) { MCC_TRACE("enter\n");
 
 static void block_nested(int flags);
 
+static int else_dangles_here;
+
 static void block(int flags) { MCC_TRACE("enter\n");
 	mcc_parse_depth_enter();
 	block_nested(flags);
@@ -17276,6 +17278,8 @@ static void block(int flags) { MCC_TRACE("enter\n");
 
 static void block_nested(int flags) { MCC_TRACE("enter\n");
 	int a, b, c, d, e, t, nc_pre;
+	int stmt_dangle = else_dangles_here;
+	else_dangles_here = 0;
 	int sscope = c99_stmt_scopes(mcc_state);
 	struct scope o;
 	LoopCensus lcen;
@@ -17315,8 +17319,12 @@ again:
 		a = gvtst(1, 0);
 		rir_hook_if_gvtst_done();
 		skip(')');
+		else_dangles_here = 1;
 		block(0);
 		if (tok == TOK_ELSE) { MCC_TRACE("br\n");
+			if (stmt_dangle && (mcc_state->warn_parentheses & WARN_ON))
+				{ MCC_TRACE("br\n"); mcc_warning_c(warn_parentheses)(
+						"suggest explicit braces to avoid ambiguous 'else'"); }
 			d = gjmp(0);
 			gsym(a);
 			next();
