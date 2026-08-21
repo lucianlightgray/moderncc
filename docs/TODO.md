@@ -16,18 +16,15 @@ _Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs
 _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/log/lin-x64.md`. Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1)._
 
 ## In progress — win-x64     ← only win-x64 writes this zone
-- STATUS + capabilities: docs/sessions/win-x64.md -- narrative: docs/log/win-x64.md -- no active win claims. DONE this session: T-win-50049 [S] P1 win-PE optfire counter-cell -run leg (1fd25d5c, 28 passes fire+run-verified on PE, 77/77). Formalized 6 remaining new tasks (50050-50054 + T-lin-10398/win GPU child); T-win-50055 WITHDRAWN as a T-lin-10459 dup.
+- STATUS + capabilities: docs/sessions/win-x64.md -- narrative: docs/log/win-x64.md -- no active win claims. DONE this session: T-win-50049 [S] P1 win-PE optfire counter-cell -run leg (1fd25d5c, 28 passes fire+run-verified on PE, 77/77). Formalized new tasks 50050/50051/50053/50054 + T-lin-10398/win GPU child; WITHDRAWN as dups: T-win-50055 (T-lin-10459) + T-win-50052 (lin's T-lin-10498); 50050/50051 premise-corrected vs existing const-context folders.
 ## Open — claimable
 
-- [ ] T-win-50050 [S] OPTIMIZER (P2): constant-fold string/memory builtins (strlen/strcmp/strncmp/memcmp/strnlen) on literal args — mcc emits runtime calls where gcc+clang fold to constants; new `bfold-string` knob extending ast_bfold_run (mccast.c:7829). Native x86_64-PE -run-verifiable, o0-neutral (level-gated).
+- [ ] T-win-50050 [S] OPTIMIZER (P2): fold string/mem builtins (strlen/strcmp/strncmp/memcmp) on literal args as a GENERAL -O2 fold. PREMISE CORRECTED (2026-08-21): mcc ALREADY folds these on literals via `foldstr_try` (mccgen.c:13805) but ONLY under `CONST_WANTED`/`constant_p_depth` (:13812) — so a plain-expression `strlen("x")` emits a runtime call at -O2 where gcc/clang fold. The gap = fire foldstr in general -O2 context (new level-gated knob), NOT a net-new folder. OVERLAPS lin's T-lin-10511 ("foldstr only const-folds literals today") — reconcile/merge at claim. Native x86_64-PE -run-verifiable, o0-neutral (level-gated).
       OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: —
       REF: DETAILS.md#t-win-50050-bfold-string
-- [ ] T-win-50051 [S] OPTIMIZER (P2): constant-fold libm calls — Tier A exact identities (pow(x,2)→x*x, exp(0)→1, log(1)→0, pow(2,k), sin/cos(0)); Tier B host-libm sin/cos/exp/log/pow/… bit-exact on a native win build — new `bfold-libm` knob, fenv-gated. o0-neutral (level-gated).
+- [ ] T-win-50051 [S] OPTIMIZER (P2): fold libm calls as a GENERAL -O2 fold — Tier A exact identities (pow(x,2)→x*x, exp(0)→1, log(1)→0, pow(2,k), sin/cos(0)); Tier B host-libm sin/cos/exp/log/pow/… bit-exact on a native win build. PREMISE CAVEAT: mcc HAS const-context folders (foldmath_tab mccgen.c:13599, foldfc_tab :13697, ast_bfold_tab mccast.c:7172) — verify which transcendentals each already covers + whether they fire outside CONST_WANTED before scoping; the gap is the general -O2 fold, not necessarily net-new. New `bfold-libm` knob, fenv-gated. o0-neutral (level-gated). NOT in lin's round-2 (no libm task there).
       OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: —
       REF: DETAILS.md#t-win-50051-bfold-libm
-- [ ] T-win-50052 [S] OPTIMIZER (P2): `__builtin_expect`-driven branch layout — the hint is code-neutral today (likely_hot==plain byte-for-byte, mccgen.c:14530/17633); thread likely/unlikely into gvtst and at -O2+ invert branch polarity so the cold arm is the forward jump. New knob, o0-neutral. (Interacts with the arm64-scoped `builtin_expect_is_code_neutral` KNOWN_RED quarantine — distinct object-size concern, T-lin-10453.)
-      OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: —
-      REF: DETAILS.md#t-win-50052-builtin-expect-layout
 - [ ] T-win-50053 [S] OPTIMIZER (P2): memcpy/memset loop-idiom recognition — unit-stride copy/zero loops → builtin (gcc -ftree-loop-distribute-patterns / LLVM LoopIdiomRecognize parity), new `loop-idiom` knob at -O4 beside ast_unroll_apply (mccast.c:16379). AT MINT: repoint optfire coverage.txt id 42 off T-lin-10469 (that's loop-unroll) to this. o0-neutral.
       OWNER: -- | STATE: OPEN | SHA: — | TS: 2026-08-21T23:20Z | DEPS: —
       REF: DETAILS.md#t-win-50053-loop-idiom
