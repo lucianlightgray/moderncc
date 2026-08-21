@@ -2630,6 +2630,29 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		opc = 1;
 		goto gen_op8;
 	case '*':
+		if (cc && mcc_state && mcc_state->optimize >= 1 &&
+				!mcc_state->do_sanitize_undefined &&
+				(!ll || (int64_t)(int32_t)vtop->c.i == (int64_t)vtop->c.i) &&
+				(vtop->c.i == 3 || vtop->c.i == 5 || vtop->c.i == 9)) { MCC_TRACE("br\n");
+			int sc = vtop->c.i == 3 ? 1 : (vtop->c.i == 5 ? 2 : 3);
+			int rv, ext;
+			vtop--;
+			r = gv(MCC_RC_INT);
+			rv = REG_VALUE(r);
+			ext = REX_BASE(r);
+			if (rv != 4 && rv != 5) { MCC_TRACE("br\n");
+				if (ll || ext)
+					{ MCC_TRACE("br\n"); o(0x40 | (ll << 3) | (ext ? 7 : 0)); }
+				o(0x8d);
+				o(0x04 | (rv << 3));
+				o((sc << 6) | (rv << 3) | rv);
+				break;
+			}
+			orex(ll, r, r, 0x69);
+			oad(0xc0 | (REG_VALUE(r) << 3) | REG_VALUE(r),
+					sc == 1 ? 3 : (sc == 2 ? 5 : 9));
+			break;
+		}
 		gv2(MCC_RC_INT, MCC_RC_INT);
 		r = vtop[-1].r;
 		fr = vtop[0].r;

@@ -351,6 +351,18 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O1 -run {W}/pxb.c && echo RUNOK",
 		 "0\n1\nRUNOK\n"},
 
+		{"mul_const_lea_strength", "cpu=x86_64,os=linux,optimizer",
+		 "printf 'int m3(int x){return x*3;}int m5(int x){return x*5;}int "
+		 "m9(int x){return x*9;}int m7(int x){return x*7;}int main(void){"
+		 "return m3(7)==21&&m5(-3)==-15&&m9(4)==36&&m7(3)==21?0:1;}\\n' "
+		 "> {W}/ml.c && "
+		 "{MCC} -B{B} -I{I} -O0 -S {W}/ml.c -o {W}/ml0.s && "
+		 "{MCC} -B{B} -I{I} -O1 -S {W}/ml.c -o {W}/ml1.s && "
+		 "grep -cw lea {W}/ml0.s ; grep -cw lea {W}/ml1.s ; "
+		 "grep -cw imul {W}/ml1.s ; "
+		 "{MCC} -B{B} -I{I} -O1 -run {W}/ml.c && echo RUNOK",
+		 "0\n3\n1\nRUNOK\n"},
+
 		{"fneg_inreg_xorps", "cpu=x86_64,os=linux,optimizer",
 		 "printf 'double nd(double x){return -x;}float nf(float x){return "
 		 "-x;}int main(void){return nd(2.0)==-2.0&&nf(3.0f)==-3.0f?0:1;}\\n' "
