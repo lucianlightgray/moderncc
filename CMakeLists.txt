@@ -6523,6 +6523,55 @@ if(MCC_BUILD_TESTS)
                 SKIP_RETURN_CODE 77 ENVIRONMENT "${_exec_env};MCC_TEST_OPT=-Os")
         endforeach()
 
+        # T-lin-10478/win: native x86_64-PE optfire -run leg. The optfire matrix +
+        # native block below are if(UNIX)-gated (optfire.sh needs a POSIX shell and
+        # the UNIX cross/qemu machinery). On win-PE the mcc is already built and runs
+        # PE natively, so register the optimizer differ cells to run-verify via
+        # `mcc -O{n} [gflag] -run` through the same POSIX shell the cli tests use --
+        # the OPTFIRE_EXECVIA=run leg of DETAILS#t-lin-10476-impl-interface (5), with
+        # FIXTURES_REQUIRED MCC_BUILT only (no cross build, no hosted-boot).
+        if(WIN32)
+            if(MCC_TEST_SH)
+                set(_ofw_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
+                file(GLOB _ofw_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
+                set(_ofw_seen "")
+                foreach(_ofwfile IN LISTS _ofw_dfiles)
+                    file(STRINGS "${_ofwfile}" _ofwlines)
+                    foreach(_ofwl IN LISTS _ofwlines)
+                        if(NOT _ofwl MATCHES "^#" AND NOT _ofwl STREQUAL "")
+                            string(REPLACE "|" ";" _ofw "${_ofwl}")
+                            list(GET _ofw 0 _ofwname)
+                            list(GET _ofw 1 _ofwopt)
+                            list(GET _ofw 2 _ofwarg)
+                            list(LENGTH _ofw _ofwlen)
+                            set(_ofwextra "-")
+                            if(_ofwlen GREATER 3)
+                                list(GET _ofw 3 _ofwextra)
+                            endif()
+                            set(_ofwldf "-")
+                            if(_ofwlen GREATER 4)
+                                list(GET _ofw 4 _ofwldf)
+                            endif()
+                            set(_ofwsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofwname}.c")
+                            if(NOT "${_ofwname}" IN_LIST _ofw_seen AND EXISTS "${_ofwsrc}")
+                                list(APPEND _ofw_seen "${_ofwname}")
+                                add_test(NAME "optfire-x86_64/${_ofwname}"
+                                    COMMAND "${MCC_TEST_SH}" "${_ofw_sh}" differ "${_mcc_exe}"
+                                            "${_ofwsrc}" "${CMAKE_BINARY_DIR}/optfire-x86_64"
+                                            "${_ofwname}" "${_ofwopt}" "${_ofwarg}"
+                                            "${_ofwextra}" "${_ofwldf}")
+                                set_tests_properties("optfire-x86_64/${_ofwname}" PROPERTIES
+                                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 LABELS native
+                                    ENVIRONMENT "OPTFIRE_EXECVIA=run;OPTFIRE_MCCFLAGS=-B${CMAKE_BINARY_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+                            endif()
+                        endif()
+                    endforeach()
+                endforeach()
+            else()
+                mcc_skip_test("optfire-x86_64/differ"
+                    "no POSIX shell (MCC_TEST_SH) on this Windows host to run optfire.sh; set MCC_TEST_SH to a git-bash sh to run-verify the optimizer differ cells via mcc -run on native PE")
+            endif()
+        endif()
         if(UNIX)
             set(_of_seen "")
             set(_of_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
