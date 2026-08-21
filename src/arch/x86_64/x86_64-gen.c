@@ -2648,7 +2648,7 @@ void gen_opi(int op) { MCC_TRACE("enter\n");
 		goto gen_op8;
 	case '*':
 		if (cc && mcc_state && mcc_state->optimize >= 1 &&
-				!mcc_state->do_sanitize_undefined &&
+				!mcc_state->do_sanitize_undefined && !ast_reemit_guard_op &&
 				(!ll || (int64_t)(int32_t)vtop->c.i == (int64_t)vtop->c.i) &&
 				(vtop->c.i == 3 || vtop->c.i == 5 || vtop->c.i == 9)) { MCC_TRACE("br\n");
 			int sc = vtop->c.i == 3 ? 1 : (vtop->c.i == 5 ? 2 : 3);
