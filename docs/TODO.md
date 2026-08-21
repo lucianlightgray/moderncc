@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30265   | 2026-08-21T00:20Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30265   | 2026-08-21T00:33Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10454   | 2026-08-20T23:40Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-21T00:20Z |
 
@@ -205,7 +205,7 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       REF: INVESTIGATIONS.md#r32-taut-compare | DEPS: —
 - [ ] T-mac-30265 [S] Fix: [LOW-MED, missing diagnostics] common gcc+clang warnings mcc lacks (found via a -Wall probe matrix vs gcc-16+clang) — SLICE DONE: `-Wbool-compare` (b9d2fdc4, ==gcc across a 20-case matrix `b==2`/`b<0`/`b>=0`/`b>1`/mirrored/const-left, WD_ALL under -Wall, `check_bool_compare` in gen_op modeled on `check_tautological_unsigned_cmp`, cli/bool_compare_warn). REMAINING (each CONFIRMED mcc-silent while BOTH gcc-16 AND clang warn under -Wall): (a) `-Wlogical-not-parentheses` — `!a == b` (gcc "logical not is only applied to the left hand side of comparison"); needs a `!`-origin marker on the operand. (b) `-Wchar-subscripts` — `p[c]` with `c` a plain `char` (gcc "array subscript has type 'char'"); needs a plain-vs-signed-char type distinction. (c) `-Wsizeof-pointer-div` — `sizeof(p)/sizeof(p[0])` with `p` a pointer; needs sizeof-operand tracking on the `/`. NOTE: `-Wtautological-compare` self-cmp `x==x` is the SEPARATE T-mac-30202 (AST-level, lin-blocked).
       OWNER: — | STATE: OPEN | SHA: b9d2fdc4 | TS: 2026-08-21T00:20Z
-      REF: — | DEPS: —
+      REF: — | DEPS: — | NOTE (mac-arm64 2026-08-21): sub-item (b) `-Wchar-subscripts` DONE (62465a55) — warns "array subscript has type 'char'" on a plain-char index (VT_BYTE, no VT_DEFSIGN/VT_UNSIGNED; signed/unsigned char silent) at the postfix p[i] handler, ==gcc, WD_ALL, cli/char_subscripts_warn. Remaining: (a) `-Wlogical-not-parentheses` + (c) `-Wsizeof-pointer-div`.
       OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
       REF: INVESTIGATIONS.md#r32-asm-constraints | DEPS: —
       OWNER: — | STATE: OPEN | SHA: 7ee0071e | TS: 2026-08-18T18:45Z
