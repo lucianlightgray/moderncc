@@ -122,8 +122,6 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       OWNER: — | STATE: OPEN | SHA: b59809731 | TS: 2026-08-21T12:40Z | DEPS: T-lin-10458[C]
 - [ ] T-lin-10464 [S] `_Complex _BitInt(N)` — lift the mccgen.c:10165 rejection; compose mk_complex_type over `_BitInt` storage (re/im each an N-bit storage integer). DEPS: T-lin-10458[C]. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21
       OWNER: — | STATE: OPEN | SHA: b59809731 | TS: 2026-08-21T12:40Z | DEPS: T-lin-10458[C]
-- [ ] T-lin-10465 [S] `__bf16` load-time constant (mccgen.c:5740) + riscv64/arm codegen (VT_BF16 currently x86_64/arm64/i386 only). DEPS: T-lin-10458[C] (ABI/distinctness table only). Per-arch verify via qemu. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21
-      OWNER: — | STATE: OPEN | SHA: b59809731 | TS: 2026-08-21T12:40Z | DEPS: T-lin-10458[C]
 - [ ] T-lin-10416 [S] Re-bank the stale o0-baseline boards — **ALL 4 *-win32 keys DONE+VERIFIED (win-x64, c61a3670, DETAILS#t-lin-10416-win32-rebank-done); ONLY x86_64-osx (codeopt.c + the atomic/feature_macros drift) REMAINS — mac-owned exec-verify + rebank.** A `cmake-cross measurable` CHECK is now clean on every *-win32 key. mac: rebank x86_64-osx from a mac (needs a native x86_64-osx exec-verify of the drifted objects); then close+archive this task.
       OWNER: — | STATE: OPEN | SHA: c61a3670 | TS: 2026-08-21T12:21Z
       REF: DETAILS.md#t-lin-10416-win32-rebank-done | DEPS: —
