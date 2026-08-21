@@ -39,3 +39,4 @@ mix_licm_cse|-O4|licm
 mix_licm_cse_b|-O4|cse
 mix_fold_divmagic|-O2|divmagic
 mix_fold_divmagic_b|-O2|ident
+sroa|-O4|sroa

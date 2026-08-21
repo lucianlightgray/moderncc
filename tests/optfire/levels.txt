@@ -25,3 +25,4 @@ reassoc|reassoc|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on
 sethi|sethi|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on
 tco|tco|-O0:off,-O1:on,-O2:on,-O3:on,-Os:on
 inline|inline|-O0:off,-O1:off,-O2:on,-O3:on,-Os:on
+sroa|sroa|-O0:off,-O1:off,-O2:off,-O3:off,-Os:off,-O4:on

@@ -42,7 +42,7 @@
 20|dse|covered|dse,dse_call
 21|bdce|partial|narrow — bit-demand elimination via narrowing, no separate BDCE pass
 22|jump-threading|covered|jt
-23|sroa-mem2reg|gap|T-lin-10472
+23|sroa-mem2reg|partial|sroa,sroa_arr — SROA shipped at -O4 (T-lin-10472); tree-sra is inert (counts but no byte effect) and suppresses SROA, so it stays OFF; tree-sroa-params has no firing case yet
 24|null-check-elim|oos|C has no implicit null checks to eliminate
 25|bounds-range-check-elim|oos|C has no implicit bounds checks; explicit range work is id 18
 26|map-check-elim|oos|dynamic-language dictionary/shape check, N/A to C
