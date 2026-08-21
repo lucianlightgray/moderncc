@@ -169,6 +169,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/lp.c -o {W}/lp2.o 2>&1 | grep -c 'within' ; echo OK ; }",
 		 "3\n0\nOK\n"},
 
+		{"switch_deadcode_dce", "",
+		 "printf 'extern int undefined_function(void);\\nint g(void){return 3;}\\nint main(void){ if(0){ switch(g()){ case 0: undefined_function(); break; } } return 0; }\\n' > {W}/dd.c && "
+		 "printf 'extern int undefined_function(void);\\nint g(void){return 3;}\\nint main(void){ switch(g()){ case 0: undefined_function(); break; default: break; } return 0; }\\n' > {W}/dl.c && "
+		 "{ {MCC} -B{B} -nostdinc {W}/dd.c -o {W}/dd 2>/dev/null && echo DEAD_OK || echo DEAD_FAIL; "
+		 "{MCC} -B{B} -nostdinc {W}/dl.c -o {W}/dl 2>/dev/null && echo LIVE_OK || echo LIVE_FAIL; }",
+		 "DEAD_OK\nLIVE_FAIL\n"},
+
 		{"overflow_const_conv_warn", "",
 		 "printf 'char c1 = 300;\\nchar c2 = -200;\\nchar c3 = 200;\\nunsigned char u = 256;\\nshort s = 70000;\\nchar c4 = (char)300;\\nlong l = 300;\\nenum E{A}; enum E e = 300;\\n' > {W}/ov.c && "
 		 "{ {MCC} -B{B} -I{I} -c {W}/ov.c -o {W}/ov.o 2>&1 | grep -c 'overflow in conversion' ; "

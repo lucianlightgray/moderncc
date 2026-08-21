@@ -17830,7 +17830,7 @@ again:
 				&& !cur_switch->ft_saw && (mcc_state->warn_implicit_fallthrough & WARN_ON))
 			{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_fallthrough)("this statement may fall through"); }
 		cur_switch->ft_saw = 0;
-		cur_switch->ft_last_ind = gind();
+		cur_switch->ft_last_ind = cur_switch->nocode_wanted ? ind : gind();
 		cr = mcc_malloc(sizeof(struct case_t));
 		dynarray_add(&cur_switch->p, &cur_switch->n, cr);
 		t = cur_switch->sv.type.t;
@@ -17865,7 +17865,7 @@ again:
 				&& !cur_switch->ft_saw && (mcc_state->warn_implicit_fallthrough & WARN_ON))
 			{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_fallthrough)("this statement may fall through"); }
 		cur_switch->ft_saw = 0;
-		cur_switch->ft_last_ind = gind();
+		cur_switch->ft_last_ind = cur_switch->nocode_wanted ? ind : gind();
 		cur_switch->def_sym = cur_switch->nocode_wanted ? -1 : gind();
 		rir_hook_default();
 		skip(':');
