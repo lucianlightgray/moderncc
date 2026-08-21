@@ -40,4 +40,8 @@ unroll|-O2|unroll-loops|-
 # table under -fswitch-jumptable, a compare cascade under -fno-. The flag is a
 # SPECIAL knob whose default reproduces the old env/opt-search behavior, so this
 # is o0- and shipped-On-neutral; the differ only shows when the flag is forced.
-switch_jt|-O2|switch-jumptable|-
+# -fPIC is REQUIRED: x86_64-Mach-O refuses a jumptable unless pic (switch_jt_dense,
+# mccgen.c), so without it the cell is byte-identical -f/-fno- there. pic drives the
+# x86_64 jumptable on ELF/PE/Mach-O alike and is inert for arm64/riscv64 (elt=4);
+# i386 REFUSES a jumptable under pic, so it is pinned out in arch.txt.
+switch_jt|-O2|switch-jumptable|-fPIC

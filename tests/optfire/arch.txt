@@ -34,3 +34,8 @@ cycle|x86_64,i386,riscv64
 # pass is structurally inert there (like the promotion family). The i386
 # cdelta-narrow cell was a pre-existing DID-NOT-FIRE red; excluded here.
 narrow|x86_64,arm64,riscv64
+# switch_jt: the cell forces -fPIC (differs.txt) because x86_64-Mach-O only emits a
+# jumptable under pic. i386 does the opposite -- switch_jt_dense (mccgen.c) REFUSES a
+# jumptable when pic is set on i386 -- so the pic'd cell could only ever DID-NOT-FIRE
+# there; excluded. x86_64 (PE/ELF/Mach-O) + arm64 + riscv64 all fire under pic.
+switch_jt|x86_64,arm64,riscv64
