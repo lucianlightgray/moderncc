@@ -27,7 +27,7 @@
 7|demanded-bits|covered|narrow,narrow_class0,narrow_class1,narrow_class2,narrow_class3
 8|redundant-cast-ext-elim|covered|narrow_elim,ident_conv
 9|local-dce|covered|dse,switch_deadcode_dce
-10|cfg-simplify|covered|jt
+10|cfg-simplify|covered|jt,sccp
 11|super-instruction-fusion|base|combined into single insns by the machine peephole + isel; no separate knob (loop `fusion` is a different pass, see id 40)
 12|canonicalization|base|folded into ident/bfold normal forms; no standalone counter
 
@@ -41,7 +41,7 @@
 19|adce|partial|dse,switch_deadcode_dce — aggressive DCE only via unread/dead-store + switch pruning
 20|dse|covered|dse,dse_call
 21|bdce|partial|narrow — bit-demand elimination via narrowing, no separate BDCE pass
-22|jump-threading|covered|jt
+22|jump-threading|partial|jt — mcc's jt strat does LOCAL branch-folding (identical-arm / empty-arm / const-condition collapse, ast_jt_run mccast.c) but NOT correlated cross-predecessor threading; the latter is unimplemented (audit T-lin-10476)
 23|sroa-mem2reg|partial|sroa,sroa_arr — SROA shipped at -O4 (T-lin-10472); tree-sra is inert (counts but no byte effect) and suppresses SROA, so it stays OFF; tree-sroa-params has no firing case yet
 24|null-check-elim|oos|C has no implicit null checks to eliminate
 25|bounds-range-check-elim|oos|C has no implicit bounds checks; explicit range work is id 18
@@ -70,7 +70,7 @@
 46|predictive-commoning|gap|T-lin-10471 — subsumes into GVN gap
 47|loop-cloning|gap|T-lin-10473 — function/loop cloning tracked with IPA specialization
 48|unroll-and-jam|gap|T-lin-10469
-49|loop-deletion|partial|dse — empty/dead loops removed only when body is dead-store-eliminated
+49|loop-deletion|partial|unroll — a dead/empty CONSTANT-TRIP loop is removed as a side effect of full unrolling (-funroll-loops, ast_unroll_apply mccast.c); a variable-trip dead loop is NOT deleted (no dedicated loop-deletion pass; DSE removes stores, not loop structure)
 50|strip-mining|dev|tile — strip+tile share the blocking pass
 51|scev|base|scalar-evolution drives ivsr internally; no separate assertable counter
 
@@ -79,9 +79,9 @@
 72|isel|base|instruction selection is always-on base codegen
 73|scheduling|covered|sethi,sethi_leaf,sethi_nary — Sethi-Ullman evaluation ordering
 74|if-conversion-cmov|covered|select,select_below,abs
-75|block-layout|covered|builtin_expect_is_code_neutral,builtin_expect_side_effect
+75|block-layout|base|basic blocks emitted in source/linear order; no hot-cold reordering or BB-layout pass — __builtin_expect is code-neutral (its hint value is evaluated-and-dropped at mccgen.c, no branch weight), which builtin_expect_is_code_neutral / builtin_expect_side_effect prove
 76|tail-merge-dup|gap|T-lin-10471 — tail-duplication/sinking un-taskified, folded into GVN cleanup gap
-77|const-hoist|covered|merge_strings,zero_bss
+77|const-hoist|partial|merge_strings,zero_bss — mcc does constant DATA optimization (identical-literal merging via merge-constants; zero-init to .bss) but not LLVM-style constant MATERIALIZATION hoisting; it re-materializes immediates instead (id78 remat), optimal on x86_64/PE where an immediate is a single instruction
 78|remat|base|constants re-materialized rather than spilled by the allocator; no knob
 79|switch-jumptable-lowering|covered|bf,jt,switch_duplicate_case
 80|stack-slot-color|covered|spill_share,spill_share_below
