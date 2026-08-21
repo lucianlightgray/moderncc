@@ -5,7 +5,7 @@
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
 | mac-arm64 | macOS    | arm64 | 30000–49999 | 30268   | 2026-08-21T15:31Z |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10476   | 2026-08-21T15:11Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10476   | 2026-08-21T15:41Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50043   | 2026-08-21T15:35Z |
 
 ## Contracts — blocking, highest priority
@@ -137,8 +137,6 @@ _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b3
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10475 [S] OPTIMIZER GAP: whole-program Type-Flow-Analysis → static devirtualization + dead-function tree-shaking (Dart TFA style; needs whole-program/LTO scope). REF: DETAILS.md#t-lin-10467-langs-11-20
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
-- [ ] T-lin-10466 [S] Optimizer test-suite BUILD: partials (one per opt, in `tests/optfire/src/<opt>N.c`) + mix/match, each asserting its opt fired — REUSE tests/optfire (counters.txt / differs.txt / levels.txt rows + cli -S asm-greps), NOT a new harness. Research + knob-map + gaps DONE (T-lin-10467/10468, DETAILS anchors). DEPS: —. REF: DETAILS.md#t-lin-10468-optimizer-gaps
-      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10459 [S] Ungate `__int128` + `__float128` across ALL triples/arches (arm64/riscv64/i386/arm + x86_64-PE/win32) — soft-float libcalls + register-pair ABI where no HW type; relax MCC_HAVE_INT128 (mcc.h:1244) / MCC_HAVE_FLOAT128 (mcc.h:1239). Slices 1-6 gcc-parity, 7-8 (32-bit __int128) beyond-gcc per USER (all 8). DEPS: T-lin-10458[C] (satisfied). Per-arch verify via qemu/wine. REF: DETAILS.md#t-lin-10459-ungate
       OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: 9e791e772 | TS: 2026-08-21T15:11Z | DEPS: T-lin-10458[C]
 - [ ] T-lin-10460 [S] `_Decimal32/64/128` (C23 §H / gcc _Decimal) — parse+type+sizeof(4/8/16)+ABI+`df/dd/dl` literals+arithmetic (BID software via `__bid_*`); distinct VT base code(s). DEPS: T-lin-10458[C]. REF: DETAILS.md#t-lin-10458-typesystem-groundtruth-2026-08-21
