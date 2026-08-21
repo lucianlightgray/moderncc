@@ -66,6 +66,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} {W}/relovfl.obj -o {W}/relovfl.exe && "
 		 "{W}/relovfl.exe ; echo rc=$?",
 		 "rc=42\n"},
+
+		{"coop_mn_win32_multiworker", "cpu=x86_64,os=WIN32",
+		 "printf '#include <threads.h>\\n"
+		 "static mtx_t L;static long c=0;\\n"
+		 "static int w(void*a){(void)a;for(int i=0;i<50000;i++){mtx_lock(&L);c++;mtx_unlock(&L);}return 0;}\\n"
+		 "int main(void){thrd_t t[8];mtx_init(&L,mtx_plain);"
+		 "for(int i=0;i<8;i++)thrd_create(&t[i],w,0);"
+		 "for(int i=0;i<8;i++)thrd_join(t[i],0);return c==400000?42:1;}\\n' > {W}/coopmn.c && "
+		 "{MCC} -B{B} -I{I} -DMCC_THREADS_COOP -DMCC_COOP_MN -pthread {W}/coopmn.c -o {W}/coopmn.exe && "
+		 "{W}/coopmn.exe ; echo rc=$?",
+		 "rc=42\n"},
 		{"debug_dwarf_struct_decl_line", "os=darwin",
 		 "printf 'struct Point {\\nint px;\\nint py;\\n};\\nunion Wrap {\\nint wi;\\nfloat wf;\\n};\\nenum Color {\\nCLR_A,\\nCLR_B\\n};\\nint main(void) {\\nstruct Point p;\\nunion Wrap w;\\nenum Color c;\\np.px = 1; p.py = 2; w.wi = 3; c = CLR_A;\\nreturn p.px + p.py + w.wi + (int)c;\\n}\\n' > {W}/dl.c && "
 		 "{MCC} -B{B} -I{I} -gdwarf-5 -c {W}/dl.c -o {W}/dl.o && "
