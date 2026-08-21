@@ -8419,13 +8419,18 @@ static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
 	CType *cache = mcc_state->gen_complex_type_cache;
 	int i, n = mcc_state->gen_complex_type_cache_n;
 	int bkey = base->t & (VT_BTYPE | VT_LONG | VT_UNSIGNED);
+	/* .bs is meaningful on the base ONLY for a _BitInt storage int (its width,
+	 * T-lin-10464); every other complex base (plain int/float) leaves .bs
+	 * unspecified at some call sites, so normalize to 0 — reading it raw made the
+	 * cache key non-deterministic (arm64-osx o0 drift). */
+	int bbs = IS_BITINT(base->t) ? base->bs : 0;
 	Sym *s, *f0, *f1;
 	AttributeDef ad;
 
 	for (i = 0; i < n; i++) { MCC_TRACE("br\n");
 		Sym *e = cache[i].ref->next;
 		if ((e->type.t & (VT_BTYPE | VT_LONG | VT_UNSIGNED)) == bkey &&
-				e->type.ref == base->ref && e->type.bs == base->bs) { MCC_TRACE("br\n");
+				e->type.ref == base->ref && e->type.bs == bbs) { MCC_TRACE("br\n");
 			*type = cache[i];
 			return;
 		}
@@ -8439,12 +8444,12 @@ static void mk_complex_type(CType *type, CType *base) { MCC_TRACE("enter\n");
 	s->a.is_complex = 1;
 	f0 = sym_push2(&global_stack, mcc_state->gen_complex_re_tok | SYM_FIELD, base->t, 0);
 	f0->type.ref = base->ref;
-	f0->type.bp = base->bp;
-	f0->type.bs = base->bs;
+	f0->type.bp = IS_BITINT(base->t) ? base->bp : 0;
+	f0->type.bs = bbs;
 	f1 = sym_push2(&global_stack, mcc_state->gen_complex_im_tok | SYM_FIELD, base->t, 0);
 	f1->type.ref = base->ref;
-	f1->type.bp = base->bp;
-	f1->type.bs = base->bs;
+	f1->type.bp = IS_BITINT(base->t) ? base->bp : 0;
+	f1->type.bs = bbs;
 	s->next = f0, f0->next = f1, f1->next = NULL;
 	type->t = VT_STRUCT;
 	type->ref = s;
