@@ -6708,6 +6708,83 @@ if(MCC_BUILD_TESTS)
             endforeach()
             endforeach()
 
+            if(APPLE)
+                file(GLOB _ofm_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
+                foreach(_ofmrow IN ITEMS "arm64-osx|arm64|native" "x86_64-osx|x86_64|rosetta")
+                    string(REPLACE "|" ";" _ofml "${_ofmrow}")
+                    list(GET _ofml 0 _ofm_leg)
+                    list(GET _ofml 1 _ofm_cpu)
+                    list(GET _ofml 2 _ofm_kind)
+                    set(_ofm_fix "MCC_BUILT")
+                    if(_ofm_kind STREQUAL "native")
+                        set(_ofm_mcc "${_mcc_exe}")
+                        set(_ofm_runpfx "")
+                        set(_ofm_bdir "${CMAKE_BINARY_DIR}")
+                        set(_ofm_ok 1)
+                    else()
+                        set(_ofm_x64dir "${CMAKE_CURRENT_SOURCE_DIR}/cmake-macos-x64")
+                        set(_ofm_mcc "${_ofm_x64dir}/mcc")
+                        set(_ofm_runpfx "arch -x86_64")
+                        set(_ofm_bdir "${_ofm_x64dir}")
+                        if(EXISTS "${_ofm_mcc}")
+                            set(_ofm_ok 1)
+                            set(_ofm_fix "MCC_BUILT;FX_optfire_x64")
+                            add_test(NAME "optfire-x64boot/rosetta"
+                                COMMAND ${CMAKE_COMMAND} --build "${_ofm_x64dir}" --target mcc)
+                            set_tests_properties("optfire-x64boot/rosetta" PROPERTIES
+                                FIXTURES_SETUP "FX_optfire_x64" FIXTURES_REQUIRED "MCC_BUILT"
+                                SKIP_RETURN_CODE 77 LABELS "macho;native" TIMEOUT 600)
+                        else()
+                            set(_ofm_ok 0)
+                            mcc_skip_test("optfire-x64boot/rosetta"
+                                "no cmake-macos-x64/mcc (x86_64 Rosetta backend build) on this host, so the x86_64-osx JIT -run boot fixture can't run; build it with: CC=/usr/bin/cc cmake -S . -B cmake-macos-x64 -G Ninja -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64 && ninja -C cmake-macos-x64 mcc runmain.o libmccrt.a"
+                                LABELS "macho;native")
+                        endif()
+                    endif()
+                    foreach(_offile IN LISTS _ofm_dfiles)
+                        file(STRINGS "${_offile}" _ofmlines)
+                        foreach(_ol IN LISTS _ofmlines)
+                            if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
+                                string(REPLACE "|" ";" _of "${_ol}")
+                                list(GET _of 0 _ofname)
+                                list(GET _of 1 _ofopt)
+                                list(GET _of 2 _ofarg)
+                                list(LENGTH _of _oflen)
+                                set(_ofextra "-")
+                                if(_oflen GREATER 3)
+                                    list(GET _of 3 _ofextra)
+                                endif()
+                                set(_ofmskip 0)
+                                list(FIND _of_archnames "${_ofname}" _ofmai)
+                                if(NOT _ofmai EQUAL -1)
+                                    list(GET _of_archcpus ${_ofmai} _ofmreq)
+                                    string(REPLACE "," ";" _ofmreq "${_ofmreq}")
+                                    if(NOT "${_ofm_cpu}" IN_LIST _ofmreq)
+                                        set(_ofmskip 1)
+                                    endif()
+                                endif()
+                                set(_ofmsrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c")
+                                if(NOT _ofmskip AND EXISTS "${_ofmsrc}")
+                                    if(_ofm_ok)
+                                        add_test(NAME "optfire-${_ofm_leg}/${_ofname}"
+                                            COMMAND "${_of_sh}" "differ" "${_ofm_mcc}" "${_ofmsrc}"
+                                                    "${CMAKE_BINARY_DIR}/optfire-${_ofm_leg}" "${_ofname}"
+                                                    "${_ofopt}" "${_ofarg}" "${_ofextra}" "-")
+                                        set_tests_properties("optfire-${_ofm_leg}/${_ofname}" PROPERTIES
+                                            FIXTURES_REQUIRED "${_ofm_fix}" SKIP_RETURN_CODE 77 LABELS "macho;native"
+                                            ENVIRONMENT "OPTFIRE_EXECVIA=run;OPTFIRE_RUN=${_ofm_runpfx};OPTFIRE_MCCFLAGS=-B${_ofm_bdir}")
+                                    else()
+                                        mcc_skip_test("optfire-${_ofm_leg}/${_ofname}"
+                                            "no cmake-macos-x64/mcc (x86_64 Rosetta backend build) on this host, so the x86_64-osx JIT -run leg can't register; build it with: CC=/usr/bin/cc cmake -S . -B cmake-macos-x64 -G Ninja -DCMAKE_OSX_ARCHITECTURES=x86_64 -DMCC_TARGET_ARCH=x86_64 && ninja -C cmake-macos-x64 mcc runmain.o libmccrt.a"
+                                            LABELS "macho;native")
+                                    endif()
+                                endif()
+                            endif()
+                        endforeach()
+                    endforeach()
+                endforeach()
+            endif()
+
             # Row-count ratchet. These cells are registered one-per-row from globbed
             # tables, so deleting a row deletes a cell and ctest reports the same N/N
             # with a smaller N. A drop is a hard error; adding rows is fine, and the
