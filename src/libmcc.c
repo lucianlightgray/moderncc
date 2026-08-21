@@ -3312,7 +3312,16 @@ PUB_FUNC int mcc_parse_args(MCCState *s, int *pargc, char ***pargv) { MCC_TRACE(
 				s->optflag[MCC_OPT_BUILTIN_MATH_FABS] = on ? 1 : MCC_OPT_UNSET;
 			} else if (!strncmp(optarg, "fp-contract=", 12) ||
 								 !strcmp(optarg, "unsafe-math-optimizations") ||
-								 !strcmp(optarg, "no-unsafe-math-optimizations")) { MCC_TRACE("br\n");
+								 !strcmp(optarg, "no-unsafe-math-optimizations") ||
+								 !strcmp(optarg, "unroll-loops") ||
+								 !strcmp(optarg, "no-unroll-loops") ||
+								 !strcmp(optarg, "plt") || !strcmp(optarg, "no-plt") ||
+								 !strcmp(optarg, "semantic-interposition") ||
+								 !strcmp(optarg, "no-semantic-interposition") ||
+								 !strcmp(optarg, "visibility-inlines-hidden") ||
+								 !strcmp(optarg, "delete-null-pointer-checks") ||
+								 !strcmp(optarg, "no-delete-null-pointer-checks") ||
+								 !strcmp(optarg, "ident") || !strcmp(optarg, "no-ident")) { MCC_TRACE("br\n");
 			} else { MCC_TRACE("br\n");
 				int sf = set_flag(s, options_f, optarg);
 				if (sf == -2)

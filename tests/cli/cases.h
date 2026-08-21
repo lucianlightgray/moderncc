@@ -1879,6 +1879,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -Wall -c {W}/bc.c -o {W}/bc.o 2>&1 | grep -c 'with boolean expression is always' ; echo END",
 		 "2\nEND\n"},
 
+		{"driver_ignore_opt_flags", "",
+		 "printf 'int main(void){return 0;}\\n' > {W}/d.c && "
+		 "{MCC} -B{B} -I{I} -funroll-loops -fno-plt -fno-semantic-interposition -fvisibility-inlines-hidden -fno-delete-null-pointer-checks -fno-ident -c {W}/d.c -o {W}/d.o 2>&1 | grep -c unsupported ; "
+		 "{MCC} -B{B} -I{I} -fstack-clash-protection -c {W}/d.c -o {W}/d2.o 2>&1 | grep -c unsupported ; echo END",
+		 "0\n1\nEND\n"},
+
 		{"no_inline_predef", "",
 		 "printf 'int x;\\n' > {W}/ni.c && "
 		 "{MCC} -B{B} -I{I} -dM -E {W}/ni.c 2>&1 | grep -c '__NO_INLINE__' ; "
