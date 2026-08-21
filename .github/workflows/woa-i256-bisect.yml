@@ -1,0 +1,43 @@
+name: WoA-i256-bisect
+
+# T-win-50041: bisect which construct segfaults mcc's arm64 -O1 codegen on
+# real Windows-on-ARM. Isolates the crashing shape so the optimizer/backend
+# fix can be targeted. workflow_dispatch only.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: woa-i256-bisect-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bisect:
+    name: bisect / windows-11-arm
+    runs-on: windows-11-arm
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - name: set up MSVC dev shell (arm64)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: arm64
+      - name: run i256 crash bisection
+        run: bash tools/woa-i256-bisect.sh
+      - name: results
+        if: always()
+        run: |
+          echo "===== BISECT RESULTS ====="
+          cat bisect-out/bisect.txt 2>/dev/null || echo "(no bisect.txt)"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: woa-i256-bisect
+          path: bisect-out/
+          if-no-files-found: warn
