@@ -4472,6 +4472,8 @@ static int is_compatible_transp_union(CType *tu, CType *other) { MCC_TRACE("ente
 }
 
 static int is_compatible_param(CType *t1, CType *t2) { MCC_TRACE("enter\n");
+	if ((t1->t & VT_ATOMIC_BIT) != (t2->t & VT_ATOMIC_BIT))
+		{ MCC_TRACE("br\n"); return 0; }
 	if (is_compatible_unqualified_types(t1, t2))
 		{ MCC_TRACE("br\n"); return 1; }
 	return is_compatible_transp_union(t1, t2) || is_compatible_transp_union(t2, t1);

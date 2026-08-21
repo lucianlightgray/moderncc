@@ -2065,6 +2065,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c11 {W}/as.c -o {W}/as && {W}/as && echo SCALAR_OK",
 		 "__atomic_exchange\n__atomic_load\n__atomic_store_8\nSCALAR_OK\n"},
 
+		{"atomic_param_type_distinct", "",
+		 "printf 'void f(_Atomic int); void f(int);\\nint main(void){return 0;}\\n' > {W}/apr.c ; "
+		 "{MCC} -B{B} -I{I} -std=c11 -c {W}/apr.c -o {W}/apr.o 2>&1 | grep -oE 'incompatible types for redefinition' ; "
+		 "printf '_Atomic int a=3;\\nint main(void){int b=a; return b==3?0:1;}\\n' > {W}/apok.c && "
+		 "{MCC} -B{B} -I{I} -std=c11 {W}/apok.c -o {W}/apok && {W}/apok && echo ATOMIC_ASSIGN_OK",
+		 "incompatible types for redefinition\nATOMIC_ASSIGN_OK\n"},
+
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
 		 " s.a=1; s.c=2;"
