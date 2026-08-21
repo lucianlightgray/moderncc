@@ -6578,6 +6578,10 @@ if(MCC_BUILD_TESTS)
                         FIXTURES_SETUP "${_ofx_hfix}"
                         FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT"
                         SKIP_RETURN_CODE 77 LABELS qemu TIMEOUT 600)
+                else()
+                    mcc_skip_test("optfire-boot/${_ofx_cpu}"
+                        "no ${_ofx_runner} + vendored gentoo-stage3-${_ofx_cpu}-glibc sysroot + ${MCC_CROSS_DIR}/mcc-${_ofx_cpu} cross toolchain on this host, so no ${_ofx_cpu}-hosted mcc can be bootstrapped to -run optfire cells; the differ cells fall back to fired-only. Install qemu-user + `cmake --preset cross`, or point -DMCC_CROSS_DIR at a tree with mcc-${_ofx_cpu} and its runtime"
+                        LABELS qemu)
                 endif()
             endif()
             file(GLOB _ofx_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
