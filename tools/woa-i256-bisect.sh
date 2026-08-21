@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# T-win-50041 crash characterization on windows-11-arm. Round 3: is the -O1/-O2
-# compile-only segfault FLAKY? Compile the probe -c N times per opt level, count
-# SIGSEGVs. Flaky ⇒ uninitialized-memory / MSVC-arm64 host miscompile of mcc.
+# T-win-50041 round 4: the crash is in __int256-TYPE codegen (u64 helpers are
+# clean). Isolate which __int256 op crashes mcc -c -O1 on windows-11-arm.
 set -x
 S="$PWD"; B="$S/cmake-woa"; OUT="$S/bisect-out"; mkdir -p "$OUT"
 cmake -S "$S" -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release > "$OUT/00-cfg.txt" 2>&1 || true
@@ -10,28 +9,33 @@ MCC="$B/mcc.exe"; [ -x "$MCC" ] || MCC="$B/mcc"
 RT="-B $S/runtime/win32 -B $S/runtime -I $S/runtime/include -I $S/tests/support"
 PROBE="$S/tools/woa-int256-probe.c"
 BIS="$S/tools/woa-i256-bisect.c"
-N=30
+N=20
 
 reps() {  # label src flags...
   local label="$1" src="$2"; shift 2
-  local crash=0 ok=0 rcs="" i rc
+  local crash=0 ok=0 i rc
   for i in $(seq 1 $N); do
-    "$MCC" $RT "$@" -c "$src" -o "$OUT/o$i.o" 2>/dev/null; rc=$?
-    if [ $rc -eq 0 ]; then ok=$((ok+1)); else crash=$((crash+1)); rcs="$rcs $rc"; fi
+    "$MCC" $RT "$@" -c "$src" -o "$OUT/o.o" 2>/dev/null; rc=$?
+    if [ $rc -eq 0 ]; then ok=$((ok+1)); else crash=$((crash+1)); fi
   done
-  echo "$label: CRASH $crash/$N, OK $ok/$N   (fail rcs:$rcs)"
+  echo "$label: CRASH $crash/$N"
 }
 
 {
   echo "== mcc = $MCC =="; "$MCC" -v 2>&1 | head -1
-  reps "probe -c -O0" "$PROBE" -O0
-  reps "probe -c -O1" "$PROBE" -O1
-  reps "probe -c -O2" "$PROBE" -O2
-  echo "--- isolated constructs at -O1, N reps each (find a consistent crasher) ---"
-  reps "SHL      -c -O1" "$BIS" -O1 -DPART_SHL
-  reps "NEG      -c -O1" "$BIS" -O1 -DPART_NEG
-  reps "MAG+SHL  -c -O1" "$BIS" -O1 -DPART_MAG -DPART_SHL
-  reps "ALL      -c -O1" "$BIS" -O1 -DPART_SHL -DPART_NEG -DPART_MAG
+  echo "--- positive control (full probe, expect >0 in a bad-build run) ---"
+  reps "PROBE       -O1" "$PROBE" -O1
+  echo "--- isolate __int256 operations at -O1 ---"
+  reps "I256_CASTV  -O1" "$BIS" -O1 -DPART_I256_CASTV
+  reps "I256_CASTC  -O1" "$BIS" -O1 -DPART_I256_CASTC
+  reps "I256_NEG    -O1" "$BIS" -O1 -DPART_I256_NEG
+  reps "I256_ALIAS  -O1" "$BIS" -O1 -DPART_I256_ALIAS
+  reps "I256_ADD    -O1" "$BIS" -O1 -DPART_I256_ADD
+  echo "--- combos (whole-probe interaction?) ---"
+  reps "CASTV+ALIAS -O1" "$BIS" -O1 -DPART_I256_CASTV -DPART_I256_ALIAS
+  reps "ALL_I256    -O1" "$BIS" -O1 -DPART_I256_CASTV -DPART_I256_CASTC -DPART_I256_NEG -DPART_I256_ALIAS -DPART_I256_ADD
+  echo "--- controls at -O0 (expect 0) ---"
+  reps "ALL_I256    -O0" "$BIS" -O0 -DPART_I256_CASTV -DPART_I256_CASTC -DPART_I256_NEG -DPART_I256_ALIAS -DPART_I256_ADD
 } > "$OUT/bisect.txt" 2>&1
 echo "===== BISECT RESULTS ====="
 cat "$OUT/bisect.txt"

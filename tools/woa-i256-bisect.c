@@ -1,6 +1,6 @@
-/* T-win-50041 -O1 crash bisection (arm64-Windows only). Compile each PART with
-   -DPART_* -O1 on the windows-11-arm runner. main() exercises the enabled part so
-   it survives DCE and is present for the LINK step (the -O1 crash is link-path). */
+/* T-win-50041 -O1 crash bisection (arm64-Windows only). Round 4: the u64-limb
+   helpers do NOT crash; the FULL probe (30/30) does — so isolate the __int256
+   TYPE operations. Each PART is an external fn codegen'd by -c (empty main). */
 typedef unsigned long long L;
 
 #ifdef PART_SHL
@@ -19,49 +19,24 @@ void t_shl(L r[4], unsigned n) {
 }
 #endif
 
-#ifdef PART_NEG
-void t_neg(L r[4], const L a[4]) {
-	L z[4] = {0, 0, 0, 0}, borrow = 0;
-	int i;
-	for (i = 0; i < 4; i++) {
-		L d = z[i] - a[i], b1 = z[i] < a[i], t = d - borrow, b2 = d < borrow;
-		r[i] = t;
-		borrow = b1 | b2;
-	}
-}
+#ifdef PART_I256_CASTV   /* runtime double -> __int256 */
+int f_castv(double x) { __int256 v = (__int256)x; L *l = (L *)&v; return (int)l[0]; }
 #endif
 
-#ifdef PART_MAG
-#ifdef PART_SHL
-extern void t_shl(L r[4], unsigned n);
-#endif
-void t_mag(L r[4], double x) {
-	int i, exp, e;
-	L b, mant;
-	__builtin_memcpy(&b, &x, 8);
-	for (i = 0; i < 4; i++) r[i] = 0;
-	if (!(x >= 1.0)) return;
-	exp = (int)((b >> 52) & 0x7FF) - 1023;
-	mant = (b & 0xFFFFFFFFFFFFFULL) | ((L)1 << 52);
-	e = exp - 52;
-	if (exp >= 256) return;
-	r[0] = mant;
-#ifdef PART_SHL
-	if (e > 0) t_shl(r, (unsigned)e);
-#endif
-}
+#ifdef PART_I256_CASTC   /* compile-time (const-fold) double -> __int256 */
+void f_castc(L *o) { __int256 v = (__int256)-1e30; L *l = (L *)&v; o[0] = l[0]; o[3] = l[3]; }
 #endif
 
-int main(void) {
-	L r[4] = {1, 2, 3, 4};
-#ifdef PART_SHL
-	t_shl(r, 65);
+#ifdef PART_I256_NEG     /* __int256 unary minus */
+void f_neg(L *o, __int256 a) { __int256 v = -a; L *l = (L *)&v; o[0] = l[0]; }
 #endif
-#ifdef PART_NEG
-	{ L a[4] = {1, 2, 3, 4}; t_neg(r, a); }
+
+#ifdef PART_I256_ALIAS   /* p256's pattern: read an __int256-by-value param via L* */
+void f_alias(L *o, __int256 v) { L *l = (L *)&v; o[0] = l[0]; o[1] = l[1]; o[2] = l[2]; o[3] = l[3]; }
 #endif
-#ifdef PART_MAG
-	t_mag(r, -1e30);
+
+#ifdef PART_I256_ADD     /* __int256 arithmetic */
+void f_add(L *o, __int256 a, __int256 b) { __int256 v = a + b; L *l = (L *)&v; o[0] = l[0]; }
 #endif
-	return (int)r[0];
-}
+
+int main(void) { return 0; }
