@@ -157,6 +157,12 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {W}/de.c -o {W}/de2.o 2>&1 | grep -c 'ambiguous' ; echo OK ; }",
 		 "1\n0\nOK\n"},
 
+		{"shift_paren_warn", "",
+		 "printf 'int f1(int a,int b,int c){return a + b << c;}\\nint f2(int a,int b,int c){return a - b >> c;}\\nint f3(int a,int b,int c){return a * b << c;}\\nint f4(int a,int b,int c){return (a+b) << c;}\\nint f5(int a,int b,int c){return a << b < c;}\\n' > {W}/sp.c && "
+		 "{ {MCC} -B{B} -I{I} -Wall -c {W}/sp.c -o {W}/sp.o 2>&1 | grep -oE \"around '.' inside '..'\" ; "
+		 "{MCC} -B{B} -I{I} -c {W}/sp.c -o {W}/sp2.o 2>&1 | grep -c 'inside' ; echo OK ; }",
+		 "around '+' inside '<<'\naround '-' inside '>>'\n0\nOK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"

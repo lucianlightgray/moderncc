@@ -15991,6 +15991,11 @@ static void expr_infix(int p) { MCC_TRACE("enter\n");
 					((lp == 6 || lp == 7) || (rp == 6 || rp == 7))) { MCC_TRACE("br\n");
 				mcc_warning_c(warn_parentheses)(
 						"suggest parentheses around comparison in operand of '%c'", t); }
+			if ((t == TOK_SHL || t == TOK_SAR) && (mcc_state->warn_parentheses & WARN_ON) &&
+					(lp == 9 || rp == 9)) { MCC_TRACE("br\n");
+				mcc_warning_c(warn_parentheses)(
+						"suggest parentheses around '%c' inside '%s'",
+						lp == 9 ? left_op : right_op, t == TOK_SHL ? "<<" : ">>"); }
 			gen_op(t);
 			expr_top_op = t;
 		}
