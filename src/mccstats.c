@@ -119,6 +119,8 @@ typedef struct McccStats {
 	unsigned long jit_blind_proven;
 	unsigned long jit_blind_promoted;
 	unsigned long jit_blind_dirty;
+	unsigned long jit_blind_div_inrange;
+	unsigned long jit_blind_div_oorange;
 	unsigned long jit_kgc_hits;
 	unsigned long jit_kgc_misses;
 	unsigned long jit_poison;
@@ -420,6 +422,9 @@ static void mccstats_build(McccRows *r) { MCC_TRACE("enter\n");
 											 ? mcs.jit_blind_variants - mcs.jit_blind_dirty
 											 : 0,
 									 mcs.jit_blind_dirty);
+			if (mcs.jit_blind_div_inrange || mcs.jit_blind_div_oorange)
+				mccstats_row(r, "          blind guard-viability: %lu diverged-inputs-fit-int (stub input-guard MISSES -> needs in-variant per-node guard)  %lu diverged-inputs-out-of-int (cheap stub input-guard suffices)",
+										 mcs.jit_blind_div_inrange, mcs.jit_blind_div_oorange);
 		}
 		if (mcs.jit_nearmatch || mcs.jit_kgc_corrections) { MCC_TRACE("br\n");
 			mccstats_row(r, "          near-match: %lu variants kept  %lu corrections patched",
@@ -732,6 +737,15 @@ void mcc_stats_jit_blind_dirty(void) { MCC_TRACE("enter\n");
 	if (!mcs.active)
 		{ MCC_TRACE("br\n"); return; }
 	mcs.jit_blind_dirty++;
+}
+
+void mcc_stats_jit_blind_div_range(int input_fits_int) { MCC_TRACE("enter\n");
+	if (!mcs.active)
+		{ MCC_TRACE("br\n"); return; }
+	if (input_fits_int)
+		{ MCC_TRACE("br\n"); mcs.jit_blind_div_inrange++; }
+	else
+		{ MCC_TRACE("br\n"); mcs.jit_blind_div_oorange++; }
 }
 
 void mcc_stats_jit_kgc_hit(void) { MCC_TRACE("enter\n");

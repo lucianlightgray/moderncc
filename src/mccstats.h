@@ -39,6 +39,7 @@ void mcc_stats_jit_recompile(void);
 void mcc_stats_jit_blind(int n, int proven);
 void mcc_stats_jit_blind_promote(void);
 void mcc_stats_jit_blind_dirty(void);
+void mcc_stats_jit_blind_div_range(int input_fits_int);
 void mcc_stats_jit_kgc_hit(void);
 void mcc_stats_jit_kgc_miss(void);
 void mcc_stats_jit_poison(void);
