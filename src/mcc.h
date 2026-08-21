@@ -335,6 +335,7 @@ struct SymAttr {
 			old_promote : 1,
 			naked : 1,
 			nodiscard : 1,
+			sizeof_array_param : 1,
 			nonnull_mask : 16;
 };
 
@@ -803,6 +804,7 @@ struct MCCState {
 	unsigned char warn_shift_count_negative;
 	unsigned char warn_shift_count_overflow;
 	unsigned char warn_overflow;
+	unsigned char warn_sizeof_array_argument;
 	unsigned char warn_div_by_zero;
 	unsigned char warn_old_style_definition;
 	unsigned char warn_undefined_internal;

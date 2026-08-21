@@ -1219,6 +1219,7 @@ LIBMCCAPI MCCState *mcc_new(void) { MCC_TRACE("enter\n");
 	s->warn_shift_count_overflow = WARN_ON;
 	s->warn_div_by_zero = WARN_ON;
 	s->warn_overflow = WARN_ON;
+	s->warn_sizeof_array_argument = WARN_ON;
 	s->warn_old_style_definition = WARN_ON;
 	s->warn_undefined_internal = WARN_ON;
 	s->warn_return_local_addr = WARN_ON;
@@ -2482,6 +2483,7 @@ static const FlagDef options_W[] = {
 		{offsetof(MCCState, warn_shift_count_negative), 0, "shift-count-negative"},
 		{offsetof(MCCState, warn_shift_count_overflow), 0, "shift-count-overflow"},
 		{offsetof(MCCState, warn_overflow), 0, "overflow"},
+		{offsetof(MCCState, warn_sizeof_array_argument), 0, "sizeof-array-argument"},
 		{offsetof(MCCState, warn_div_by_zero), 0, "div-by-zero"},
 		{offsetof(MCCState, warn_old_style_definition), 0, "old-style-definition"},
 		{offsetof(MCCState, warn_undefined_internal), 0, "undefined-internal"},

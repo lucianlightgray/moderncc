@@ -322,6 +322,7 @@ static int constant_p_saw_comma;
 static int auto_type_allowed;
 static CType *auto_type_capture;
 static int auto_type_captured;
+static Sym *sizeof_arr_param_hint;
 
 ST_DATA int global_expr;
 ST_DATA CType func_vt;
@@ -5023,6 +5024,7 @@ ST_FUNC void (gen_op)(int op) { MCC_TRACE("enter\n");
 	int op_class = op;
 
 	expr_has_effect = 0;
+	sizeof_arr_param_hint = NULL;
 
 	if (op == TOK_SHR || op == TOK_SAR || op == TOK_SHL)
 		{ MCC_TRACE("br\n"); op_class = SHIFT_OP; }
@@ -6826,6 +6828,7 @@ ST_FUNC void (vstore)(void) { MCC_TRACE("enter\n");
 ST_FUNC void inc(int post, int c) { MCC_TRACE("enter\n");
 	SValue res;
 	CType cplx;
+	sizeof_arr_param_hint = NULL;
 	test_lvalue();
 	if (vtop->r & VT_NONLVAL)
 		{ MCC_TRACE("br\n"); expect("lvalue"); }
@@ -10459,7 +10462,7 @@ static int post_type(CType *type, AttributeDef *ad, int storage, int td) { MCC_T
 }
 
 static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) { MCC_TRACE("enter\n");
-	int n, l, t1, arg_size, align, pquals;
+	int n, l, t1, arg_size, align, pquals, was_array_param;
 	int star_param = 0;
 	int empty_paren = 0;
 	Sym **plast, *s, *first, **ps, *sr;
@@ -10558,11 +10561,13 @@ static int post_type_nested(CType *type, AttributeDef *ad, int storage, int td) 
 												 (pt.t & VT_BTYPE) == VT_FUNC
 										 ? 0
 										 : pt.t & VT_QUALIFY;
+				was_array_param = (pt.t & (VT_ARRAY | VT_VLA)) != 0;
 				convert_parameter_type(&pt);
 				arg_size += (type_size(&pt, &align) + MCC_PTR_SIZE - 1) / MCC_PTR_SIZE;
 				pt.t |= pquals;
 				s = sym_push(n, &pt, VT_LOCAL | VT_LVAL, 0);
 				pt.t &= ~pquals;
+				s->a.sizeof_array_param = was_array_param;
 				s->vla_inner_id = file->line_num;
 				s->a.inited = 1;
 				if (ad1.storage_class & 2)
@@ -14051,6 +14056,8 @@ tok_next:
 		t = VT_INT;
 	push_tokc:
 		type.t = t;
+		type.ref = NULL;
+		type.bs = 0;
 		vsetc(&type, VT_CONST, &tokc);
 		if (tok_imaginary) { MCC_TRACE("br\n");
 			gen_imaginary_complex(t);
@@ -14368,6 +14375,7 @@ tok_next:
 		sizeof_parsed_type = 0;
 		sizeof_parsed_align = 0;
 		member_align_hint = 0;
+		sizeof_arr_param_hint = NULL;
 		if (tok == '(')
 			{ MCC_TRACE("br\n"); tok = TOK_SOTYPE; }
 		rir_hook_synth_begin();
@@ -14411,6 +14419,16 @@ tok_next:
 				{ MCC_TRACE("br\n"); mcc_pedantic("'_Alignof' applied to a void type"); }
 		}
 		if (t == TOK_SIZEOF) { MCC_TRACE("br\n");
+			if (sizeof_arr_param_hint && !sizeof_parsed_type &&
+					(type.t & VT_BTYPE) == VT_PTR &&
+					type.ref == sizeof_arr_param_hint->type.ref) { MCC_TRACE("br\n");
+				char ptbuf[256]; CType ptt = sizeof_arr_param_hint->type;
+				ptt.t &= ~VT_STORAGE;
+				type_to_str(ptbuf, sizeof ptbuf, &ptt, NULL);
+				mcc_warning_c(warn_sizeof_array_argument)(
+						"'sizeof' on array function parameter '%s' will return size of '%s'",
+						get_tok_str(sizeof_arr_param_hint->v, NULL), ptbuf);
+			}
 			/* T-mac-30194(2): give the specific incomplete-type diagnostic
 			 * (like the _Alignof path below) instead of the generic "unknown
 			 * type size" that vpush_type_size emits from many contexts. */
@@ -15676,6 +15694,8 @@ tok_next:
 		}
 
 		s->a.used = 1;
+		if (s->a.sizeof_array_param)
+			{ MCC_TRACE("br\n"); sizeof_arr_param_hint = s; }
 
 		if (s->a.unavailable && !nocode_wanted)
 			{ MCC_TRACE("br\n"); mcc_error("'%s' is unavailable",
@@ -16587,6 +16607,7 @@ ST_FUNC void gexpr(void) { MCC_TRACE("enter\n");
 			expr_eq();
 		} while (tok == ',');
 		member_align_hint = 0;
+		sizeof_arr_param_hint = NULL;
 		CST_OPEN_AT(CST_Comma, cst_m);
 		CST_CLOSE();
 

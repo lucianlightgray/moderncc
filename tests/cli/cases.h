@@ -2110,12 +2110,31 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/eb.c -o {W}/eb3.o 2>&1 | grep -c 'empty body'",
 		 "E=3\nA=0\nD=0\n"},
 
+		{"generic_float_const_dispatch", "",
+		 "printf 'extern int printf(const char*,...);\\n"
+		 "#define W(x) _Generic((x), float: 1, double: 2, long double: 3, default: 0)\\n"
+		 "int main(void){ printf(\"%%d%%d%%d\\\\n\", W(4.0f), W(4.0), W(4.0L)); return 0; }\\n' > {W}/gfc.c && "
+		 "{MCC} -B{B} -I{I} {W}/gfc.c -o {W}/gfc && {W}/gfc",
+		 "123\n"},
+
 		{"bool_operation_warn", "",
 		 "printf 'int t1(_Bool b){return ~b;}\\nint t2(_Bool b){b++;return b;}\\n"
 		 "int t3(_Bool b){b--;return b;}\\nint t4(int x){return ~x;}\\nint main(void){return 0;}\\n' > {W}/bo.c && "
 		 "printf 'A='; {MCC} -B{B} -I{I} -Wall -c {W}/bo.c -o {W}/bo.o 2>&1 | grep -c 'boolean expression'; "
 		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/bo.c -o {W}/bo2.o 2>&1 | grep -c 'boolean'",
 		 "A=3\nD=0\n"},
+
+		{"sizeof_array_argument_warn", "",
+		 "printf 'int p1(int a[10]){return (int)sizeof(a);}\\n"
+		 "int p2(char a[5]){return (int)sizeof a;}\\n"
+		 "int n1(int *a){return (int)sizeof(a);}\\n"
+		 "int n2(int a[10]){return (int)sizeof(*a);}\\n"
+		 "int n3(int a[10]){return (int)sizeof(a+1);}\\n"
+		 "int garr[4]; int n4(void){return (int)sizeof(garr);}\\n"
+		 "int main(void){return 0;}\\n' > {W}/sza.c && "
+		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/sza.c -o {W}/sza.o 2>&1 | grep -c 'array function parameter'; "
+		 "printf 'N='; {MCC} -B{B} -I{I} -Wno-sizeof-array-argument -c {W}/sza.c -o {W}/sza2.o 2>&1 | grep -c 'array function parameter'",
+		 "D=2\nN=0\n"},
 
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
