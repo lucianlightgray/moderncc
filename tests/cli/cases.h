@@ -135,6 +135,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -Wno-address-of-packed-member -c {W}/pm.c -o {W}/pm2.o 2>&1 | grep -c 'packed' ; echo OK ; }",
 		 "packed member may result in an unaligned\n0\n0\nOK\n"},
 
+		{"implicit_fallthrough_warn", "",
+		 "printf 'int f(int x){int r=0;switch(x){case 1: r=1; case 2: r=2; break;}return r;}\\n' > {W}/ift.c && "
+		 "printf 'int g(int x){int r=0;switch(x){case 1: r=1; break; case 2: r=2; break;}return r;}\\n' > {W}/ifb.c && "
+		 "printf 'int h(int x){int r=0;switch(x){case 1: r=1; __attribute__((fallthrough)); case 2: r=2; break;}return r;}\\n' > {W}/ifa.c && "
+		 "{ {MCC} -B{B} -I{I} -Wimplicit-fallthrough -c {W}/ift.c -o {W}/ift.o 2>&1 | grep -o 'this statement may fall through' ; "
+		 "{MCC} -B{B} -I{I} -c {W}/ift.c -o {W}/ift2.o 2>&1 | grep -c 'fall through' ; "
+		 "{MCC} -B{B} -I{I} -Wall -c {W}/ift.c -o {W}/ift3.o 2>&1 | grep -c 'fall through' ; "
+		 "{MCC} -B{B} -I{I} -Wimplicit-fallthrough -c {W}/ifb.c -o {W}/ifb.o 2>&1 | grep -c 'fall through' ; "
+		 "{MCC} -B{B} -I{I} -Wimplicit-fallthrough -c {W}/ifa.c -o {W}/ifa.o 2>&1 | grep -c 'fall through' ; echo OK ; }",
+		 "this statement may fall through\n0\n0\n0\n0\nOK\n"},
+
 		{"ctor_dtor_priority_aot", "os=Darwin",
 		 "printf 'extern long write(int,const void*,unsigned long);\\n"
 		 "#ifdef C\\n"

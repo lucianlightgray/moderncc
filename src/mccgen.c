@@ -7039,6 +7039,9 @@ static void parse_one_attribute(AttributeDef *ad, int t) { MCC_TRACE("enter\n");
 			break;
 		case TOK_FALLTHROUGH1:
 		case TOK_FALLTHROUGH2:
+			if (cur_switch)
+				{ MCC_TRACE("br\n"); cur_switch->ft_saw = 1; }
+			break;
 		case TOK_UNSEQUENCED1:
 		case TOK_UNSEQUENCED2:
 		case TOK_REPRODUCIBLE1:
@@ -17681,6 +17684,7 @@ again:
 		sw->prev = cur_switch;
 		sw->nocode_wanted = nocode_wanted;
 		sw->vla_gpp = vla_seq;
+		sw->ft_last_ind = -1;
 		cur_switch = sw;
 
 		if (sscope)
@@ -17773,6 +17777,11 @@ again:
 		struct case_t *cr;
 		if (!cur_switch)
 			{ MCC_TRACE("br\n"); expect("switch"); }
+		if (cur_switch->ft_last_ind >= 0 && !nocode_wanted && gind() != cur_switch->ft_last_ind
+				&& !cur_switch->ft_saw && (mcc_state->warn_implicit_fallthrough & WARN_ON))
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_fallthrough)("this statement may fall through"); }
+		cur_switch->ft_saw = 0;
+		cur_switch->ft_last_ind = gind();
 		cr = mcc_malloc(sizeof(struct case_t));
 		dynarray_add(&cur_switch->p, &cur_switch->n, cr);
 		t = cur_switch->sv.type.t;
@@ -17803,6 +17812,11 @@ again:
 			{ MCC_TRACE("br\n"); expect("switch"); }
 		if (cur_switch->def_sym)
 			{ MCC_TRACE("br\n"); mcc_error("too many 'default'"); }
+		if (cur_switch->ft_last_ind >= 0 && !nocode_wanted && gind() != cur_switch->ft_last_ind
+				&& !cur_switch->ft_saw && (mcc_state->warn_implicit_fallthrough & WARN_ON))
+			{ MCC_TRACE("br\n"); mcc_warning_c(warn_implicit_fallthrough)("this statement may fall through"); }
+		cur_switch->ft_saw = 0;
+		cur_switch->ft_last_ind = gind();
 		cur_switch->def_sym = cur_switch->nocode_wanted ? -1 : gind();
 		rir_hook_default();
 		skip(':');

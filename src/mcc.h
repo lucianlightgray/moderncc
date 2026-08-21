@@ -628,6 +628,8 @@ struct switch_t {
 	struct switch_t *prev;
 	SValue sv;
 	int vla_gpp;
+	int ft_saw;
+	int ft_last_ind;
 };
 
 struct temp_local_variable {
@@ -767,6 +769,7 @@ struct MCCState {
 	unsigned char warn_pointer_sign;
 	unsigned char warn_parentheses;
 	unsigned char warn_switch;
+	unsigned char warn_implicit_fallthrough;
 	unsigned char warn_unused_variable;
 	unsigned char warn_unused_parameter;
 	unsigned char warn_unused_function;
