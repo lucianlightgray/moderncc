@@ -1051,7 +1051,7 @@ static int arm64_natural_align16(CType *type) { MCC_TRACE("enter\n");
 	return 0;
 }
 
-static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned long *a) { MCC_TRACE("enter\n");
+static unsigned long arm64_pcs_aux(int is_variadic, int nfixed, int n, CType **type, unsigned long *a) { MCC_TRACE("enter\n");
 	int nx = 0;
 	int nv = 0;
 	unsigned long ns = 32;
@@ -1067,18 +1067,18 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 
 		int macho_named = 0;
 #if defined(MCC_TARGET_MACHO)
-		macho_named = !variadic || i < variadic;
+		macho_named = !is_variadic || i < nfixed;
 #endif
 
 #if defined(MCC_TARGET_MACHO)
-		if (variadic && i == variadic) { MCC_TRACE("br\n");
+		if (is_variadic && i == nfixed) { MCC_TRACE("br\n");
 			nx = 8;
 			nv = 8;
 			ns = (ns + 7) & ~7UL;
 		}
 
 #elif defined(MCC_TARGET_PE)
-		if (variadic && i >= variadic) { MCC_TRACE("br\n");
+		if (is_variadic && i >= nfixed) { MCC_TRACE("br\n");
 			hfa = 0;
 			if (is_float_abi(bt))
 				{ MCC_TRACE("br\n"); bt = VT_INT, size = align = 8; }
@@ -1176,17 +1176,17 @@ static unsigned long arm64_pcs_aux(int variadic, int n, CType **type, unsigned l
 	return ns - 32;
 }
 
-static unsigned long arm64_pcs(int variadic, int n, CType **type, unsigned long *a) { MCC_TRACE("enter\n");
+static unsigned long arm64_pcs(int is_variadic, int nfixed, int n, CType **type, unsigned long *a) { MCC_TRACE("enter\n");
 	unsigned long stack;
 
 	if ((type[0]->t & VT_BTYPE) == VT_VOID)
 		{ MCC_TRACE("br\n"); a[0] = -1; }
 	else { MCC_TRACE("br\n");
-		arm64_pcs_aux(0, 1, type, a);
+		arm64_pcs_aux(0, 0, 1, type, a);
 		assert(a[0] == 0 || a[0] == 1 || a[0] == 16);
 	}
 
-	stack = arm64_pcs_aux(variadic, n - 1, type + 1, a + 1);
+	stack = arm64_pcs_aux(is_variadic, nfixed, n - 1, type + 1, a + 1);
 
 	if (0) { MCC_TRACE("br\n");
 		for (int i = 0; i < n; i++) { MCC_TRACE("br\n");
@@ -1278,12 +1278,13 @@ ST_FUNC void gfunc_call(int nb_args) { MCC_TRACE("enter\n");
 	for (int i = 0; i < nb_args; i++)
 		{ MCC_TRACE("br\n"); t[nb_args - i] = &vtop[-i].type; }
 
-	stack = arm64_pcs(
+	int pcs_is_variadic = variadic;
+	int pcs_nfixed = var_nb_arg;
 #ifdef MCC_TARGET_PE
-			old_style ? -1 :
+	if (old_style)
+		{ MCC_TRACE("br\n"); pcs_is_variadic = 1; pcs_nfixed = 0; }
 #endif
-								var_nb_arg,
-			nb_args + 1, t, a);
+	stack = arm64_pcs(pcs_is_variadic, pcs_nfixed, nb_args + 1, t, a);
 
 	for (int i = nb_args; i; i--)
 		{ MCC_TRACE("br\n"); if (a[i] & 1) { MCC_TRACE("br\n");
@@ -1553,7 +1554,7 @@ ST_FUNC void gfunc_prolog(Sym *func_sym) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); t[i] = &int_type; }
 #endif
 
-	arm64_func_va_list_stack = arm64_pcs(var_nb_arg, n, t, a);
+	arm64_func_va_list_stack = arm64_pcs(variadic, var_nb_arg, n, t, a);
 
 #if defined(MCC_TARGET_MACHO)
 	if (variadic)
@@ -1843,7 +1844,7 @@ ST_FUNC void gfunc_return(CType *func_type) { MCC_TRACE("enter\n");
 	CType *t = func_type;
 	unsigned long a;
 
-	arm64_pcs(0, 1, &t, &a);
+	arm64_pcs(0, 0, 1, &t, &a);
 
 	switch (a) { MCC_TRACE("br\n");
 	case -1:

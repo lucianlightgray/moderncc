@@ -2043,6 +2043,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -run {W}/va2sse.c && echo OK",
 		 "OK\n"},
 
+		{"arm64_unnamed_varargs_c2y", "cpu=arm64",
+		 "printf '#include <stdarg.h>\\nstruct dd{double a,b;};\\n"
+		 "void f(...){va_list ap; va_start(ap);"
+		 " int i=va_arg(ap,int); long long l=va_arg(ap,long long); double d=va_arg(ap,double);"
+		 " struct dd s=va_arg(ap,struct dd); int j=va_arg(ap,int); va_end(ap);"
+		 " if(i!=42||l!=1000000000007LL||d!=2.5||s.a!=7.5||s.b!=8.5||j!=-9)__builtin_abort();}\\n"
+		 "int main(void){struct dd s={7.5,8.5};"
+		 " f(42,1000000000007LL,2.5,s,-9); return 0;}\\n' > {W}/uvarg.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/uvarg.c && echo OK",
+		 "OK\n"},
+
 		{"atomic_aggregate_load_generic", "",
 		 "printf '#include <stdatomic.h>\\nstruct P{int x,y;};\\n_Atomic struct P p;\\n"
 		 "void f(struct P v){ struct P r=atomic_load(&p);(void)r;"
