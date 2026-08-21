@@ -371,6 +371,7 @@ typedef struct
 	char flex_auto;
 	char flex_warned;
 	char excess_warned;
+	char mfi_last_zero;
 	int llocal;
 	int rng_depth;
 	int rng_flushed;
@@ -19092,6 +19093,7 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 				int sublist_comma = 0;
 				int my_rng = decl_rng_claim(p);
 				int my_depth = p->rng_depth, shifted = 0, nitem = 0;
+				int saw_designator = 0;
 				while (tok != '}' || (flags & DIF_HAVE_ELEM)) { MCC_TRACE("br\n");
 					if (no_oblock && sublist_comma && !(flags & DIF_HAVE_ELEM) &&
 							(tok == '[' || tok == '.')) { MCC_TRACE("br\n");
@@ -19104,6 +19106,8 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 						c += p->rng_pre[my_depth];
 						shifted = 1;
 					}
+					if (!(flags & DIF_HAVE_ELEM) && (tok == '[' || tok == '.'))
+						{ MCC_TRACE("br\n"); saw_designator = 1; }
 					++nitem;
 					len = decl_designator(p, type, c, &f, flags, len);
 					flags &= ~DIF_HAVE_ELEM;
@@ -19130,6 +19134,17 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 					decl_design_spread(p, &p->rng_type[my_rng], p->rng_base[my_rng],
 														 p->rng_es[my_rng], p->rng_nb[my_rng]);
 					p->rng_done[my_rng] = 1;
+				}
+				if (!(flags & DIF_SIZE_ONLY) && !(type->t & VT_ARRAY) &&
+						(type->t & VT_BTYPE) == VT_STRUCT && s->type.t != VT_UNION &&
+						f != NULL && nitem > 0 && !saw_designator &&
+						(mcc_state->warn_missing_field_initializers & WARN_ON)) { MCC_TRACE("br\n");
+					int first_scalar = s->next && (s->next->type.t & VT_BTYPE) != VT_STRUCT &&
+														 !(s->next->type.t & VT_ARRAY);
+					if (!(nitem == 1 && first_scalar && p->mfi_last_zero))
+						{ MCC_TRACE("br\n"); mcc_warning_c(warn_missing_field_initializers)(
+								"missing initializer for field '%s'",
+								get_tok_str(f->v & ~SYM_FIELD, NULL)); }
 				}
 			}
 			p->reverse_so = saved_rso;
@@ -19224,6 +19239,7 @@ static void decl_initializer_nested(init_params *p, CType *type, unsigned long c
 				parse_init_elem(!p->sec ? EXPR_ANY : EXPR_CONST);
 				assign_ctx_is_init = aci_prev;
 			}
+			p->mfi_last_zero = (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST && vtop->c.i == 0 && ((vtop->type.t & VT_BTYPE) != VT_INT128 || vtop->c.q.hi == 0);
 			if (!p->sec && (flags & DIF_CLEAR) && (vtop->r & (VT_VALMASK | VT_LVAL | VT_SYM)) == VT_CONST && vtop->c.i == 0 && ((vtop->type.t & VT_BTYPE) != VT_INT128 || vtop->c.q.hi == 0) && btype_size(type->t & VT_BTYPE))
 				{ MCC_TRACE("br\n"); vpop(); }
 			else

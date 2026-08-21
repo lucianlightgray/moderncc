@@ -2080,6 +2080,15 @@ static const cli_case_t cli_cases[] = {
 		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/oi.c -o {W}/oi3.o 2>&1 | grep -c 'overwritten'",
 		 "W=2\nA=0\nD=0\n"},
 
+		{"missing_field_initializers_warn", "",
+		 "printf 'struct S{int x,y;};struct O{struct S i;int z;};\\n"
+		 "struct S a={1};\\nstruct S b={0};\\nstruct S c={1,2};\\n"
+		 "struct S d={.x=1};\\nstruct O e={{1,2}};\\nint main(void){return 0;}\\n' > {W}/mfi.c && "
+		 "printf 'X='; {MCC} -B{B} -I{I} -Wmissing-field-initializers -c {W}/mfi.c -o {W}/mfi.o 2>&1 | grep -c 'missing initializer for field'; "
+		 "printf 'E='; {MCC} -B{B} -I{I} -Wextra -c {W}/mfi.c -o {W}/mfi2.o 2>&1 | grep -c 'missing initializer'; "
+		 "printf 'D='; {MCC} -B{B} -I{I} -c {W}/mfi.c -o {W}/mfi3.o 2>&1 | grep -c 'missing initializer'",
+		 "X=2\nE=2\nD=0\n"},
+
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
 		 " s.a=1; s.c=2;"
