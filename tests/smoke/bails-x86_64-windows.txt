@@ -53,8 +53,8 @@
 # mcc's plain bit-field layout matches every native Windows compiler; smokerun's
 # msstruct expectation is the MS line on WIN32.)
 O2 jit-not-baked:signature 180
-O0 replay-fallback:len 3
-O1 replay-fallback:len 3
+O0 replay-fallback:len 4
+O1 replay-fallback:len 4
 O13 strat-dark:abs 1
 O13 strat-dark:bf 1
 O13 strat-dark:bfold 1
@@ -70,9 +70,9 @@ O13 strat-dark:reassoc 1
 O13 strat-dark:sra 1
 O13 strat-dark:sroa 1
 O13 strat-dark:tco 1
-O2 replay-fallback:len 3
-O3 replay-fallback:len 3
-O4 replay-fallback:len 3
+O2 replay-fallback:len 4
+O3 replay-fallback:len 4
+O4 replay-fallback:len 4
 O4 slice-refused:all-undefined 15
 O4 slice-refused:no-static-type 836
 O4 slice-refused:unsupported-op 1
