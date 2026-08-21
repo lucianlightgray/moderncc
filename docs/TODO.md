@@ -4,7 +4,7 @@
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| mac-arm64 | macOS    | arm64 | 30000–49999 | 30265   | 2026-08-21T00:54Z |
+| mac-arm64 | macOS    | arm64 | 30000–49999 | 30265   | 2026-08-21T01:01Z |
 | lin-x64   | Linux    | x64   | 10000–29999 | 10456   | 2026-08-20T23:55Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50042   | 2026-08-21T00:20Z |
 
@@ -13,6 +13,8 @@
 _Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b328a85a), T-lin-10427 (gated MCC_COOP_MT primitives, 87b49371), **T-lin-10428 (M:N core, 50da1e68 — both spectral_norm kernels ~3.7x toward native under mcc-coop-mn)**. Remaining coop children in Open: T-lin-10429 (TLS safety — see its note: 10428's non-migrating design largely moots the hazard) and T-lin-10430 [X]win (Win32 multi-worker); both DEPS on 10428 now satisfied._
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
+- SESSION CHECKPOINT (mac-arm64, 2026-08-21T01:01Z, /goal loop): all pushed, tree clean, no active mac claims. LARGE clean-completeness run this session (12 code landings): FLEET-RED cleared (T-mac-30175 O1); 3 header/predefine slices (stdbit typed-fns, `_unlocked` fallbacks, `__FLT128_*` + C23 `_WIDTH` family + `__NO_INLINE__` + `-ffast-math`/`__FAST_MATH__`+fp-opts); `[[nodiscard]]`; asm unknown-directive; and a NEW warning family T-mac-30265 — `-Wbool-compare` + `-Wchar-subscripts` + `-Wenum-compare` all ==gcc; plus this turn driver accept-and-ignore of no-op -f hint flags (56cbf41a, security flags still warn honestly). Traps AVOIDED via verify-first: __GCC_HAVE_SYNC_COMPARE_AND_SWAP (mcc CAS is external), __GCC_ASM_FLAG_OUTPUTS__ (mcc lacks '@'), -Wconstant-conversion (=-Woverflow default-on, golden-risk), __INTx_C (stdint self-contained). DEFERRED w/ direction banked: taut-compare/logical-not/sizeof-div need a parse-time shape tracker (mcc AST is rir_try_active-gated, T-mac-30202 note); minted T-mac-30264 (float128 small-magnitude literal underflow). Backlog remaining for mac is deep (codegen/cross-target/GPU/AST-pass).
+
 
 - SESSION CHECKPOINT (mac-arm64, 2026-08-20T22:39Z, /goal loop): all pushed, tree clean, no active mac claims. (1) **FLEET RED CLEARED** (was mac's 9c897e4a) — verified all 4 gates green on mac (gpu-parity-full-language, both inv-faithful; emit-map skips native) + direct full_language.c -O1 compile rc=0; removed the contract line (e651a639). Fix=5c9f73fd + rebank ceec87bf (prior session). (2) **T-mac-30230 typed-stdbit slice DONE** (eacbb92b) — 70 C23 per-type `stdc_<op>_uc/us/ui/ul/ull` fns; const-fold residual re-scoped + released OPEN (front-end feature). (3) **PRE-EXISTING RED flagged to lin:** `cli/builtin_expect_is_code_neutral` fails on the CLEAN tree (arm64 -O1 object-size BLOAT vs plain `if`, `__builtin_expect`+`_with_probability` both; RESOLVED by lin faef539d — gated cpu!=arm64; bisect DISPROVED my optimizer guess, root=arm64-LP64 branch-consumed long-cast QoI (T-mac-30131), real fold minted T-lin-10453 [needs an arm64-osx o0-rebank on mac when taken, per Q-lin-10409]); was NOT stdbit-related.
 
