@@ -3367,7 +3367,7 @@ the_end:
 	pp_directive_depth--;
 }
 
-static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long, int prefix) { MCC_TRACE("enter\n");
+static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long, int prefix, int is_char) { MCC_TRACE("enter\n");
 	int c, n, i, is_ucn;
 	const uint8_t *p;
 
@@ -3461,6 +3461,8 @@ static void parse_escape_string(CString *outstr, const uint8_t *buf, int is_long
 					if (!is_ucn && prefix == 'u' && (unsigned)n > 0xFFFF) { MCC_TRACE("br\n");
 						mcc_warning("hex escape sequence out of range");
 						n &= 0xFFFF;
+					} else if (is_ucn && is_char && prefix == 'u' && (unsigned)n > 0xFFFF) { MCC_TRACE("br\n");
+						mcc_warning("character not encodable in a single code unit");
 					}
 					c = n;
 					goto add_char_nonext;
@@ -3635,7 +3637,7 @@ static void parse_string(const char *s, int len) { MCC_TRACE("enter\n");
 	p[len] = 0;
 
 	cstr_reset(&tokcstr);
-	parse_escape_string(&tokcstr, p, is_long, prefix);
+	parse_escape_string(&tokcstr, p, is_long, prefix, sep == '\'');
 	if (p != buf)
 		{ MCC_TRACE("br\n"); mcc_free(p); }
 

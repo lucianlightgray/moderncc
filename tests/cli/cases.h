@@ -1497,6 +1497,16 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -c {D}/multichar.c -o {W}/mc.o 2>&1 | grep -oE 'multi-character'",
 		 "multi-character\n"},
 
+		{"u16char_ucn_not_encodable", "",
+		 "printf '%s\\n' \"int c = u'\\\\U0001F600';\" > {W}/u16u.c && "
+		 "{MCC} -B{B} -I{I} -std=c23 -c {W}/u16u.c -o {W}/u16u.o 2>&1 | grep -oE 'character not encodable in a single code unit'",
+		 "character not encodable in a single code unit\n"},
+
+		{"u16char_ucn_string_silent", "",
+		 "printf '%s\\n' \"unsigned short s[] = u\\\"\\\\U0001F600\\\";\" > {W}/u16s.c && "
+		 "{MCC} -B{B} -I{I} -std=c23 -c {W}/u16s.c -o {W}/u16s.o 2>&1 | grep -cE 'encodable|out of range'",
+		 "0\n"},
+
 		{"integer_suffix_error", "",
 		 "{MCC} -B{B} -I{I} -c {D}/suffix_bad.c -o {W}/sb.o 2>&1 | grep -oE \"three 'l's\"",
 		 "three 'l's\n"},
