@@ -147,6 +147,18 @@ differ)
 			exit 1
 		}
 	done
+	if [ -n "${OPTFIRE_ORACLE:-}" ]; then
+		if $OPTFIRE_ORACLE ${OPTFIRE_ORACLE_FLAGS:-} -w "$SRC" -o "$opt.oracle" $LDF >"$WORK/$NAME.oracle.err" 2>&1; then
+			orout=$($RUN "$opt.oracle" 2>&1) ||
+				{ echo "FAIL $NAME: oracle ($OPTFIRE_ORACLE) run failed"; echo "  output: $orout"; exit 1; }
+			[ "$orout" = "$refout" ] || {
+				echo "FAIL $NAME: oracle ($OPTFIRE_ORACLE) output differs from mcc -O0"
+				echo "  mcc -O0: $refout"
+				echo "  oracle : $orout"
+				exit 1
+			}
+		fi
+	fi
 	echo "PASS $NAME: objects differ with -f/-fno-$GATE at $OLEVEL, both outputs match -O0"
 	;;
 level)
