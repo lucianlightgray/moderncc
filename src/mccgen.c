@@ -1454,8 +1454,11 @@ ST_FUNC Sym *sym_push(int v, CType *type, int r, int c) { MCC_TRACE("enter\n");
 	s->type.ref = type->ref;
 	{
 		int keep_bpbs = (type->t & VT_BITFIELD) || is_bitint_type(type);
+		int sbt = type->t & VT_BTYPE;
+		int keep_fspell = (sbt == VT_FLOAT || sbt == VT_DOUBLE ||
+											 sbt == VT_LDOUBLE) && type->bs;
 		s->type.bp = keep_bpbs ? type->bp : 0;
-		s->type.bs = keep_bpbs ? type->bs : 0;
+		s->type.bs = (keep_bpbs || keep_fspell) ? type->bs : 0;
 	}
 	s->r = r;
 	if ((v & ~SYM_STRUCT) < SYM_FIRST_ANOM) { MCC_TRACE("br\n");
@@ -4577,6 +4580,17 @@ static int compare_types(CType *type1, CType *type2, int unqualified) { MCC_TRAC
 		return 1;
 	}
 
+	/* _Float32/_Float64/_Float32x/_Float64x are distinct types (gcc), though
+	 * they alias float/double/long double in arithmetic/ABI.  The distinguishing
+	 * spelling rides on .bs (a float base never carries a bitfield/_BitInt width),
+	 * and VT_TYPE below strips .bs entirely, so without this a _FloatN would
+	 * conflate with its alias target and with a sibling that shares its base
+	 * code (_Float32x and _Float64 both map to VT_DOUBLE). */
+	bt1 = type1->t & VT_BTYPE;
+	if ((bt1 == VT_FLOAT || bt1 == VT_DOUBLE || bt1 == VT_LDOUBLE) &&
+			bt1 == (type2->t & VT_BTYPE) && type1->bs != type2->bs)
+		{ MCC_TRACE("br\n"); return 0; }
+
 	t1 = type1->t & VT_TYPE;
 	t2 = type2->t & VT_TYPE;
 	if (unqualified) { MCC_TRACE("br\n");
@@ -4643,6 +4657,8 @@ static int combine_types(CType *dest, SValue *op1, SValue *op2, int op) { MCC_TR
 	CType *type1, *type2, type;
 	int t1, t2, bt1, bt2;
 	int ret = 1;
+
+	type.bs = 0;
 
 	if (op == SHIFT_OP)
 		{ MCC_TRACE("br\n"); op2 = op1; }
@@ -9689,6 +9705,7 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 	t = VT_INT;
 	bt = st = -1;
 	type->ref = NULL;
+	type->bs = 0;
 	unsigned char pb_save_pedantic = mcc_state->warn_pedantic;
 	unsigned char pb_save_pedantic_errors = mcc_state->pedantic_errors;
 
@@ -9793,15 +9810,19 @@ static int parse_btype(CType *type, AttributeDef *ad, int ignore_label) { MCC_TR
 			goto basic_type;
 		case TOK_FLOAT32:
 			u = VT_FLOAT;
+			type->bs = FSPELL_F32;
 			goto basic_type;
 		case TOK_FLOAT64:
 			u = VT_DOUBLE;
+			type->bs = FSPELL_F64;
 			goto basic_type;
 		case TOK_FLOAT32X:
 			u = VT_DOUBLE;
+			type->bs = FSPELL_F32X;
 			goto basic_type;
 		case TOK_FLOAT64X:
 			u = VT_LDOUBLE;
+			type->bs = FSPELL_F64X;
 			goto basic_type;
 		case TOK_BFLOAT16:
 			u = VT_BF16;

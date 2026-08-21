@@ -230,9 +230,23 @@ typedef struct CType {
 	unsigned char bp;
 	unsigned short bs;	/* bit-field size 0..64, OR _BitInt width up to 512
 						 * (bs==0 is the sentinel for _BitInt(256); widths 257..512
-						 * are stored directly, which is why this is not char) */
+						 * are stored directly, which is why this is not char).
+						 * For a scalar float base (VT_FLOAT/DOUBLE/LDOUBLE) that is
+						 * never a bitfield/_BitInt, bs instead holds an FSPELL_*
+						 * spelling code: _Float32/_Float64/_Float32x/_Float64x are
+						 * distinct types for _Generic/type-compat but alias
+						 * float/double/long double in arithmetic/ABI (T-lin-10463). */
 	struct Sym *ref;
 } CType;
+
+/* Float-spelling distinctness codes carried in CType.bs on a float base type.
+ * 0 = canonical (float/double/long double, and _Float128 which gcc treats as
+ * == __float128).  Only these four spellings are distinct-but-aliasing. */
+#define FSPELL_NONE 0
+#define FSPELL_F32  1
+#define FSPELL_F64  2
+#define FSPELL_F32X 3
+#define FSPELL_F64X 4
 
 #define LDOUBLE_WORDS ((sizeof(long double) + 3) / 4)
 
