@@ -19256,6 +19256,8 @@ static void decl_initializer_alloc(CType *type, AttributeDef *ad, int r,
 
 		if (sec) { MCC_TRACE("br\n");
 			addr = section_add(sec, size, align);
+			if (!size && v && (type->t & VT_BTYPE) == VT_STRUCT)
+				{ MCC_TRACE("br\n"); section_add(sec, 1, 1); }
 			if (bcheck)
 				{ MCC_TRACE("br\n"); section_add(sec, 1, 1); }
 			if (asan_g && v && size && !(type->t & VT_TLS))

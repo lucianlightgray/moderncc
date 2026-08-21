@@ -1415,6 +1415,10 @@ static const cli_case_t cli_cases[] = {
 		 "printf '#include <stdio.h>\\n' > {W}/ns.c && {MCC} -B{B} -nostdinc -E {W}/ns.c 2>&1 | grep -coE 'not found|No such'",
 		 "1\n"},
 
+		{"empty_aggregate_global_distinct_addr", "",
+		 "printf 'struct E{};struct E a,b;union U{};union U c,d;int main(void){return ((&a!=&b)+(&c!=&d)==2 && sizeof(struct E)==0 && sizeof(union U)==0)?0:1;}\\n' > {W}/eag.c && {MCC} -B{B} {W}/eag.c -o {W}/eag && {W}/eag && echo EAG_OK",
+		 "EAG_OK\n"},
+
 		{"dumpmachine", "os!=WIN32",
 		 "{MCC} -dumpmachine | grep -qE '^(x86_64|i386|i686|aarch64|arm64|arm|riscv64)-' && echo TRIPLE_OK",
 		 "TRIPLE_OK\n"},
