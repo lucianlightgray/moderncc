@@ -8,4 +8,3 @@
 # A stale citation is not one of these.  Fix it instead.
 
 src/wide256_slice.h  # (b) removed by wideint-unify (T-lin-10004 slice-4, dcba0d5f): its __int256 slice was folded into src/wideint_slice.h. The sole citation, docs/DETAILS.md:4392, is a struck-through/retracted historical note (its own text: "FALSE since 81a81f1b") naming the since-deleted file; docs/DETAILS.md is merge=union so the line is not edited in place.
-tests/ast/cprop-typecov.sh  # (a→historical) T-lin-10451 (float/double cprop) once proposed writing this typecov script in its DoD, but the task is now CLOSED as NOT-APPLICABLE (91f91f9a era; float/double consts are VT_SYM rodata refs, not cprop-trackable) so the file will NEVER be written. The sole remaining citation is a mac-arm64 SESSION CHECKPOINT note (docs/TODO.md ~line 17, mac-only zone) recording the earlier forward-ref unblock; it ages out as checkpoints are pruned. Safe to delete this line once that checkpoint prose is gone.
