@@ -1,6 +1,6 @@
 /* T-win-50041 -O1 crash bisection (arm64-Windows only). Compile each PART with
-   -DPART_* -O1 on the windows-11-arm runner to find the minimal construct that
-   segfaults mcc's arm64 -O1 codegen. Mirrors woa-int256-probe.c's helpers. */
+   -DPART_* -O1 on the windows-11-arm runner. main() exercises the enabled part so
+   it survives DCE and is present for the LINK step (the -O1 crash is link-path). */
 typedef unsigned long long L;
 
 #ifdef PART_SHL
@@ -32,7 +32,9 @@ void t_neg(L r[4], const L a[4]) {
 #endif
 
 #ifdef PART_MAG
+#ifdef PART_SHL
 extern void t_shl(L r[4], unsigned n);
+#endif
 void t_mag(L r[4], double x) {
 	int i, exp, e;
 	L b, mant;
@@ -44,19 +46,22 @@ void t_mag(L r[4], double x) {
 	e = exp - 52;
 	if (exp >= 256) return;
 	r[0] = mant;
-#ifdef PART_MAG_CALLS_SHL
+#ifdef PART_SHL
 	if (e > 0) t_shl(r, (unsigned)e);
 #endif
 }
 #endif
 
-#ifdef PART_VARSHIFT
-/* isolate just a single runtime-variable 64-bit shift in a loop */
-void t_varshift(L r[4], unsigned bit) {
-	int i;
-	for (i = 0; i < 4; i++)
-		r[i] = (r[i] << bit) | (r[i] >> (64 - bit));
-}
+int main(void) {
+	L r[4] = {1, 2, 3, 4};
+#ifdef PART_SHL
+	t_shl(r, 65);
 #endif
-
-int main(void) { return 0; }
+#ifdef PART_NEG
+	{ L a[4] = {1, 2, 3, 4}; t_neg(r, a); }
+#endif
+#ifdef PART_MAG
+	t_mag(r, -1e30);
+#endif
+	return (int)r[0];
+}
