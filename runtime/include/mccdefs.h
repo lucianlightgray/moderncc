@@ -600,16 +600,16 @@
 	return ap->reg_save_area + ap->gp_offset - size;
 	}
 	} else if (arg_type == 1) {
+	if (size == 8) {
 	if (ap->fp_offset < 128 + 48) {
 	ap->fp_offset += 16;
-	if (size == 8)
 	return ap->reg_save_area + ap->fp_offset - 16;
-	if (ap->fp_offset < 128 + 48) {
-	*(long long *)(ap->reg_save_area + ap->fp_offset - 8) =
-	*(long long *)(ap->reg_save_area + ap->fp_offset);
-	ap->fp_offset += 16;
-	return ap->reg_save_area + ap->fp_offset - 32;
 	}
+	} else if (ap->fp_offset + 32 <= 128 + 48) {
+	*(long long *)(ap->reg_save_area + ap->fp_offset + 8) =
+	*(long long *)(ap->reg_save_area + ap->fp_offset + 16);
+	ap->fp_offset += 32;
+	return ap->reg_save_area + ap->fp_offset - 32;
 	}
 	} else if (arg_type == 3 || arg_type == 4) {
 	if (ap->gp_offset + 8 <= 48 && ap->fp_offset < 128 + 48) {

@@ -2024,6 +2024,17 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -std=c11 {W}/c3.c -o {W}/c3 && {W}/c3 && echo CAST_OK",
 		 "conversion to non-scalar type requested\nconversion to non-scalar type requested\nCAST_OK\n"},
 
+		{"x86_64_sysv_vararg_2sse_boundary", "cpu=x86_64,os=linux",
+		 "printf '#include <stdarg.h>\\nstruct dd{double a,b;};\\n"
+		 "static void f(int n,...){va_list ap; va_start(ap,n);"
+		 " for(int i=0;i<n;i++)(void)va_arg(ap,double);"
+		 " struct dd s=va_arg(ap,struct dd); double last=va_arg(ap,double); va_end(ap);"
+		 " if(s.a!=88.0||s.b!=176.0||last!=99.5)__builtin_abort();}\\n"
+		 "int main(void){struct dd s={88.0,176.0};"
+		 " f(7,1.0,2.0,3.0,4.0,5.0,6.0,7.0,s,99.5); return 0;}\\n' > {W}/va2sse.c && "
+		 "{MCC} -B{B} -I{I} -run {W}/va2sse.c && echo OK",
+		 "OK\n"},
+
 		{"atomic_aggregate_load_generic", "",
 		 "printf '#include <stdatomic.h>\\nstruct P{int x,y;};\\n_Atomic struct P p;\\n"
 		 "void f(struct P v){ struct P r=atomic_load(&p);(void)r;"
