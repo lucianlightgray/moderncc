@@ -6,7 +6,7 @@ _**MIGRATING** (2026-08-21) → per-session files are now authoritative: `docs/s
 
 | SessionId | Platform | Arch  | Band        | Next ID | Last seen         |
 | --------- | -------- | ----- | ----------- | ------- | ----------------- |
-| lin-x64   | Linux    | x64   | 10000–29999 | 10491   | 2026-08-21T19:10Z |
+| lin-x64   | Linux    | x64   | 10000–29999 | 10492   | 2026-08-21T19:55Z |
 | win-x64   | Windows  | x64   | 50000–69999 | 50049   | 2026-08-21T19:51Z |
 
 ## Contracts — blocking, highest priority
@@ -77,6 +77,8 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
       OWNER: -- | STATE: OPEN | SHA: 6552e0a8 | TS: 2026-08-21T19:26Z | DEPS: --
 - [ ] T-win-50048 [S] `__builtin_alloca(0)` placement on _WIN32 -- gcc-c-torture pr36321 aborts on mcc-PE at -O0..-O2 (the test's own `#ifdef _WIN32 abort()` fires: `a=alloca(0); b=alloca(len2*3); (a-b) < len2*3`). gcc-mingw passes (a-b >= len2*3) so mcc's alloca(0)+alloca(n) stack placement differs from the win expectation. Found via win-PE differential; win-specific. DOWNGRADED (win-x64 2026-08-21): alloca(0) spacing is IMPL-DEFINED -> likely-non-bug/QoI, LOW priority; cl can't oracle (uses __builtin_alloca), and the test's own `_WIN32` branch encodes a gcc-mingw stack-layout assumption mcc need not match (cf. withdrawn T-win-50046). Repro: vendor/gcc-c-torture-execute/pr36321.c.
       OWNER: -- | STATE: OPEN | SHA: 6552e0a8 | TS: 2026-08-21T19:26Z | DEPS: --
+- [ ] T-lin-10491 [S] Wire the test harnesses (run-opt.sh, run-tier.sh, xsuite.py) + a ctest consumer to read docs/KNOWN_RED.md instead of private `KNOWN_RED=` strings; port the anti-vacuity delist-on-green rule uniformly; migrate existing entries + quarantine the ctest `builtin_expect_is_code_neutral` from one place. Test-infra only (o0-neutral); needs a full run-opt/run-tier/ctest validation. Follow-up to the 2026-08-21 process overhaul. REF: DETAILS.md#t-lin-10491-known-red-harness
+      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T19:55Z | DEPS: —
 - [ ] T-lin-10477 [S] P1/JIT: fix optfire PHANTOM-COVERAGE cells — switch-jumptable (id79) has NO `switch` in tests/optfire/src; loop-deletion (id49) no dead loop; const-hoist (id77) tests string-dedup/.bss not invariant hoist; block-layout (id75) asserts size not hot/cold reorder; jump-threading/cfg-simplify (id22/id10) rest on a both-arms branch-fold; remat (id78) unguarded. Add real exercising cells so the coverage matrix tests the labeled pass. REF: DETAILS.md#t-lin-10476-optfire-audit
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T17:38Z | DEPS: —
 - [ ] T-lin-10478 [P] P1/JIT: run-verify EVERY optimizer cell through the JIT (`-run`) on every triple — each cell must (a) fire AND (b) `-run`-execute correct vs -O0 on that OS/arch. Fans into /lin (x86_64-ELF native + arm64/riscv64-ELF via qemu-user), /mac (arm64-osx native + x86_64-osx Rosetta + x86_64-PE wine), /win (x86_64-PE native). Parent closes when all three legs green + coverage recorded. REF: DETAILS.md#t-lin-10476-jit-coverage-matrix
