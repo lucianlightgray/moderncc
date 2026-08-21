@@ -99,6 +99,8 @@
 
 #elif defined __APPLE__
 	#define __GNUC__ 4
+	#define __GNUC_MINOR__ 2
+	#define __GNUC_PATCHLEVEL__ 1
 	#define __APPLE_CC__ 1
 	#define __LITTLE_ENDIAN__ 1
 	#define _DONT_USE_CTYPE_INLINE_ 1

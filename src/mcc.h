@@ -21,9 +21,9 @@
 /* GCC version mcc emulates: reported by -dumpversion (so build systems that
  * parse it get a sane, gcc-compatible version, not the date-based MCC_VERSION)
  * and by the __GNUC__/__GNUC_MINOR__/__GNUC_PATCHLEVEL__ predefines. */
-#define MCC_GNUC_MAJOR 4
-#define MCC_GNUC_MINOR 2
-#define MCC_GNUC_PATCHLEVEL 1
+#define MCC_GNUC_MAJOR 7
+#define MCC_GNUC_MINOR 5
+#define MCC_GNUC_PATCHLEVEL 0
 
 #include <stdarg.h>
 #include <stdlib.h>
