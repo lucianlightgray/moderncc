@@ -14,6 +14,8 @@ strip_ansi() { sed 's/\x1b\[[0-9;]*[A-Za-z]//g'; }
 
 norun=${OPTFIRE_NORUN:-0}
 MCCFLAGS=${OPTFIRE_MCCFLAGS:-}
+RUN=${OPTFIRE_RUN:-}
+EXECVIA=${OPTFIRE_EXECVIA:-aot}
 case $mode in
 counter) LDF=$8 ;;
 differ)  LDF=$9 ;;
@@ -44,16 +46,21 @@ ofsize() {
 [ "$mode" = "defstate" ] && norun=1
 [ "$mode" = "cdelta" ] && norun=1
 if [ "$norun" != "1" ]; then
-	"$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >"$WORK/$NAME.ref.err" 2>&1 ||
-		{ echo "FAIL $NAME: -O0 reference build failed"; ofdiag "$WORK/$NAME.ref.err"; exit 1; }
-	refout=$("$ref" 2>&1) || { echo "FAIL $NAME: -O0 reference run failed"; echo "  output: $refout"; exit 1; }
+	if [ "$EXECVIA" = "run" ]; then
+		refout=$($RUN "$MCC" $MCCFLAGS -O0 -run "$SRC" $LDF 2>&1) ||
+			{ echo "FAIL $NAME: -O0 -run reference failed"; echo "  output: $refout"; exit 1; }
+	else
+		$RUN "$MCC" $MCCFLAGS -O0 "$SRC" -o "$ref" $LDF >"$WORK/$NAME.ref.err" 2>&1 ||
+			{ echo "FAIL $NAME: -O0 reference build failed"; ofdiag "$WORK/$NAME.ref.err"; exit 1; }
+		refout=$("$ref" 2>&1) || { echo "FAIL $NAME: -O0 reference run failed"; echo "  output: $refout"; exit 1; }
+	fi
 fi
 
 case $mode in
 counter)
 	COUNTER=$7
 	[ -n "$COUNTER" ] || { echo "FAIL $NAME: no counter name given"; exit 2; }
-	"$MCC" $MCCFLAGS "$OLEVEL" --stats=4 -c "$SRC" -o "$WORK/$NAME.o" >"$WORK/$NAME.stats" 2>&1 ||
+	$RUN "$MCC" $MCCFLAGS "$OLEVEL" --stats=4 -c "$SRC" -o "$WORK/$NAME.o" >"$WORK/$NAME.stats" 2>&1 ||
 		{ echo "FAIL $NAME: $OLEVEL --stats compile failed"; ofdiag "$WORK/$NAME.stats"; exit 1; }
 	got=$(strip_ansi <"$WORK/$NAME.stats" | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
 	[ -n "$got" ] || { echo "FAIL $NAME: counter '$COUNTER' absent from --stats output"; ofdiag "$WORK/$NAME.stats"; exit 1; }
@@ -65,9 +72,14 @@ counter)
 		echo "PASS $NAME: $COUNTER=$got at $OLEVEL (norun: fired-only)"
 		exit 0
 	fi
-	"$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt" $LDF >"$WORK/$NAME.opt.err" 2>&1 ||
-		{ echo "FAIL $NAME: $OLEVEL build failed"; ofdiag "$WORK/$NAME.opt.err"; exit 1; }
-	optout=$("$opt" 2>&1) || { echo "FAIL $NAME: $OLEVEL run failed"; echo "  output: $optout"; exit 1; }
+	if [ "$EXECVIA" = "run" ]; then
+		optout=$($RUN "$MCC" $MCCFLAGS "$OLEVEL" -run "$SRC" $LDF 2>&1) ||
+			{ echo "FAIL $NAME: $OLEVEL -run failed"; echo "  output: $optout"; exit 1; }
+	else
+		$RUN "$MCC" $MCCFLAGS "$OLEVEL" "$SRC" -o "$opt" $LDF >"$WORK/$NAME.opt.err" 2>&1 ||
+			{ echo "FAIL $NAME: $OLEVEL build failed"; ofdiag "$WORK/$NAME.opt.err"; exit 1; }
+		optout=$("$opt" 2>&1) || { echo "FAIL $NAME: $OLEVEL run failed"; echo "  output: $optout"; exit 1; }
+	fi
 	[ "$optout" = "$refout" ] || {
 		echo "FAIL $NAME: output changed under $OLEVEL"
 		echo "  -O0: $refout"
@@ -91,9 +103,9 @@ differ)
 		*)  EENV="$EENV $_x" ;;
 		esac
 	done
-	env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.off.o" >"$WORK/$NAME.off.err" 2>&1 ||
+	env $EENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.off.o" >"$WORK/$NAME.off.err" 2>&1 ||
 		{ echo "FAIL $NAME: gate-off compile failed"; ofdiag "$WORK/$NAME.off.err"; exit 1; }
-	env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-f$GATE" -c "$SRC" -o "$WORK/$NAME.on.o" >"$WORK/$NAME.on.err" 2>&1 ||
+	env $EENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "-f$GATE" -c "$SRC" -o "$WORK/$NAME.on.o" >"$WORK/$NAME.on.err" 2>&1 ||
 		{ echo "FAIL $NAME: gate-on compile failed"; ofdiag "$WORK/$NAME.on.err"; exit 1; }
 	if cmp -s "$WORK/$NAME.off.o" "$WORK/$NAME.on.o"; then
 		echo "FAIL $NAME: pass DID NOT FIRE (-fno-$GATE and -f$GATE objects are byte-identical at $OLEVEL)"
@@ -106,10 +118,15 @@ differ)
 	fi
 	for v in 0 1; do
 		if [ "$v" = 1 ]; then gflag="-f$GATE"; else gflag="-fno-$GATE"; fi
-		env $EENV "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" "$SRC" -o "$opt.$v" $LDF \
-			>"$WORK/$NAME.$v.err" 2>&1 ||
-			{ echo "FAIL $NAME: $gflag build failed"; ofdiag "$WORK/$NAME.$v.err"; exit 1; }
-		out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $gflag run failed"; echo "  output: $out"; exit 1; }
+		if [ "$EXECVIA" = "run" ]; then
+			out=$(env $EENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" -run "$SRC" $LDF 2>&1) ||
+				{ echo "FAIL $NAME: $gflag -run failed"; echo "  output: $out"; exit 1; }
+		else
+			env $EENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" $EFLAGS "$gflag" "$SRC" -o "$opt.$v" $LDF \
+				>"$WORK/$NAME.$v.err" 2>&1 ||
+				{ echo "FAIL $NAME: $gflag build failed"; ofdiag "$WORK/$NAME.$v.err"; exit 1; }
+			out=$("$opt.$v" 2>&1) || { echo "FAIL $NAME: $gflag run failed"; echo "  output: $out"; exit 1; }
+		fi
 		[ "$out" = "$refout" ] || {
 			echo "FAIL $NAME: $gflag output differs from -O0"
 			echo "  -O0: $refout"
@@ -126,7 +143,7 @@ level)
 	LDF=
 	bad=0
 	echo "$SPEC" | tr ',' '\n' | while IFS=: read -r lvl want; do
-		"$MCC" $MCCFLAGS "$lvl" --stats=4 -c "$SRC" -o "$WORK/$NAME.$lvl.o" >"$WORK/$NAME.$lvl.stats" 2>&1 ||
+		$RUN "$MCC" $MCCFLAGS "$lvl" --stats=4 -c "$SRC" -o "$WORK/$NAME.$lvl.o" >"$WORK/$NAME.$lvl.stats" 2>&1 ||
 			{ echo "FAIL $NAME: $lvl --stats compile failed"; ofdiag "$WORK/$NAME.$lvl.stats"; exit 1; }
 		got=$(strip_ansi <"$WORK/$NAME.$lvl.stats" | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1)
 		[ -n "$got" ] || got=0
@@ -147,7 +164,7 @@ cdelta)
 	[ -n "$COUNTER" ] && [ -n "$GATE" ] || { echo "FAIL $NAME: cdelta needs <counter> <flag>"; exit 2; }
 	gflag_for() { [ "$1" = 1 ] && echo "-f$GATE" || echo "-fno-$GATE"; }
 	cd_read() {
-		"$MCC" $MCCFLAGS "$OLEVEL" $EXTRA "$(gflag_for $1)" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" >"$WORK/$NAME.$1.stats" 2>&1 || return 1
+		$RUN "$MCC" $MCCFLAGS "$OLEVEL" $EXTRA "$(gflag_for $1)" --stats=4 -c "$SRC" -o "$WORK/$NAME.$1.o" >"$WORK/$NAME.$1.stats" 2>&1 || return 1
 		strip_ansi <"$WORK/$NAME.$1.stats" | grep -oE "(^| )$COUNTER +[0-9]+" | grep -oE '[0-9]+$' | head -1
 		return 0
 	}
@@ -171,10 +188,10 @@ defstate)
 	DENV=${9:-}
 	[ "$DENV" = "-" ] && DENV=
 	[ -n "$GATE" ] && [ -n "$WANT" ] || { echo "FAIL $NAME: defstate needs <flag> <on|off>"; exit 2; }
-	env $DENV "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.def.o" \
+	env $DENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" -c "$SRC" -o "$WORK/$NAME.def.o" \
 		>"$WORK/$NAME.def.err" 2>&1 ||
 		{ echo "FAIL $NAME: default compile failed"; ofdiag "$WORK/$NAME.def.err"; exit 1; }
-	env $DENV "$MCC" $MCCFLAGS "$OLEVEL" "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.zero.o" \
+	env $DENV $RUN "$MCC" $MCCFLAGS "$OLEVEL" "-fno-$GATE" -c "$SRC" -o "$WORK/$NAME.zero.o" \
 		>"$WORK/$NAME.zero.err" 2>&1 ||
 		{ echo "FAIL $NAME: -fno-$GATE compile failed"; ofdiag "$WORK/$NAME.zero.err"; exit 1; }
 	if cmp -s "$WORK/$NAME.def.o" "$WORK/$NAME.zero.o"; then
