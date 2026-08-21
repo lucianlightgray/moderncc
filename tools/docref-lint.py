@@ -220,6 +220,10 @@ def check_doc(root, doc, files, dirs, cache, allow, cited, mutate, gated=True):
 
 ANCHOR_DEF = re.compile(r'<a id="([^"]+)"></a>')
 ANCHOR_REF = re.compile(r'DETAILS\.md#([A-Za-z0-9][A-Za-z0-9_-]*)')
+SUPERSEDE_DEF = re.compile(r'STATUS:\s*SUPERSEDED-BY\s+#([A-Za-z0-9][A-Za-z0-9_-]*)')
+ARCHIVE_ID = re.compile(r'^- ((?:T|Q)-[a-z]+-[0-9]+)\b')
+CORRECTION = re.compile(r'((?:T|Q)-[a-z]+-[0-9]+).*SHA\s+is\s+([0-9a-f]{7,})')
+PLACEHOLDER_SHA = re.compile(r'SHA\s*<[^>]+>')
 
 
 CONFLICT = re.compile(r"^(?:<<<<<<< |>>>>>>> |=======$)")
@@ -283,6 +287,81 @@ def check_anchors(root, docs, mutate):
     if mutate:
         bad.append(("anchor", "docs/TODO.md:0 cites DETAILS.md#no-such-anchor "
                     "and no such anchor exists (planted)"))
+    return seen, bad
+
+
+def check_supersession(root, live_docs, mutate):
+    """A superseded DETAILS anchor must forward-point to a live successor, and no
+    live-doc REF may resolve onto a superseded anchor.
+
+    DETAILS.md is append-only, so a re-measured spec's OLD anchor otherwise stays
+    valid-looking forever (INSTRUCTIONS.md §8): stamp the old anchor's first body
+    line `> **STATUS: SUPERSEDED-BY #<new>**`. This rule makes that stamp load-
+    bearing -- (a) the named successor must exist, (b) a TODO/QUESTIONS/ARCHIVED
+    REF pointing at a stamped anchor is an error, repoint it to the successor.
+    Catches exactly the T-lin-10073 'REF at a superseded spec' class the anchor
+    check can only make visible."""
+    if mutate:
+        return 0, []
+    det = os.path.join(root, "docs/DETAILS.md")
+    text = open(det, encoding="utf-8").read()
+    have = set(ANCHOR_DEF.findall(text))
+    superseded = {}
+    cur = None
+    for ln in text.split("\n"):
+        m = ANCHOR_DEF.search(ln)
+        if m:
+            cur = m.group(1)
+            continue
+        s = SUPERSEDE_DEF.search(ln)
+        if s and cur is not None:
+            superseded.setdefault(cur, s.group(1))
+    seen, bad = 0, []
+    for old, new in superseded.items():
+        seen += 1
+        if new not in have:
+            bad.append(("supersede", "docs/DETAILS.md#%s is SUPERSEDED-BY #%s "
+                        "and no such successor anchor exists" % (old, new)))
+    for doc in live_docs:
+        path = os.path.join(root, doc)
+        if not os.path.exists(path):
+            continue
+        for n, ln in enumerate(open(path, encoding="utf-8"), 1):
+            for ref in ANCHOR_REF.findall(ln):
+                if ref in superseded:
+                    seen += 1
+                    bad.append(("supersede", "%s:%d cites DETAILS.md#%s which is "
+                                "SUPERSEDED-BY #%s -- repoint to the successor"
+                                % (doc, n, ref, superseded[ref])))
+    return seen, bad
+
+
+def check_archive_placeholders(root, mutate):
+    """An ARCHIVED record must not carry a placeholder SHA (`<codesha>`) unless a
+    later `(correction)` line supplies the real hex hash for that ID.
+
+    Placeholder SHAs leaked three times (INSTRUCTIONS.md §8). This is the tolerant
+    gate: a placeholder already fixed by a correction line passes; a NEW
+    uncorrected placeholder fails at push."""
+    if mutate:
+        return 0, []
+    p = os.path.join(root, "docs/ARCHIVED.md")
+    if not os.path.exists(p):
+        return 0, []
+    lines = open(p, encoding="utf-8").read().split("\n")
+    corrected = {m.group(1) for ln in lines for m in [CORRECTION.search(ln)] if m}
+    seen, bad = 0, []
+    for n, ln in enumerate(lines, 1):
+        ph = PLACEHOLDER_SHA.search(ln)
+        if not ph:
+            continue
+        seen += 1
+        m = ARCHIVE_ID.match(ln)
+        rid = m.group(1) if m else None
+        if not (rid and rid in corrected):
+            bad.append(("placeholder", "docs/ARCHIVED.md:%d records a placeholder "
+                        "%s with no (correction) line supplying the real hash"
+                        % (n, ph.group(0))))
     return seen, bad
 
 
@@ -368,6 +447,12 @@ def main():
     anch, b = check_anchors(root, ["docs/TODO.md", "docs/QUESTIONS.md"] +
                             ([ARCHIVED] if a.include_archived else []), a.mutate)
     seen["anchor"] += anch
+    bad += b
+    _sup, b = check_supersession(root, ["docs/TODO.md", "docs/QUESTIONS.md"] +
+                                 ([ARCHIVED] if a.include_archived else []),
+                                 a.mutate)
+    bad += b
+    _ph, b = check_archive_placeholders(root, a.mutate)
     bad += b
     _cl, b = check_conflicts(root, list(DOCS) +
                              ([ARCHIVED] if a.include_archived else []),
