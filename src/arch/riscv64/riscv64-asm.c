@@ -2212,7 +2212,7 @@ ST_FUNC void asm_gen_code(ASMOperand *operands, int nb_operands,
 						load(mcc_ireg(out_reg), &sv);
 
 						sv = *op->vt;
-						sv.r = (sv.r & ~VT_VALMASK) | out_reg;
+						sv.r = (sv.r & ~VT_VALMASK) | mcc_ireg(out_reg);
 						store(mcc_ireg(op->reg), &sv);
 					}
 				} else { MCC_TRACE("br\n");
