@@ -51,3 +51,4 @@ switch_jt|x86_64,arm64,riscv64
 # now fires + runs correct on the riscv64 qemu leg (-O0-run == -O4-run,
 # 2026-08-22). All four arches fire.
 loopidiom|x86_64,arm64,i386,riscv64
+bswap|x86_64
