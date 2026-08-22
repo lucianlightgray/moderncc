@@ -2326,6 +2326,7 @@ static int ast_body_uses_func_alloca(void) { MCC_TRACE("enter\n");
 #define AST_OP_BSWAP 0x40016
 #define AST_OP_ROTL 0x40023
 #define AST_OP_ROTR 0x40024
+#define AST_OP_FSHL 0x40026
 #define AST_OP_SIGNBIT 0x40017
 #define AST_OP_FFS 0x40018
 #define AST_OP_BITSCAN 0x40019
@@ -5750,6 +5751,9 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_ROTR) { MCC_TRACE("br\n");
 			ast_replay_value(a, ast_child(a, n, 1));
 			gen_rotr_var((int)(ast_ival(a, n) >> 8));
+		} else if (uop == AST_OP_FSHL) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 1));
+			gen_shld((int)(ast_ival(a, n) >> 8), (int)(ast_ival(a, n) & 0xff));
 #endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 		} else if (uop == AST_OP_SIGNBIT) { MCC_TRACE("br\n");
@@ -7636,6 +7640,101 @@ static int ast_rotate_varr_try(AstArena *a, AstLocal top) { MCC_TRACE("enter\n")
 }
 
 #endif
+#if defined(MCC_TARGET_X86_64)
+/* T-lin-10510 (win-x64): recognize the constant-count funnel-shift-LEFT idiom
+ * `(x << C) | (y >> (W-C))` over TWO DISTINCT non-volatile UNSIGNED scalar Refs
+ * x,y of the same width W bits, C a constant in [1,W-1] -> x86 SHLD (double-
+ * precision shift-left): `SHLD dest,src,C` computes `(dest<<C)|(src>>(W-C))`
+ * into dest. Fold to a 2-child AST_OP_FSHL (child0=x=dest, child1=y=src,
+ * ival=(sbytes<<8)|C) -> gen_shld. Value-exact; default-OFF (shares the
+ * `-frotate-idiom` knob). 32/64-bit only: the C idiom over `unsigned short`
+ * operates on promoted `int`, so there is no genuine 16-bit funnel to lower, and
+ * SHLD's 16-bit count masking (mod 32) differs from a rotate. Runs AFTER the
+ * rotate recognizers, which consume the same-base (x==y) rotate special case, so
+ * this path only ever sees genuine two-operand funnels. Soundness: both bases
+ * UNSIGNED ⇒ the `>>` is logical (accepting the generic TOK_SAR token is safe;
+ * a signed SAR would sign-extend, not zero-fill), matching SHLD's `src>>(W-C)`. */
+static int ast_funnel_try(AstArena *a, AstLocal top) { MCC_TRACE("enter\n");
+	AstLocal terms[8], xb = AST_NONE, yb = AST_NONE;
+	AstLocal shlterm = AST_NONE, shrterm = AST_NONE;
+	int nt, i, wbits = 0, sbytes = 0, btype = 0;
+	uint64_t shl_c = 0, shr_c = 0;
+	if (ast_kind(a, top) != AST_Binary || ast_op(a, top) != '|')
+		{ MCC_TRACE("br\n"); return 0; }
+	nt = ast_bswap_flatten(a, top, terms, 8);
+	if (nt != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < 2; i++) { MCC_TRACE("br\n");
+		AstLocal t = terms[i], bnode, cnode;
+		int so, bt2, wb, sb;
+		if (ast_kind(a, t) != AST_Binary || ast_nchild(a, t) != 2)
+			{ MCC_TRACE("br\n"); return 0; }
+		so = ast_op(a, t);
+		if (so != TOK_SHL && so != TOK_SHR && so != TOK_SAR)
+			{ MCC_TRACE("br\n"); return 0; }
+		bnode = ast_child(a, t, 0);
+		cnode = ast_child(a, t, 1);
+		if (ast_kind(a, cnode) != AST_Literal)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (ast_kind(a, bnode) != AST_Ref)
+			{ MCC_TRACE("br\n"); return 0; }
+		bt2 = ast_type_t(a, bnode);
+		if ((bt2 & VT_VOLATILE) || !(bt2 & VT_UNSIGNED))
+			{ MCC_TRACE("br\n"); return 0; }
+		switch (bt2 & VT_BTYPE) { MCC_TRACE("br\n");
+		case VT_INT: wb = 32; sb = 4; break;
+		case VT_LLONG: wb = 64; sb = 8; break;
+		default: return 0;
+		}
+		if (wbits == 0) { MCC_TRACE("br\n"); wbits = wb; sbytes = sb; btype = bt2; }
+		else if (wb != wbits)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (so == TOK_SHL) { MCC_TRACE("br\n");
+			if (shlterm != AST_NONE)
+				{ MCC_TRACE("br\n"); return 0; }
+			shlterm = t; xb = bnode; shl_c = ast_ival(a, cnode);
+		} else { MCC_TRACE("br\n");
+			if (shrterm != AST_NONE)
+				{ MCC_TRACE("br\n"); return 0; }
+			shrterm = t; yb = bnode; shr_c = ast_ival(a, cnode);
+		}
+	}
+	if (shlterm == AST_NONE || shrterm == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (shl_c == 0 || shl_c >= (uint64_t)wbits || shr_c == 0 ||
+			shr_c >= (uint64_t)wbits)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (shl_c + shr_c != (uint64_t)wbits)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_bswap_same_base(a, xb, yb))
+		{ MCC_TRACE("br\n"); return 0; }
+	/* rewrite: 2-child AST_Unary/AST_OP_FSHL (fresh Refs: child0=x=dest, child1=y=src) */
+	{
+		AstLocal nb = ast_node(a, AST_Ref);
+		AstLocal nc = ast_node(a, AST_Ref);
+		ast_copy_type(a, nb, a, xb);
+		ast_set_op(a, nb, ast_op(a, xb));
+		ast_set_sym(a, nb, ast_sym(a, xb));
+		ast_set_ival(a, nb, ast_ival(a, xb));
+		ast_set_fbits(a, nb, ast_fbits(a, xb));
+		ast_copy_type(a, nc, a, yb);
+		ast_set_op(a, nc, ast_op(a, yb));
+		ast_set_sym(a, nc, ast_sym(a, yb));
+		ast_set_ival(a, nc, ast_ival(a, yb));
+		ast_set_fbits(a, nc, ast_fbits(a, yb));
+		ast_clear_children(a, top);
+		ast_set_kind(a, top, AST_Unary);
+		ast_set_op(a, top, AST_OP_FSHL);
+		ast_set_ival(a, top, ((uint64_t)sbytes << 8) | (shl_c & 0xff));
+		ast_set_type(a, top, btype, ast_type_ref(a, xb));
+		ast_set_sym(a, top, 0);
+		ast_add_child(a, top, nb);
+		ast_add_child(a, top, nc);
+	}
+	return 1;
+}
+
+#endif
 static int ast_bswap_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int total = 0;
@@ -7653,6 +7752,8 @@ static int ast_bswap_run(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); rf = ast_rotate_var_try(a, n); }
 			if (!rf && a->kind[n] == AST_Binary && a->op[n] == '|')
 				{ MCC_TRACE("br\n"); rf = ast_rotate_varr_try(a, n); }
+			if (!rf && a->kind[n] == AST_Binary && a->op[n] == '|')
+				{ MCC_TRACE("br\n"); rf = ast_funnel_try(a, n); }
 			total += rf;
 		}
 #endif

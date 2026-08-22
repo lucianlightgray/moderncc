@@ -2964,6 +2964,17 @@ void gen_rotl(int size, int count) { MCC_TRACE("enter\n");
 	o((unsigned)count & (size == 8 ? 63 : size == 2 ? 15 : 31));
 }
 
+void gen_shld(int size, int count) { MCC_TRACE("enter\n");
+	int r, fr;
+	gv2(MCC_RC_INT, MCC_RC_INT);
+	r = vtop[-1].r & VT_VALMASK;
+	fr = vtop[0].r & VT_VALMASK;
+	orex(size == 8, r, fr, 0xa40f);
+	o(0xc0 + REG_VALUE(r) + REG_VALUE(fr) * 8);
+	o((unsigned)count & (size == 8 ? 63 : 31));
+	vtop--;
+}
+
 void gen_bswap(int size) { MCC_TRACE("enter\n");
 	int r;
 	gv(MCC_RC_INT);
