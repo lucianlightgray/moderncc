@@ -16498,7 +16498,8 @@ static int ast_body_has_loop(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 }
 
 static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
-	if ((li->op != 3 && li->op != 2) || li->unanalyzable || !li->has_iv)
+	if ((li->op != 3 && li->op != 2 && li->op != 4) || li->unanalyzable ||
+			!li->has_iv)
 		{ MCC_TRACE("br\n"); return 0; }
 	int64_t stride = li->iv_stride;
 	if (stride == 0 || stride < -AST_UNROLL_CAP || stride > AST_UNROLL_CAP)
