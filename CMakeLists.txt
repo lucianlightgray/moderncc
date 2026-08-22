@@ -6709,6 +6709,37 @@ if(MCC_BUILD_TESTS)
                 endforeach()
             endforeach()
         endif()
+        # T-lin-10480 (part 4): native x86_64-PE ast typecov -run leg. The base
+        # typecov cells (cse/dse/licm/pre) below are if(UNIX ... NOT WIN32)-gated
+        # (lin's leg, AOT-only, no MCC_TYPECOV_RUN). Register the native-PE
+        # run-verify leg here, reusing the shared scripts + the MCC_TYPECOV_RUN env
+        # (asserts -O0-run == -O<hi>-run == AOT-O0, the P1 requirement (b) via the
+        # JIT) that mac's Mach-O legs use. win-PE rejects __int128 (MCC_HAVE_INT128
+        # = x86_64 && !PE) so cse/licm/pre take the int128-free _noi128 subjects
+        # (dse's default subject has no __int128); vecpacked is skipped (packed-SSE
+        # is x86_64 && !PE). Measured on native PE: cse=6/dse=2/ltemp=4/pre=4, each
+        # -run==AOT-O0. DETAILS#t-lin-10480-typecov-jit-run.
+        if(WIN32)
+            foreach(_tcp IN ITEMS cse dse licm pre)
+                set(_tcsub "")
+                if(NOT _tcp STREQUAL "dse")
+                    set(_tcsub "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/${_tcp}_typecov_subject_noi128.c")
+                endif()
+                if(MCC_TEST_SH)
+                    add_test(NAME "ast/${_tcp}-typecov-x86_64-pe"
+                        COMMAND "${MCC_TEST_SH}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
+                                "${_mcc_exe}" "${CMAKE_CURRENT_SOURCE_DIR}"
+                                "${CMAKE_BINARY_DIR}/${_tcp}-typecov-x86_64-pe" ${_tcsub})
+                    set_tests_properties("ast/${_tcp}-typecov-x86_64-pe" PROPERTIES
+                        FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_TYPECOV_RUN=1"
+                        LABELS native TIMEOUT 120)
+                else()
+                    mcc_skip_test("ast/${_tcp}-typecov-x86_64-pe"
+                        "no POSIX shell (MCC_TEST_SH) on this Windows host to run the typecov scripts; set MCC_TEST_SH to a git-bash sh to run-verify the type-complete-optimizer cells via mcc -run on native PE"
+                        LABELS native)
+                endif()
+            endforeach()
+        endif()
         if(UNIX)
             set(_of_seen "")
             set(_of_sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/optfire.sh")
