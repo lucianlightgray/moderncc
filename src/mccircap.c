@@ -21,6 +21,7 @@
 	X(IR_OP_CVT_FTOF, "cvt_ftof") \
 	X(IR_OP_CVT_FTOI, "cvt_ftoi") \
 	X(IR_OP_CVT_SXTW, "cvt_sxtw") \
+	X(IR_OP_CVT_ZXTW, "cvt_zxtw") \
 	X(IR_OP_CVT_TRUNC32, "cvt_trunc") \
 	X(IR_OP_CVT_CSTI, "cvt_csti") \
 	X(IR_OP_STRUCTCOPY, "structcpy") \
@@ -381,6 +382,9 @@ IR_CAP_W1(gen_cvt_ftoi, IR_OP_CVT_FTOI)
 #ifdef MCC_IR_HAVE_CVT_SXTW
 IR_CAP_W0(gen_cvt_sxtw, IR_OP_CVT_SXTW)
 #endif
+#ifdef MCC_IR_HAVE_CVT_ZXTW
+IR_CAP_W0(gen_cvt_zxtw, IR_OP_CVT_ZXTW)
+#endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 IR_CAP_W0(gen_cvt_trunc32, IR_OP_CVT_TRUNC32)
 #endif
@@ -689,6 +693,9 @@ static void ir_cap_issue(IrCapOp *o) { MCC_TRACE("enter\n");
 	case IR_OP_CVT_FTOI: (gen_cvt_ftoi)(o->a0); break;
 #ifdef MCC_IR_HAVE_CVT_SXTW
 	case IR_OP_CVT_SXTW: (gen_cvt_sxtw)(); break;
+#endif
+#ifdef MCC_IR_HAVE_CVT_ZXTW
+	case IR_OP_CVT_ZXTW: (gen_cvt_zxtw)(); break;
 #endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 	case IR_OP_CVT_TRUNC32: (gen_cvt_trunc32)(); break;

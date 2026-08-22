@@ -39,10 +39,15 @@ narrow|x86_64,arm64,riscv64
 # jumptable when pic is set on i386 -- so the pic'd cell could only ever DID-NOT-FIRE
 # there; excluded. x86_64 (PE/ELF/Mach-O) + arm64 + riscv64 all fire under pic.
 switch_jt|x86_64,arm64,riscv64
-# loopidiom: the loop->memset/memcpy idiom pass (T-win-50053) fires on
-# x86_64/arm64/i386 (objects differ, -run matches -O0) but is byte-identical
-# on/off at -O4 on riscv64 (3352 B both) -- DID NOT FIRE there. Surfaced on the
-# lin-x64 canonical riscv64 qemu leg (2026-08-22); the memset/memcpy call
-# synthesis does not land on riscv64 codegen. Pinned off riscv64 pending the
-# T-win-50053 owner's root-cause; x86_64/arm64/i386 all fire.
-loopidiom|x86_64,arm64,i386
+# loopidiom: the loop->memset/memcpy idiom pass (T-win-50053) fires on all of
+# x86_64/arm64/i386/riscv64 (objects differ, -run matches -O0). riscv64 was
+# previously excluded (byte-identical on/off) -- root-caused as T-lin-10534: the
+# WHOLE ast_func_end AST-replay optimizer was skipped on riscv64 for functions
+# with an unsigned-int->64 widen in an operator context, because that widen
+# emitted a shift-lowered RIR_R_CVT castlower region the RIR model could not
+# reconcile (rir_shn undercount -> mismatch -> no model). Fixed by lowering the
+# riscv64 unsigned widen through gen_cvt_zxtw (a clean IR_OP_CVT_ZXTW convert,
+# like the signed gen_cvt_sxtw) instead of the castlower shift region; loopidiom
+# now fires + runs correct on the riscv64 qemu leg (-O0-run == -O4-run,
+# 2026-08-22). All four arches fire.
+loopidiom|x86_64,arm64,i386,riscv64

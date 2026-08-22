@@ -1715,6 +1715,12 @@ ST_FUNC void gen_cvt_sxtw(void) { MCC_TRACE("enter\n");
 	EI(0x1b, 0, r, r, 0);
 }
 
+ST_FUNC void gen_cvt_zxtw(void) { MCC_TRACE("enter\n");
+	int r = ireg(gv(MCC_RC_INT));
+	EI(0x13, 1, r, r, 32);
+	EI(0x13, 5, r, r, 32);
+}
+
 ST_FUNC void gen_cvt_itof(int t) { MCC_TRACE("enter\n");
 	int rr = ireg(gv(MCC_RC_INT)), dr;
 	int u = vtop->type.t & VT_UNSIGNED;

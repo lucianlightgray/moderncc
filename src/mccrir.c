@@ -1742,6 +1742,7 @@ static int rir_is_cvt(int kind) { MCC_TRACE("enter\n");
 	case IR_OP_CVT_FTOF:
 	case IR_OP_CVT_FTOI:
 	case IR_OP_CVT_SXTW:
+	case IR_OP_CVT_ZXTW:
 	case IR_OP_CVT_TRUNC32:
 	case IR_OP_CVT_CSTI:
 		return 1;
@@ -3269,6 +3270,7 @@ static void rir_op_effect(const RirOp *ro) { MCC_TRACE("enter\n");
 	case IR_OP_CVT_FTOF:
 	case IR_OP_CVT_FTOI:
 	case IR_OP_CVT_SXTW:
+	case IR_OP_CVT_ZXTW:
 	case IR_OP_CVT_TRUNC32:
 	case IR_OP_CVT_CSTI: {
 		AstLocal a = rir_pop(), n;

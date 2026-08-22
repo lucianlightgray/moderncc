@@ -23,6 +23,9 @@
 		defined(MCC_TARGET_RISCV64)
 #define MCC_IR_HAVE_CVT_SXTW 1
 #endif
+#if defined(MCC_TARGET_RISCV64)
+#define MCC_IR_HAVE_CVT_ZXTW 1
+#endif
 #if defined(MCC_TARGET_RISCV64) ||                                             \
 		(defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE))
 #define MCC_IR_HAVE_XFERRET 1
@@ -67,6 +70,9 @@ void ir_cap_gen_cvt_ftof(int t);
 void ir_cap_gen_cvt_ftoi(int t);
 #ifdef MCC_IR_HAVE_CVT_SXTW
 void ir_cap_gen_cvt_sxtw(void);
+#endif
+#ifdef MCC_IR_HAVE_CVT_ZXTW
+void ir_cap_gen_cvt_zxtw(void);
 #endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 void ir_cap_gen_cvt_trunc32(void);
@@ -161,6 +167,9 @@ void ir_cap_gen_va_arg(CType *t);
 #define gen_cvt_ftoi(t) ir_cap_gen_cvt_ftoi((t))
 #ifdef MCC_IR_HAVE_CVT_SXTW
 #define gen_cvt_sxtw() ir_cap_gen_cvt_sxtw()
+#endif
+#ifdef MCC_IR_HAVE_CVT_ZXTW
+#define gen_cvt_zxtw() ir_cap_gen_cvt_zxtw()
 #endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 #define gen_cvt_trunc32() ir_cap_gen_cvt_trunc32()
@@ -6118,7 +6127,9 @@ again:
 		if (ds == 8) { MCC_TRACE("br\n");
 			if (sbt & VT_UNSIGNED) { MCC_TRACE("br\n");
 #if defined(MCC_TARGET_RISCV64)
-				trunc = 32;
+				vunpin_reg(MCC_RC_INT, vtop->type.t);
+				gen_cvt_zxtw();
+				goto done;
 #else
 				goto done;
 #endif
@@ -21038,6 +21049,9 @@ static int decl(int l) {
 #undef gen_cvt_ftoi
 #ifdef MCC_IR_HAVE_CVT_SXTW
 #undef gen_cvt_sxtw
+#endif
+#ifdef MCC_IR_HAVE_CVT_ZXTW
+#undef gen_cvt_zxtw
 #endif
 #undef gen_cvt_trunc32
 #undef gen_cvt_csti
