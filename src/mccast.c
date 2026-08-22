@@ -2323,6 +2323,7 @@ static int ast_body_uses_func_alloca(void) { MCC_TRACE("enter\n");
 #define AST_OP_FNEG 0x40015
 #define AST_OP_BSWAP 0x40016
 #define AST_OP_ROTL 0x40023
+#define AST_OP_ROTR 0x40024
 #define AST_OP_SIGNBIT 0x40017
 #define AST_OP_FFS 0x40018
 #define AST_OP_BITSCAN 0x40019
@@ -5743,6 +5744,9 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 			} else { MCC_TRACE("br\n");
 				gen_rotl((int)(ast_ival(a, n) >> 8), (int)(ast_ival(a, n) & 0xff));
 			}
+		} else if (uop == AST_OP_ROTR) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 1));
+			gen_rotr_var((int)(ast_ival(a, n) >> 8));
 #endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 		} else if (uop == AST_OP_SIGNBIT) { MCC_TRACE("br\n");
@@ -7531,6 +7535,104 @@ static int ast_rotate_var_try(AstArena *a, AstLocal top) { MCC_TRACE("enter\n");
 }
 
 #endif
+#if defined(MCC_TARGET_X86_64)
+/* T-lin-10510 (win-x64): variable rotate-RIGHT mirror `(x>>n)|(x<<(W-n))` (n a
+ * side-effect-free Ref, right-side count = W-n) -> rotate-right by n. Emitted as a
+ * 2-child AST_OP_ROTR (child0=x, child1=n) -> gen_rotr_var (`ror reg,cl`). Same
+ * guards as the rotate-left var slice (unsigned base ⇒ logical shr). x86_64. */
+static int ast_rotate_varr_try(AstArena *a, AstLocal top) { MCC_TRACE("enter\n");
+	AstLocal terms[8], base = AST_NONE, ncnt = AST_NONE;
+	AstLocal shlterm = AST_NONE, shrterm = AST_NONE;
+	int nt, i, wbits = 0, sbytes = 0, btype = 0;
+	if (ast_kind(a, top) != AST_Binary || ast_op(a, top) != '|')
+		{ MCC_TRACE("br\n"); return 0; }
+	nt = ast_bswap_flatten(a, top, terms, 8);
+	if (nt != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < 2; i++) { MCC_TRACE("br\n");
+		AstLocal t = terms[i], bnode, cnode;
+		int so;
+		if (ast_kind(a, t) != AST_Binary || ast_nchild(a, t) != 2)
+			{ MCC_TRACE("br\n"); return 0; }
+		so = ast_op(a, t);
+		bnode = ast_child(a, t, 0);
+		cnode = ast_child(a, t, 1);
+		if (base == AST_NONE) { MCC_TRACE("br\n");
+			if (ast_kind(a, bnode) != AST_Ref)
+				{ MCC_TRACE("br\n"); return 0; }
+			btype = ast_type_t(a, bnode);
+			if ((btype & VT_VOLATILE) || !(btype & VT_UNSIGNED))
+				{ MCC_TRACE("br\n"); return 0; }
+			switch (btype & VT_BTYPE) { MCC_TRACE("br\n");
+			case VT_SHORT: wbits = 16; sbytes = 2; break;
+			case VT_INT: wbits = 32; sbytes = 4; break;
+			case VT_LLONG: wbits = 64; sbytes = 8; break;
+			default: return 0;
+			}
+			base = bnode;
+		} else if (!ast_bswap_same_base(a, bnode, base)) { MCC_TRACE("br\n");
+			return 0;
+		}
+		if (so == TOK_SHR || so == TOK_SAR) { MCC_TRACE("br\n");
+			/* right term: count is a plain Ref `n' -- the rotate-right amount */
+			if (shrterm != AST_NONE || ast_kind(a, cnode) != AST_Ref)
+				{ MCC_TRACE("br\n"); return 0; }
+			shrterm = t;
+			ncnt = cnode;
+		} else if (so == TOK_SHL) { MCC_TRACE("br\n");
+			/* left term: count is `W - n' */
+			AstLocal wlit, nn;
+			if (shlterm != AST_NONE || ast_kind(a, cnode) != AST_Binary ||
+					ast_op(a, cnode) != '-' || ast_nchild(a, cnode) != 2)
+				{ MCC_TRACE("br\n"); return 0; }
+			wlit = ast_child(a, cnode, 0);
+			nn = ast_child(a, cnode, 1);
+			if (ast_kind(a, wlit) != AST_Literal || ast_kind(a, nn) != AST_Ref)
+				{ MCC_TRACE("br\n"); return 0; }
+			if ((int)ast_ival(a, wlit) != wbits)
+				{ MCC_TRACE("br\n"); return 0; }
+			shlterm = t;
+		} else {
+			MCC_TRACE("br\n");
+			return 0;
+		}
+	}
+	if (shlterm == AST_NONE || shrterm == AST_NONE || ncnt == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	{
+		AstLocal shr_n = ast_child(a, shrterm, 1);
+		AstLocal sub = ast_child(a, shlterm, 1);
+		AstLocal sub_n = ast_child(a, sub, 1);
+		if (!ast_bswap_same_base(a, shr_n, sub_n))
+			{ MCC_TRACE("br\n"); return 0; }
+	}
+	{
+		AstLocal shr_n = ast_child(a, shrterm, 1);
+		AstLocal nb = ast_node(a, AST_Ref);
+		AstLocal nc = ast_node(a, AST_Ref);
+		ast_copy_type(a, nb, a, base);
+		ast_set_op(a, nb, ast_op(a, base));
+		ast_set_sym(a, nb, ast_sym(a, base));
+		ast_set_ival(a, nb, ast_ival(a, base));
+		ast_set_fbits(a, nb, ast_fbits(a, base));
+		ast_copy_type(a, nc, a, shr_n);
+		ast_set_op(a, nc, ast_op(a, shr_n));
+		ast_set_sym(a, nc, ast_sym(a, shr_n));
+		ast_set_ival(a, nc, ast_ival(a, shr_n));
+		ast_set_fbits(a, nc, ast_fbits(a, shr_n));
+		ast_clear_children(a, top);
+		ast_set_kind(a, top, AST_Unary);
+		ast_set_op(a, top, AST_OP_ROTR);
+		ast_set_ival(a, top, (uint64_t)sbytes << 8);
+		ast_set_type(a, top, btype, ast_type_ref(a, base));
+		ast_set_sym(a, top, 0);
+		ast_add_child(a, top, nb);
+		ast_add_child(a, top, nc);
+	}
+	return 1;
+}
+
+#endif
 static int ast_bswap_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int total = 0;
@@ -7546,6 +7648,8 @@ static int ast_bswap_run(AstArena *a) { MCC_TRACE("enter\n");
 			int rf = ast_rotate_try(a, n);
 			if (!rf && a->kind[n] == AST_Binary && a->op[n] == '|')
 				{ MCC_TRACE("br\n"); rf = ast_rotate_var_try(a, n); }
+			if (!rf && a->kind[n] == AST_Binary && a->op[n] == '|')
+				{ MCC_TRACE("br\n"); rf = ast_rotate_varr_try(a, n); }
 			total += rf;
 		}
 #endif
