@@ -45,3 +45,7 @@ unroll|-O2|unroll-loops|-
 # x86_64 jumptable on ELF/PE/Mach-O alike and is inert for arm64/riscv64 (elt=4);
 # i386 REFUSES a jumptable under pic, so it is pinned out in arch.txt.
 switch_jt|-O2|switch-jumptable|-fPIC
+# loop-idiom (T-win-50053): a counted unit-stride `a[i]=0` loop lowers to a memset
+# call under -floop-idiom, a scalar loop under -fno-. Default-OFF knob (MCC_OPTD_OFF)
+# so o0- and shipped-On-neutral; the differ only shows when the flag is forced.
+loopidiom|-O4|loop-idiom|-
