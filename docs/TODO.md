@@ -608,7 +608,7 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
 - [ ] T-lin-10517 [S] OPT ROUND2: arm64/riscv64 inline atomics (ldxr/stxr + LSE) + order-aware fences — currently every non-x86_64 __atomic_* is a libatomic call; memory_order ignored, __atomic_store never inlined. Fires at O0 → REBANK. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
 - [ ] T-lin-10518 [S] OPT ROUND2: arm64 madd/msub fusion for user a*b±c (MUL emits MADD w/ xzr; MSUB only used internally). Gate O1+. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
-      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-22T11:53Z | DEPS: — | CLAIMED (lin-x64 2026-08-22T11:53Z, GOAL P2). Fuse `a*b+c`/`c+a*b`→MADD, `c-a*b`→MSUB (arm64 0x1b000000-family; MUL already = MADD w/ xzr @0x1b007c00, MSUB @0x1b008000 internal-only today). Directly optimizes T-lin-10509 divrem output `a - q*b`→MSUB. arch-gated arm64; drive on lin + qemu-aarch64, native arm64-osx verify → mac (primed, OFFER).
 - [ ] T-lin-10519 [S] OPT ROUND2: fast-math FP reassoc / a/b→a*(1/b) reciprocal / no-signed-zeros under -ffast-math (currently only complex limited-range consumes fast_math; REASSOC is int-only). Flag-gated. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
 - [ ] T-lin-10520 [S] OPT ROUND2: arm64 bitfield insert/extract (bfi/ubfx/sbfx; bitfields pre-lowered to shift+mask) + cinc/cneg/csinc cmov variants + per-fn ADRP-page dedup. bitfield fires at O0 → REBANK. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
