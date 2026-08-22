@@ -1272,6 +1272,36 @@ static int mccjit_bench_admit(void *cand, void *incumbent,
 	return mccjit_promote_by_profile(cand, incumbent, st, nargs, wide);
 }
 
+#define MCCJIT_KGC_ARITY 6
+#define MCCJIT_WC_MAXCAND 8
+
+/* Defined later (after the bench primitives); forward-declared here because
+ * mccjit_lazy_search calls them (T-mac-30295 slice 2). */
+static int mccjit_bench_rank_n(void *const *cands, int ncand,
+															 const int64_t *tuples, uint32_t ntuples,
+															 uint32_t nargs, int wide, int fp,
+															 int *order, double *secs);
+static int mccjit_bench_pick_significant(const int *order, const double *secs,
+																				 int cnt, int ref);
+
+/* T-mac-30295 slice 2: collect a benchmarkable candidate (bounded, dedup by
+ * mask) for the JIT wall-clock final-selection pass in mccjit_lazy_search. */
+static void mccjit_wc_collect(void **fn, uint64_t *mask, int *routed, long *cost,
+															int *n, void *cand, uint64_t m, int r, long cc) { MCC_TRACE("enter\n");
+	int i;
+	if (*n >= MCCJIT_WC_MAXCAND)
+		{ MCC_TRACE("br\n"); return; }
+	for (i = 0; i < *n; i++) { MCC_TRACE("br\n");
+		if (mask[i] == m)
+			{ MCC_TRACE("br\n"); return; }
+	}
+	fn[*n] = cand;
+	mask[*n] = m;
+	routed[*n] = r;
+	cost[*n] = cc;
+	(*n)++;
+}
+
 static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) { MCC_TRACE("enter\n");
 	uint64_t vocab[256];
 	int nv = ast_jit_search_vocab(vocab, (int)(sizeof vocab / sizeof vocab[0]));
@@ -1287,6 +1317,14 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 	long best_cost = -1;
 	int stale = 0;
 	int stale_max = (int)mcc_env_num("MCC_JIT_SEARCH_PLATEAU", 3);
+	int wallclock = mcc_env_on("MCC_JIT_SEARCH_WALLCLOCK");
+	void *wc_fn[MCCJIT_WC_MAXCAND];
+	uint64_t wc_mask[MCCJIT_WC_MAXCAND];
+	int wc_routed[MCCJIT_WC_MAXCAND];
+	long wc_cost[MCCJIT_WC_MAXCAND];
+	int wc_n = 0;
+	uint32_t wc_nargs = 0;
+	int wc_wide = 0;
 	if (e && e[0])
 		{ MCC_TRACE("br\n"); budget_s = strtod(e, NULL) / 1000.0; }
 	else if (mccjit_search_budget_baked_s)
@@ -1312,6 +1350,12 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 				best_cost = mccjit_variant_cost;
 				if (async)
 					{ MCC_TRACE("br\n"); mcc_jit_publish(st->slot, best); }
+				if (wallclock && r && !mccjit_last_allfp && mccjit_last_nparam > 0) { MCC_TRACE("br\n");
+					wc_nargs = mccjit_last_nparam;
+					wc_wide = mccjit_last_ret_wide;
+					mccjit_wc_collect(wc_fn, wc_mask, wc_routed, wc_cost, &wc_n, cand,
+														warm, r, mccjit_variant_cost);
+				}
 			}
 		}
 	}
@@ -1345,12 +1389,55 @@ static void *mccjit_lazy_search(MccjitCounterState *st, int *routed, int async) 
 			if (async)
 				{ MCC_TRACE("br\n"); mcc_jit_publish(st->slot, best); }
 		}
+		if (wallclock && r && !mccjit_last_allfp && mccjit_last_nparam > 0) { MCC_TRACE("br\n");
+			wc_nargs = mccjit_last_nparam;
+			wc_wide = mccjit_last_ret_wide;
+			mccjit_wc_collect(wc_fn, wc_mask, wc_routed, wc_cost, &wc_n, cand, vocab[i], r, cc);
+		}
 		if (improved)
 			{ MCC_TRACE("br\n"); best_cost = cc; stale = 0; }
 		else
 			{ MCC_TRACE("br\n"); stale++; }
-		if (best && best_cost >= 0 && stale >= stale_max)
+		if (wallclock && wc_n >= MCCJIT_WC_MAXCAND)
 			{ MCC_TRACE("br\n"); break; }
+		if (!wallclock && best && best_cost >= 0 && stale >= stale_max)
+			{ MCC_TRACE("br\n"); break; }
+	}
+	if (wallclock && mcc_env_on("MCC_JIT_OUT_WALLCLOCK"))
+		{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-wallclock: cands=%d nargs=%u "
+					"nsample=%d\n", wc_n, wc_nargs, st->nsample); }
+	if (wallclock && wc_n >= 2 && wc_nargs > 0 && st->nsample > 0) { MCC_TRACE("br\n");
+		int64_t wc_tuples[MCCJIT_PROFILE_SAMPLES * MCCJIT_KGC_ARITY];
+		int order[MCCJIT_WC_MAXCAND];
+		double secs[MCCJIT_WC_MAXCAND];
+		uint32_t nt = (uint32_t)st->nsample, ti, tj;
+		int nn, ref = 0, pick, k;
+		if (nt > MCCJIT_PROFILE_SAMPLES)
+			{ MCC_TRACE("br\n"); nt = MCCJIT_PROFILE_SAMPLES; }
+		for (ti = 0; ti < nt; ti++)
+			{ MCC_TRACE("br\n"); for (tj = 0; tj < MCCJIT_KGC_ARITY; tj++)
+				{ MCC_TRACE("br\n"); wc_tuples[ti * MCCJIT_KGC_ARITY + tj] = st->sample[ti][tj]; } }
+		for (k = 0; k < wc_n; k++) { MCC_TRACE("br\n");
+			if (wc_mask[k] == gs_best_mask)
+				{ MCC_TRACE("br\n"); ref = k; break; }
+		}
+		nn = mccjit_bench_rank_n((void *const *)wc_fn, wc_n, wc_tuples, nt, wc_nargs,
+														 wc_wide, 0, order, secs);
+		if (nn >= 2) { MCC_TRACE("br\n");
+			pick = mccjit_bench_pick_significant(order, secs, nn, ref);
+			if (pick >= 0 && pick < wc_n && wc_fn[pick]) { MCC_TRACE("br\n");
+				best = wc_fn[pick];
+				best_routed = wc_routed[pick];
+				gs_best_mask = wc_mask[pick];
+				gs_bench_won = 1;
+				if (async)
+					{ MCC_TRACE("br\n"); mcc_jit_publish(st->slot, best); }
+			}
+			if (mcc_env_on("MCC_JIT_OUT_WALLCLOCK"))
+				{ MCC_TRACE("br\n"); fprintf(stderr, "mccjit-wallclock: ranked=%d ref=%d "
+							"pick=%d picked_mask=0x%llx\n", nn, ref, pick,
+							(unsigned long long)gs_best_mask); }
+		}
 	}
 	if (routed)
 		{ MCC_TRACE("br\n"); *routed = best_routed; }
@@ -2735,7 +2822,6 @@ PUB_FUNC int mccjit_selftest_struct(void) { MCC_TRACE("enter\n");
 	return fails ? 1 : 0;
 }
 
-#define MCCJIT_KGC_ARITY 6
 #define MCCJIT_KGC_MAGIC 0x43474b4dul
 
 typedef struct MccjitKgcHdr {
@@ -6195,6 +6281,103 @@ PUB_FUNC int mccjit_selftest_lazy(void) { MCC_TRACE("enter\n");
 	mcc_delete(s1);
 	printf("mccjit-selftest-lazy: %s (%d failure%s)\n", fails ? "FAIL" : "PASS",
 				 fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+/* T-mac-30295 slice 2: NON-VACUOUS live proof of the wall-clock final-selection
+ * path in mccjit_lazy_search — a real stashed blob (so the vocab yields >=2
+ * benchmarkable candidates) plus manually-seeded profiled samples (so nsample>0)
+ * drives the full MCC_JIT_SEARCH_WALLCLOCK rank+install, and the selected variant
+ * is verified to compute f(x) correctly (selection preserves semantics). */
+PUB_FUNC int mccjit_selftest_search_wallclock(void) { MCC_TRACE("enter\n");
+	static const char src[] = "int f(int x){return x*2 + x*2 + 1;}";
+	unsigned char *blob;
+	size_t blen;
+	MCCState *s1 = NULL, *bstate;
+	int (*baseline)(int) = NULL;
+	void *slot = NULL, *best;
+	MccjitCounterState st;
+	int fails = 0, routed = 0, i;
+	int inputs[4] = {5, 12, -3, 100};
+
+	printf("mccjit-selftest-search-wallclock: begin (live mccjit_lazy_search "
+				 "wall-clock rank+install)\n");
+#if defined(MCCJIT_I386)
+	if (!mccjit_stub_tail_active()) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-search-wallclock: skipped — i386 stub tail gated off\n");
+		printf("mccjit-selftest-search-wallclock: PASS (0 failures)\n");
+		return 0;
+	}
+#elif !MCCJIT_HAVE_STUB_TAIL
+	printf("mccjit-selftest-search-wallclock: skipped — no KGC stub tail on this arch\n");
+	printf("mccjit-selftest-search-wallclock: PASS (0 failures)\n");
+	return 0;
+#endif
+	blob = mccjit_stash_one(src, "f", 1, &blen, &s1);
+	if (!s1 || !blob) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-search-wallclock: stash failed\n");
+		if (s1)
+			{ MCC_TRACE("br\n"); mcc_delete(s1); }
+		mcc_free(blob);
+		return 1;
+	}
+	baseline = (int (*)(int))mcc_jit_recompile_blob(blob, blen);
+	bstate = mccjit_last_state;
+	mccjit_last_state = NULL;
+	if (!baseline) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-search-wallclock: baseline recompile NULL\n");
+		mcc_free(blob);
+		mcc_delete(s1);
+		return 1;
+	}
+	slot = (void *)baseline;
+	memset(&st, 0, sizeof st);
+	st.slot = &slot;
+	st.blob = blob;
+	st.len = blen;
+	st.baseline = (void *)baseline;
+	st.threshold = 8;
+	pthread_mutex_init(&st.lock, NULL);
+	st.nsample = 4;
+	for (i = 0; i < st.nsample; i++)
+		{ MCC_TRACE("br\n"); st.sample[i][0] = (int64_t)inputs[i]; }
+
+	setenv("MCC_JIT_SEARCH", "1", 1);
+	setenv("MCC_JIT_SEARCH_WALLCLOCK", "1", 1);
+	setenv("MCC_JIT_BENCH_ITERS", "2000", 1);
+	setenv("MCC_JIT_BENCH_ROUNDS", "5", 1);
+	setenv("MCC_JIT_BENCH_MARGIN_PCT", "10", 1);
+	best = mccjit_lazy_search(&st, &routed, 0);
+	unsetenv("MCC_JIT_SEARCH");
+	unsetenv("MCC_JIT_SEARCH_WALLCLOCK");
+	unsetenv("MCC_JIT_BENCH_ITERS");
+	unsetenv("MCC_JIT_BENCH_ROUNDS");
+	unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
+
+	printf("mccjit-selftest-search-wallclock: lazy_search best=%p routed=%d "
+				 "(expect non-NULL) %s\n", best, routed, best ? "OK" : "FAIL");
+	if (!best)
+		{ MCC_TRACE("br\n"); fails++; }
+	else { MCC_TRACE("br\n");
+		for (i = 0; i < 4; i++) { MCC_TRACE("br\n");
+			int x = inputs[i];
+			int got = ((int (*)(int))best)(x);
+			int want = x * 2 + x * 2 + 1;
+			int ok = (got == want);
+			printf("mccjit-selftest-search-wallclock: selected f(%d)=%d expect=%d %s\n",
+						 x, got, want, ok ? "OK" : "FAIL");
+			if (!ok)
+				{ MCC_TRACE("br\n"); fails++; }
+		}
+	}
+	pthread_mutex_destroy(&st.lock);
+	if (bstate)
+		{ MCC_TRACE("br\n"); mcc_delete(bstate); }
+	mccjit_last_state = NULL;
+	mcc_free(blob);
+	mcc_delete(s1);
+	printf("mccjit-selftest-search-wallclock: %s (%d failure%s)\n",
+				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }
 

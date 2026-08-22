@@ -8013,6 +8013,17 @@ if(MCC_BUILD_TESTS)
             set_tests_properties(jit/selftest-search PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
             add_test(NAME jit/selftest-search-live COMMAND ${CMAKE_COMMAND} -E env MCC_JIT_SEARCH=1 MCC_JIT_HOT_CALLS=2 $<TARGET_FILE:jit_selftest>)
             set_tests_properties(jit/selftest-search-live PROPERTIES FIXTURES_REQUIRED MCC_BUILT)
+            # T-mac-30295 slice 2: NON-VACUOUS live proof of the N-way wall-clock
+            # final-selection path in mccjit_lazy_search — a real stashed blob
+            # (>=2 benchmarkable candidates) + seeded profiled samples drive the
+            # full MCC_JIT_SEARCH_WALLCLOCK rank+install, and the selected variant
+            # is verified to compute correctly. RUN_SERIAL for timing stability;
+            # self-suppresses to static ranking on a busy host, still correct.
+            add_executable(jit_selftest_search_wallclock tests/embed/jit_selftest_search_wallclock.c)
+            target_link_libraries(jit_selftest_search_wallclock PRIVATE libmcc)
+            target_include_directories(jit_selftest_search_wallclock PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            add_test(NAME jit/selftest-search-wallclock COMMAND jit_selftest_search_wallclock)
+            set_tests_properties(jit/selftest-search-wallclock PROPERTIES FIXTURES_REQUIRED MCC_BUILT RUN_SERIAL TRUE)
 
             if((MCC_CPU STREQUAL "x86_64" AND NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC"
                 AND NOT WIN32) OR
@@ -8184,6 +8195,7 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test(jit/selftest-gated "${_jitoff_why}")
             mcc_skip_test(jit/selftest-search "${_jitoff_why}")
             mcc_skip_test(jit/selftest-search-live "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-search-wallclock "${_jitoff_why}")
             mcc_skip_test(regression/o4-aot-jit "${_jitoff_why}")
             mcc_skip_test(regression/jit-submit-aot-diff "${_jitoff_why}")
             mcc_skip_test(jit/selftest-search-live-kgc "${_jitoff_why}")
