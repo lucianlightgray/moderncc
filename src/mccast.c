@@ -16489,12 +16489,12 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	val = ast_child(a, store, 1);
 	if (val == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (ast_kind(a, val) == AST_Literal) {
+	if (ast_kind(a, val) == AST_Literal) { MCC_TRACE("br\n");
 		if ((ast_stype_t(a, val) & VT_BTYPE) == VT_FLOAT ||
 				(ast_stype_t(a, val) & VT_BTYPE) == VT_DOUBLE ||
 				(ast_stype_t(a, val) & VT_BTYPE) == VT_LDOUBLE)
 			{ MCC_TRACE("br\n"); return 0; }
-	} else if (ast_kind(a, val) == AST_Load && ast_nchild(a, val) == 1) {
+	} else if (ast_kind(a, val) == AST_Load && ast_nchild(a, val) == 1) { MCC_TRACE("br\n");
 		AstLocal vbin = ast_first_child(a, val), vo0, vo1;
 		if (ast_kind(a, vbin) != AST_Binary || ast_op(a, vbin) != '+' || ast_nchild(a, vbin) != 2)
 			{ MCC_TRACE("br\n"); return 0; }
@@ -16528,7 +16528,7 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	ct.ref = (Sym *)(uintptr_t)ast_type_ref(a, base);
 	if ((ct.t & VT_BTYPE) != VT_PTR || !ct.ref)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (is_cpy) {
+	if (is_cpy) { MCC_TRACE("br\n");
 		if (!(ast_type_t(a, base) & VT_ARRAY) || !(ast_type_t(a, srcbase) & VT_ARRAY))
 			{ MCC_TRACE("br\n"); return 0; }
 		if (ast_sym(a, base) == ast_sym(a, srcbase) &&
@@ -16541,7 +16541,7 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	elemsize = type_size(&ct.ref->type, &al);
 	if (elemsize < 1)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (!is_cpy) {
+	if (!is_cpy) { MCC_TRACE("br\n");
 		uint64_t uv = (uint64_t)ast_ival(a, val), rep = 0, mask;
 		int k;
 		bytev = (int)(uv & 0xFF);
@@ -16551,7 +16551,7 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 		if ((uv & mask) != (rep & mask))
 			{ MCC_TRACE("br\n"); return 0; }
 	}
-	if (ast_kind(a, blit) == AST_Literal) {
+	if (ast_kind(a, blit) == AST_Literal) { MCC_TRACE("br\n");
 		nbytes = ((int64_t)ast_ival(a, blit) - ini) * (int64_t)elemsize;
 		if (nbytes < 1 || nbytes > (int64_t)0x40000000)
 			{ MCC_TRACE("br\n"); return 0; }
@@ -16570,21 +16570,21 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	ast_add_child(a, call, ref);
 	dst = ast_dup_sub(a, base);
 	ast_add_child(a, call, dst);
-	if (is_cpy) {
+	if (is_cpy) { MCC_TRACE("br\n");
 		ast_add_child(a, call, ast_dup_sub(a, srcbase));
-	} else {
+	} else { MCC_TRACE("br\n");
 		zero = ast_node(a, AST_Literal);
 		ast_set_type(a, zero, int_type.t, 0);
 		ast_set_ival(a, zero, value64((uint64_t)bytev, int_type.t));
 		ast_set_op(a, zero, VT_CONST);
 		ast_add_child(a, call, zero);
 	}
-	if (ast_kind(a, blit) == AST_Literal) {
+	if (ast_kind(a, blit) == AST_Literal) { MCC_TRACE("br\n");
 		len = ast_node(a, AST_Literal);
 		ast_set_type(a, len, VT_LLONG, 0);
 		ast_set_ival(a, len, value64((uint64_t)nbytes, VT_LLONG));
 		ast_set_op(a, len, VT_CONST);
-	} else {
+	} else { MCC_TRACE("br\n");
 		AstLocal cvt, esz;
 		cvt = ast_node(a, AST_Convert);
 		ast_set_type(a, cvt, VT_LLONG | VT_UNSIGNED, 0);
@@ -16609,11 +16609,11 @@ static int ast_loopidiom_run(AstArena *a) { MCC_TRACE("enter\n");
 	int total = 0, guard;
 	if (!ast_loopidiom_env)
 		{ MCC_TRACE("br\n"); return 0; }
-	for (guard = 0; guard < AST_LOOPNEST_CAP; guard++) {
+	for (guard = 0; guard < AST_LOOPNEST_CAP; guard++) { MCC_TRACE("br\n");
 		int applied = 0, i;
 		ast_loopnest_sync(a);
-		for (i = 0; i < ast_loopnest_n; i++) {
-			if (ast_loopidiom_apply(a, &ast_loopnest[i])) {
+		for (i = 0; i < ast_loopnest_n; i++) { MCC_TRACE("br\n");
+			if (ast_loopidiom_apply(a, &ast_loopnest[i])) { MCC_TRACE("br\n");
 				total++; applied = 1; break;
 			}
 		}
