@@ -3685,6 +3685,131 @@ MCCJIT_LOCAL int mccjit_promote_by_profile(void *cand, void *incumbent,
 	return mccjit_bench_pair(cand, incumbent, tuples, nt, nargs, wide, 0);
 }
 
+/* -- T-mac-30295: N-way empirical wall-clock optimization selection (JIT) --
+ * The JIT optimizes a live program with no byte-identity constraint, so wall
+ * clock is the correct signal for choosing AMONG equivalent optimization
+ * parameterizations of a slice (AOT keeps its deterministic tick budget --
+ * tools/opt-search-determinism.py). These helpers time already-built candidate
+ * variants over the profiled live-in tuples, rank them fastest-first, and pick
+ * the fastest beyond a significance margin, self-suppressing when the host is
+ * too busy to time reliably. Nuance: DETAILS.md#t-mac-30295-research-and-slice-plan. */
+
+static int mccjit_host_too_busy(void) { MCC_TRACE("enter\n");
+	long force = mcc_env_num("MCC_JIT_BENCH_FORCE_BUSY", -1);
+	double la;
+	int ncpu;
+	if (force >= 0)
+		{ MCC_TRACE("br\n"); return force != 0; }
+	la = host_loadavg();
+	if (la < 0.0)
+		{ MCC_TRACE("br\n"); return 0; }
+	ncpu = host_nproc();
+	if (ncpu < 1)
+		{ MCC_TRACE("br\n"); ncpu = 1; }
+	return la > 0.90 * (double)ncpu;
+}
+
+static double mccjit_bench_time_one(void *fn, const int64_t *tuples,
+																		uint32_t ntuples, uint32_t nargs, int wide,
+																		uint32_t reps, int fp, int64_t *sink_out) { MCC_TRACE("enter\n");
+	int64_t sink = 0;
+	double best = 1e300;
+	int rounds = mccjit_bench_rounds(), rd;
+	uint32_t r, i;
+	struct timespec t0;
+	for (rd = 0; rd < rounds; rd++) { MCC_TRACE("br\n");
+		double d;
+		if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0)
+			{ MCC_TRACE("br\n"); break; }
+		for (r = 0; r < reps; r++) { MCC_TRACE("br\n");
+			for (i = 0; i < ntuples; i++) { MCC_TRACE("br\n");
+				if (fp) { MCC_TRACE("br\n");
+					double dv = mccjit_invoke_fp(fn,
+							(const double *)(tuples + (size_t)i * MCCJIT_KGC_ARITY), nargs);
+					int64_t b;
+					memcpy(&b, &dv, sizeof b);
+					sink += b;
+				} else { MCC_TRACE("br\n");
+					sink += mccjit_invoke_raw(fn,
+							tuples + (size_t)i * MCCJIT_KGC_ARITY, nargs, wide);
+				}
+			}
+		}
+		d = mccjit_elapsed(&t0);
+		if (d < best)
+			{ MCC_TRACE("br\n"); best = d; }
+	}
+	*sink_out ^= sink;
+	return best;
+}
+
+/* Time each candidate over the tuples (best-of-rounds min), then insertion-sort
+ * order[]/secs[] ascending by seconds. Returns the count ranked, or -1 when the
+ * host is too busy to time (caller falls back to the deterministic static-cost
+ * ranking). order[]/secs[] must have room for ncand entries. */
+static int mccjit_bench_rank_n(void *const *cands, int ncand,
+															 const int64_t *tuples, uint32_t ntuples,
+															 uint32_t nargs, int wide, int fp,
+															 int *order, double *secs) { MCC_TRACE("enter\n");
+	long iters = mccjit_bench_iters();
+	int64_t sink = 0;
+	uint32_t reps;
+	int cnt = 0, i, j;
+	if (!cands || ncand <= 0 || !tuples || ntuples == 0 || nargs == 0 || !order || !secs)
+		{ MCC_TRACE("br\n"); return -1; }
+	if (mccjit_host_too_busy())
+		{ MCC_TRACE("br\n"); return -1; }
+	reps = (uint32_t)(iters / (long)ntuples);
+	if (reps < 1)
+		{ MCC_TRACE("br\n"); reps = 1; }
+	for (i = 0; i < ncand; i++) { MCC_TRACE("br\n");
+		if (!cands[i])
+			{ MCC_TRACE("br\n"); continue; }
+		order[cnt] = i;
+		secs[cnt] = mccjit_bench_time_one(cands[i], tuples, ntuples, nargs, wide,
+																			reps, fp, &sink);
+		cnt++;
+	}
+	mccjit_bench_sink ^= sink;
+	for (i = 1; i < cnt; i++) { MCC_TRACE("br\n");
+		int oi = order[i];
+		double os = secs[i];
+		j = i - 1;
+		while (j >= 0 && secs[j] > os) { MCC_TRACE("br\n");
+			order[j + 1] = order[j];
+			secs[j + 1] = secs[j];
+			j--;
+		}
+		order[j + 1] = oi;
+		secs[j + 1] = os;
+	}
+	return cnt;
+}
+
+/* Given ranked order[]/secs[] and the index of the reference (incumbent)
+ * candidate, return the fastest candidate index iff it beats the reference by
+ * more than MCC_JIT_BENCH_MARGIN_PCT (the adoption-side significance gate);
+ * otherwise keep the reference. Stable: sub-margin noise never flips the choice. */
+static int mccjit_bench_pick_significant(const int *order, const double *secs,
+																				 int cnt, int ref) { MCC_TRACE("enter\n");
+	int margin = mccjit_bench_margin_pct();
+	double ref_secs = -1.0;
+	int k;
+	if (cnt <= 0 || !order || !secs)
+		{ MCC_TRACE("br\n"); return ref; }
+	for (k = 0; k < cnt; k++) { MCC_TRACE("br\n");
+		if (order[k] == ref)
+			{ MCC_TRACE("br\n"); ref_secs = secs[k]; break; }
+	}
+	if (ref_secs < 0.0)
+		{ MCC_TRACE("br\n"); return ref; }
+	if (order[0] == ref)
+		{ MCC_TRACE("br\n"); return ref; }
+	if (secs[0] * (100.0 + (double)margin) < ref_secs * 100.0)
+		{ MCC_TRACE("br\n"); return order[0]; }
+	return ref;
+}
+
 static int64_t mccjit_kgc_calln(MccjitKgc *k, void *variant, void *baseline,
 																const int64_t *argv, uint32_t nargs,
 																int *flagged) { MCC_TRACE("enter\n");
@@ -6914,6 +7039,14 @@ static long mccjit_bench_slow_fn(long x) { MCC_TRACE("enter\n");
 	return s;
 }
 
+static long mccjit_bench_mid_fn(long x) { MCC_TRACE("enter\n");
+	long s = x;
+	int i;
+	for (i = 0; i < 200; i++)
+		{ MCC_TRACE("br\n"); s = s * 2654435761L + mccjit_bench_barrier; }
+	return s;
+}
+
 PUB_FUNC int mccjit_selftest_bench(void) { MCC_TRACE("enter\n");
 	int64_t tuples[4 * MCCJIT_KGC_ARITY];
 	uint32_t nt = 4, i, j;
@@ -10086,6 +10219,87 @@ PUB_FUNC int mccjit_selftest_benchwire(void) { MCC_TRACE("enter\n");
 	pthread_mutex_destroy(&st.lock);
 	pthread_mutex_destroy(&empty.lock);
 	printf("mccjit-selftest-benchwire: %s (%d failure%s)\n",
+				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
+	return fails ? 1 : 0;
+}
+
+/* T-mac-30295 slice 1: proves the N-way wall-clock ranker picks the fastest
+ * candidate, the significance gate does not flip on sub-margin noise, and the
+ * host-busy gate declines. Uses no fault injector, so it runs on any build
+ * (unlike the MCC_DEV-gated bench/benchwire cells). */
+PUB_FUNC int mccjit_selftest_benchrank(void) { MCC_TRACE("enter\n");
+	int64_t tuples[4 * MCCJIT_KGC_ARITY];
+	uint32_t nt = 4, i, j;
+	int fails = 0;
+	int order[3];
+	double secs[3];
+	void *cands3[3];
+	void *cands_tie[2];
+	int n, n_tie, pick_win, pick_tie, gated;
+
+	printf("mccjit-selftest-benchrank: begin (N-way wall-clock rank + "
+				 "significance + host gate)\n");
+	setenv("MCC_JIT_BENCH_ITERS", "3000", 1);
+	setenv("MCC_JIT_BENCH_ROUNDS", "7", 1);
+	setenv("MCC_JIT_BENCH_MARGIN_PCT", "30", 1);
+	for (i = 0; i < nt; i++)
+		{ MCC_TRACE("br\n"); for (j = 0; j < MCCJIT_KGC_ARITY; j++)
+			{ MCC_TRACE("br\n"); tuples[i * MCCJIT_KGC_ARITY + j] = (int64_t)(i * 7 + 1); } }
+
+	cands3[0] = (void *)mccjit_bench_slow_fn;
+	cands3[1] = (void *)mccjit_bench_mid_fn;
+	cands3[2] = (void *)mccjit_bench_fast_fn;
+	n = mccjit_bench_rank_n((void *const *)cands3, 3, tuples, nt, 1, 1, 0, order, secs);
+	printf("mccjit-selftest-benchrank: ranked n=%d (expect 3) fastest_idx=%d "
+				 "slowest_idx=%d\n",
+				 n, n >= 1 ? order[0] : -1, n >= 3 ? order[2] : -1);
+	if (n != 3)
+		{ MCC_TRACE("br\n"); fails++; }
+	if (n == 3 && order[0] != 2) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-benchrank: fastest should be idx2 (fast_fn) FAIL\n");
+		fails++;
+	}
+	if (n == 3 && order[2] != 0) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-benchrank: slowest should be idx0 (slow_fn) FAIL\n");
+		fails++;
+	}
+	if (n == 3 && !(secs[0] < secs[2])) { MCC_TRACE("br\n");
+		printf("mccjit-selftest-benchrank: times not ascending FAIL\n");
+		fails++;
+	}
+
+	pick_win = (n == 3) ? mccjit_bench_pick_significant(order, secs, n, 0) : -1;
+	printf("mccjit-selftest-benchrank: significant pick vs ref=slow -> %d "
+				 "(expect 2) %s\n",
+				 pick_win, pick_win == 2 ? "OK" : "FAIL");
+	if (pick_win != 2)
+		{ MCC_TRACE("br\n"); fails++; }
+
+	cands_tie[0] = (void *)mccjit_bench_fast_fn;
+	cands_tie[1] = (void *)mccjit_bench_fast_fn;
+	n_tie = mccjit_bench_rank_n((void *const *)cands_tie, 2, tuples, nt, 1, 1, 0,
+														 order, secs);
+	pick_tie = (n_tie == 2) ? mccjit_bench_pick_significant(order, secs, n_tie, order[1])
+													: -99;
+	printf("mccjit-selftest-benchrank: tie pick vs ref=order[1] -> %d "
+				 "(expect %d, no flip) %s\n",
+				 pick_tie, n_tie == 2 ? order[1] : -99,
+				 (n_tie == 2 && pick_tie == order[1]) ? "OK" : "FAIL");
+	if (!(n_tie == 2 && pick_tie == order[1]))
+		{ MCC_TRACE("br\n"); fails++; }
+
+	setenv("MCC_JIT_BENCH_FORCE_BUSY", "1", 1);
+	gated = mccjit_bench_rank_n((void *const *)cands3, 3, tuples, nt, 1, 1, 0, order, secs);
+	unsetenv("MCC_JIT_BENCH_FORCE_BUSY");
+	printf("mccjit-selftest-benchrank: forced-busy rank -> %d (expect -1) %s\n",
+				 gated, gated == -1 ? "OK" : "FAIL");
+	if (gated != -1)
+		{ MCC_TRACE("br\n"); fails++; }
+
+	unsetenv("MCC_JIT_BENCH_ITERS");
+	unsetenv("MCC_JIT_BENCH_ROUNDS");
+	unsetenv("MCC_JIT_BENCH_MARGIN_PCT");
+	printf("mccjit-selftest-benchrank: %s (%d failure%s)\n",
 				 fails ? "FAIL" : "PASS", fails, fails == 1 ? "" : "s");
 	return fails ? 1 : 0;
 }

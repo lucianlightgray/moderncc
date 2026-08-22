@@ -8100,6 +8100,17 @@ if(MCC_BUILD_TESTS)
                 mcc_skip_test(jit/selftest-benchwire "requires -DMCC_DEV=ON (JIT fault injection)")
             endif()
 
+            add_executable(jit_selftest_benchrank tests/embed/jit_selftest_benchrank.c)
+            target_link_libraries(jit_selftest_benchrank PRIVATE libmcc)
+            target_include_directories(jit_selftest_benchrank PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+            # T-mac-30295: the N-way wall-clock optimization ranker + significance
+            # gate + host-busy gate. Uses no fault injector (unlike benchwire), so
+            # it is meaningful without MCC_DEV. RUN_SERIAL so co-tenant ctest load
+            # does not perturb the timing.
+            add_test(NAME jit/selftest-benchrank COMMAND jit_selftest_benchrank)
+            set_tests_properties(jit/selftest-benchrank PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT RUN_SERIAL TRUE)
+
             if(MCC_BUILD_STATIC_LIB AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 add_test(NAME jit/standalone-static
                     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/embed/jit_standalone.sh"
@@ -8190,6 +8201,7 @@ if(MCC_BUILD_TESTS)
             mcc_skip_test(jit/selftest-evalgate "${_jitoff_why}")
             mcc_skip_test(jit/selftest-l4a "${_jitoff_why}")
             mcc_skip_test(jit/selftest-benchwire "${_jitoff_why}")
+            mcc_skip_test(jit/selftest-benchrank "${_jitoff_why}")
             mcc_skip_test(jit/standalone-static "${_jitoff_why}")
         endif()
 
