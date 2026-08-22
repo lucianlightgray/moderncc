@@ -18149,6 +18149,17 @@ static int ast_sroa_run(AstArena *a) { MCC_TRACE("enter\n");
 			if (d != 0 || p == AST_NONE || ast_kind(a, p) != AST_Unary ||
 					ast_op(a, p) != AST_OP_MEMBER || ast_first_child(a, p) != n)
 				{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_WHOLE); continue; }
+			/* `&s.m` hands the member's address to something this pass cannot
+			 * follow (e.g. bar(&f.p) reinterpreting the struct through a pointer);
+			 * the ADDR sits above the MEMBER node, so the &s guard above (which
+			 * only sees n's direct parent) misses it. Reject the whole candidate,
+			 * as for &s. */
+			{
+				AstLocal pp = ast_parent(a, p);
+				if (pp != AST_NONE && ast_kind(a, pp) == AST_Unary &&
+						(ast_op(a, pp) == AST_OP_ADDR || ast_op(a, pp) == AST_OP_VLA))
+					{ MCC_TRACE("br\n"); c->ok = 0; ast_sroa_note(AST_SROA_W_ADDR); continue; }
+			}
 			mo = (int32_t)ast_ival(a, p);
 			j = ast_sroa_member_covering(c, mo,
 																	 ast_sra_scalar_size(ast_type_t(a, p)));
