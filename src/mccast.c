@@ -16498,7 +16498,7 @@ static int ast_body_has_loop(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 }
 
 static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
-	if (li->op != 3 || li->unanalyzable || !li->has_iv)
+	if ((li->op != 3 && li->op != 2) || li->unanalyzable || !li->has_iv)
 		{ MCC_TRACE("br\n"); return 0; }
 	int64_t stride = li->iv_stride;
 	if (stride == 0 || stride < -AST_UNROLL_CAP || stride > AST_UNROLL_CAP)
@@ -16551,15 +16551,16 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 	}
 	if (trip < 1 || trip > AST_UNROLL_CAP)
 		{ MCC_TRACE("br\n"); return 0; }
-	AstLocal incr = ast_child(a, loop, 1);
-	AstLocal body = ast_child(a, loop, 2);
-	if (incr == AST_NONE || body == AST_NONE)
+	AstLocal incr = li->incr;
+	AstLocal body = li->body;
+	if (body == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (ast_body_has_loop(a, body))
 		{ MCC_TRACE("br\n"); return 0; }
 	for (int64_t k = 0; k < trip; k++) { MCC_TRACE("br\n");
 		ast_li_list_insert_before(a, parent, loop, ast_dup_sub(a, body));
-		ast_li_list_insert_before(a, parent, loop, ast_dup_sub(a, incr));
+		if (incr != AST_NONE)
+			{ MCC_TRACE("br\n"); ast_li_list_insert_before(a, parent, loop, ast_dup_sub(a, incr)); }
 	}
 	ast_li_list_remove(a, parent, loop);
 	return 1;

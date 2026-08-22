@@ -2166,6 +2166,14 @@ static const cli_case_t cli_cases[] = {
 		 "cmp -s {W}/ulf.on.o {W}/ulf.off.o && echo U=same || echo U=fired",
 		 "R=55\nU=fired\n"},
 
+		{"loop_unroll_while", "",
+		 "printf 'int main(void){int s=0;int i=0;while(i<8){s+=i*i;i++;}int j=1,p=1;while(j<5){p*=j;j++;}return s+p;}\\n' > {W}/ulw.c && "
+		 "{MCC} -B{B} -I{I} -O2 -funroll-loops {W}/ulw.c -o {W}/ulw && {W}/ulw; printf 'R=%d\\n' $?; "
+		 "{MCC} -B{B} -I{I} -O2 -funroll-loops -c {W}/ulw.c -o {W}/ulw.on.o; "
+		 "{MCC} -B{B} -I{I} -O2 -fno-unroll-loops -c {W}/ulw.c -o {W}/ulw.off.o; "
+		 "cmp -s {W}/ulw.on.o {W}/ulw.off.o && echo U=same || echo U=fired",
+		 "R=164\nU=fired\n"},
+
 		{"loop_unroll_shapes", "",
 		 "printf 'int main(void){int s=0;for(int i=1;i<=5;i++)s+=i;for(int i=0;i<=10;i+=2)s+=i;for(int i=0;i<12;i+=3)s+=i;return s;}\\n' > {W}/uls.c && "
 		 "{MCC} -B{B} -I{I} -O2 -funroll-loops {W}/uls.c -o {W}/uls && {W}/uls; printf 'R=%d\\n' $?; "
