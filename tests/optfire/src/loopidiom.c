@@ -19,6 +19,8 @@ int main(void)
 	int r[16];
 	int cs[10];
 	int dst[10];
+	int f[16];
+	int fs[16], fd[16];
 	unsigned n = g_n;
 	unsigned i;
 	int j;
@@ -31,7 +33,12 @@ int main(void)
 	for (i = 0; i < n; i++) r[i] = 0;
 	for (j = 0; j < 10; j++) cs[j] = j * 2 + 1;
 	for (j = 0; j < 10; j++) dst[j] = cs[j];
-	printf("%d %d %d %d %d %d %d %d %d %d %d\n", a[0], (int)b[19], (int)c[11],
-				 (int)d[0], (int)d[23], e[7], nope[0], nope[7], r[0], dst[0], dst[9]);
+	for (j = 0; j < 16; j++) f[j] = 5;
+	for (j = 6; j < 16; j++) f[j] = 0;
+	for (j = 0; j < 16; j++) fs[j] = j + 100;
+	for (j = 0; j < 16; j++) fd[j] = 7;
+	for (j = 5; j < 16; j++) fd[j] = fs[j];
+	printf("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", a[0], (int)b[19], (int)c[11],
+				 (int)d[0], (int)d[23], e[7], nope[0], nope[7], r[0], dst[0], dst[9], f[0], f[6], f[15], fd[0], fd[5], fd[15]);
 	return 0;
 }

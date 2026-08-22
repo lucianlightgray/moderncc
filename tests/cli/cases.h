@@ -3933,5 +3933,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -w -O13 {W}/dsi.c -o {W}/dsi13 && {W}/dsi13 && echo O13-ok",
 		 "O0-ok\nO4-ok\nO13-ok\n"},
 
+		{"loopidiom_init_nonzero", "cpu=x86_64",
+		 "printf 'int main(void){int a[16];int j;for(j=0;j<16;j++)a[j]=7;for(j=4;j<16;j++)a[j]=0;int cs[16],dst[16];for(j=0;j<16;j++)cs[j]=j*3+1;for(j=0;j<16;j++)dst[j]=9;for(j=3;j<16;j++)dst[j]=cs[j];if(a[0]!=7||a[3]!=7||a[4]!=0||a[15]!=0)return 1;if(dst[0]!=9||dst[2]!=9||dst[3]!=10||dst[15]!=46)return 2;return 0;}' > {W}/lidi.c && "
+		 "{MCC} -B{B} -I{I} -floop-idiom -O4 -S {W}/lidi.c -o {W}/lidi.on.s 2>/dev/null && "
+		 "{MCC} -B{B} -I{I} -fno-loop-idiom -O4 -S {W}/lidi.c -o {W}/lidi.off.s 2>/dev/null && "
+		 "echo fire=$(grep -c 'call.*memset' {W}/lidi.on.s)/$(grep -c 'call.*memcpy' {W}/lidi.on.s) noopt=$(grep -c 'call.*memset' {W}/lidi.off.s)/$(grep -c 'call.*memcpy' {W}/lidi.off.s) && "
+		 "{MCC} -B{B} -I{I} -floop-idiom -O4 -run {W}/lidi.c && echo runon=OK && "
+		 "{MCC} -B{B} -I{I} -O0 -run {W}/lidi.c && echo runo0=OK",
+		 "fire=1/1 noopt=0/0\nrunon=OK\nruno0=OK\n"},
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));

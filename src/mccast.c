@@ -16450,6 +16450,22 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 	return 1;
 }
 
+static AstLocal ast_li_off(AstArena *a, AstLocal baseref, AstLocal tmpl, int64_t ini) { MCC_TRACE("enter\n");
+	AstLocal d, lit, plus;
+	d = ast_dup_sub(a, baseref);
+	if (ini == 0)
+		{ MCC_TRACE("br\n"); return d; }
+	lit = ast_node(a, AST_Literal);
+	ast_set_type(a, lit, VT_LLONG, 0);
+	ast_set_ival(a, lit, value64((uint64_t)ini, VT_LLONG));
+	ast_set_op(a, lit, VT_CONST);
+	plus = ast_node(a, AST_Binary);
+	ast_set_op(a, plus, '+');
+	ast_set_type(a, plus, ast_type_t(a, tmpl), ast_type_ref(a, tmpl));
+	ast_add_child(a, plus, d);
+	ast_add_child(a, plus, lit);
+	return plus;
+}
 static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
 	AstLocal loop, parent, cond, blit, so, ilit, body, store, addr, val, bin, o0, o1, base;
 	int64_t ini, nbytes;
@@ -16479,8 +16495,6 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	if (ilit == AST_NONE || ast_kind(a, ilit) != AST_Literal)
 		{ MCC_TRACE("br\n"); return 0; }
 	ini = (int64_t)ast_ival(a, ilit);
-	if (ini != 0)
-		{ MCC_TRACE("br\n"); return 0; }
 	body = ast_child(a, loop, 2);
 	if (body == AST_NONE || ast_kind(a, body) != AST_BasicBlock || ast_nchild(a, body) != 1)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -16562,6 +16576,9 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	} else if (!(ast_stype_t(a, blit) & VT_UNSIGNED)) {
 		MCC_TRACE("br\n");
 		return 0;
+	} else if (ini != 0) {
+		MCC_TRACE("br\n");
+		return 0;
 	}
 	ms = external_helper_sym(is_cpy ? TOK_memcpy : TOK_memset);
 	if (!ms)
@@ -16572,10 +16589,10 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	ast_set_sym(a, ref, (uint64_t)(uintptr_t)ms);
 	ast_set_op(a, ref, VT_CONST | VT_SYM);
 	ast_add_child(a, call, ref);
-	dst = ast_dup_sub(a, base);
+	dst = ast_li_off(a, base, bin, ini);
 	ast_add_child(a, call, dst);
 	if (is_cpy) { MCC_TRACE("br\n");
-		ast_add_child(a, call, ast_dup_sub(a, srcbase));
+		ast_add_child(a, call, ast_li_off(a, srcbase, bin, ini));
 	} else { MCC_TRACE("br\n");
 		zero = ast_node(a, AST_Literal);
 		ast_set_type(a, zero, int_type.t, 0);
