@@ -10437,6 +10437,45 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
                 LABELS "pe" TIMEOUT 900)
 
+            # T-win-50054: native win-PE EXTERNAL-oracle differential over the whole
+            # vendored gcc-c-torture-execute corpus vs the vendored mingw gcc, at
+            # -O0/-O2 (pe/x-oracle above covers only the internal goldens at default
+            # opt). Banked divergences + mcc-nocompiles in pe-torture-xoracle-known.txt
+            # (anti-rot: a banked entry that agrees again fails; a new one fails).
+            if(NOT DEFINED MCC_PYTHON3)
+                find_program(MCC_PYTHON3 NAMES python3 python)
+            endif()
+            set(_pe_torture_corpus "${CMAKE_CURRENT_SOURCE_DIR}/vendor/gcc-c-torture-execute")
+            set(_pe_torture_py "${CMAKE_CURRENT_SOURCE_DIR}/tools/pe_torture_xoracle.py")
+            set(_pe_torture_known "${CMAKE_CURRENT_SOURCE_DIR}/tests/cross/pe-torture-xoracle-known.txt")
+            if(MCC_PYTHON3 AND EXISTS "${_pe_torture_corpus}")
+                add_test(NAME pe/torture-xoracle
+                    COMMAND "${MCC_PYTHON3}" "${_pe_torture_py}"
+                            --corpus "${_pe_torture_corpus}" --gcc "${_MCC_MINGW_X86_64_GCC}"
+                            --mcc "$<TARGET_FILE:mcc>"
+                            --work "${CMAKE_BINARY_DIR}/pe-torture-xoracle-work"
+                            --known "${_pe_torture_known}"
+                            --levels 0,2 --floor 1400 --jobs 12 --timeout 20)
+                set_tests_properties(pe/torture-xoracle PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS "pe" TIMEOUT 900)
+                add_test(NAME pe/torture-xoracle-mutate
+                    COMMAND "${MCC_PYTHON3}" "${_pe_torture_py}"
+                            --corpus "${_pe_torture_corpus}" --gcc "${_MCC_MINGW_X86_64_GCC}"
+                            --mcc "$<TARGET_FILE:mcc>"
+                            --work "${CMAKE_BINARY_DIR}/pe-torture-xoracle-mutate-work"
+                            --known "${_pe_torture_known}"
+                            --levels 0,2 --floor 1400 --jobs 12 --timeout 20 --mutate)
+                set_tests_properties(pe/torture-xoracle-mutate PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77
+                    LABELS "pe" TIMEOUT 900)
+            else()
+                mcc_skip_test(pe/torture-xoracle
+                    "native win-PE external-oracle torture differential (needs python3 + the vendored gcc-c-torture-execute corpus)")
+                mcc_skip_test(pe/torture-xoracle-mutate
+                    "native win-PE external-oracle torture differential (needs python3 + the vendored gcc-c-torture-execute corpus)")
+            endif()
+
             get_filename_component(_mingw_bin "${_MCC_MINGW_X86_64_GCC}" DIRECTORY)
             if(EXISTS "${_mingw_bin}/objdump.exe" AND EXISTS "${_mingw_bin}/addr2line.exe")
                 add_test(NAME pe/dwarf-lines
@@ -10487,6 +10526,10 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
                 "needs vendored mingw-w64 x86_64 gcc")
             mcc_skip_test(pe/x-oracle-mutate
                 "needs vendored mingw-w64 x86_64 gcc")
+            mcc_skip_test(pe/torture-xoracle
+                "needs vendored mingw-w64 x86_64 gcc")
+            mcc_skip_test(pe/torture-xoracle-mutate
+                "needs vendored mingw-w64 x86_64 gcc")
             mcc_skip_test(pe/dwarf-lines
                 "needs vendored mingw-w64 x86_64 gcc")
             mcc_skip_test(pe/codeview
@@ -10508,6 +10551,10 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
         mcc_skip_test(pe/x-oracle
             "native x86_64 WIN32 host with mingw only")
         mcc_skip_test(pe/x-oracle-mutate
+            "native x86_64 WIN32 host with mingw only")
+        mcc_skip_test(pe/torture-xoracle
+            "native x86_64 WIN32 host with mingw only")
+        mcc_skip_test(pe/torture-xoracle-mutate
             "native x86_64 WIN32 host with mingw only")
         mcc_skip_test(pe/dwarf-lines
             "native x86_64 WIN32 host with mingw only")

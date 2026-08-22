@@ -1,0 +1,88 @@
+# pe/torture-xoracle known-list (T-win-50054) -- banked divergences + mcc-nocompiles
+# for the native win-PE differential of vendor/gcc-c-torture-execute vs the vendored
+# mingw-w64 gcc (tools/pe_torture_xoracle.py). Seeded win-x64 2026-08-21 at -O0,-O2.
+#
+# Format: <program.c> | <DIVERGE|NOCOMPILE> | <reason/attribution>
+# The 2nd field is documentation; the harness keys only on the program name.
+#
+# ANTI-ROT (ported from tools/run-opt.sh / tests/optfire/leveldiff-known.txt): a
+# listed program that stops diverging / compiles again FAILS the cell ("delist it").
+# A DIVERGE/NOCOMPILE not listed here is a NEW failure. So this file can never rot
+# into permanent amnesty -- fixing one of these removes its row in the same commit.
+#
+# CL CAVEAT: mcc-on-PE deliberately matches the MSVC ABI where C leaves it
+# impl-defined (extended-type bit-field promotion, MS-bitfield layout, alloca(0)
+# spacing). Those are BY DESIGN vs gcc-mingw -- do not file as mcc bugs. Only a
+# crash/SEGV where gcc runs clean is an unambiguous signal.
+
+## Divergences (mcc result != gcc where gcc is stable) -- all map to tracked items
+pr23324.c        | DIVERGE   | Win64 struct-ABI SEGV (0xC0000005) -- T-win-50047 (OPEN, real)
+bf-sign-2.c      | DIVERGE   | extended-type bit-field promotion to declared type -- cl-conformance, T-win-50046 WITHDRAWN (DO-NOT-REDO)
+pr92904.c        | DIVERGE   | Win64 varargs of over-aligned aggregates -- T-mac-30045 (win-ABI flavored)
+20030125-1.c     | DIVERGE   | floor(0)/sin(0) not folded -> weak fallback aborts on win where ELF is a silent QoI miss -- T-mac-30069
+990208-1.c       | DIVERGE   | &&label in a static inline shares the address across instances -- M-TODO-0035 / T-mac-30062 (leveldiff-known)
+builtin-constant.c | DIVERGE | __builtin_constant_p answers 1 where it must be 0 -- T-mac-30149 (leveldiff-known)
+printf-chk-1.c   | DIVERGE   | FORTIFY __printf_chk inert -- T-mac-30073 (leveldiff-known)
+fprintf-chk-1.c  | DIVERGE   | FORTIFY __fprintf_chk inert -- T-mac-30073 (leveldiff-known)
+vprintf-chk-1.c  | DIVERGE   | FORTIFY __vprintf_chk inert -- T-mac-30073 (leveldiff-known)
+vfprintf-chk-1.c | DIVERGE   | FORTIFY __vfprintf_chk inert -- T-mac-30073 (leveldiff-known)
+20031003-1.c     | DIVERGE   | gcc-side UB: (int)2147483648.0f -> gcc INT_MIN, mcc saturates to INT_MAX -- NOT an mcc bug (UB divergence)
+
+## NONDET: stdout not comparable (reads uninitialized memory / prints addresses).
+## Excluded from scoring entirely -- never counted as agree/diverge/stale. The real
+## assertion in each still passes; only the printed value is undefined.
+941014-2.c       | NONDET    | printf's uninitialized malloc memory (foo_p->a before it is set); mcc+gcc both print garbage that varies run-to-run. Real check (foo_p->b==0x0100) passes.
+
+## mcc-nocompile (gcc-mingw builds+runs, mcc build fails) -- coverage gaps, not miscompiles.
+## Categories: GNU nested functions; GNU builtins (__builtin_va_arg_pack / __builtin_setjmp /
+## __builtin_apply); win-PE __int128 gap (deliberate, mcc.h MCC_HAVE_INT128 = x86_64 && !PE);
+## mempcpy link-glue; link_error()/missed-fold markers. gcc-mingw supports each; mcc on PE does not.
+20000822-1.c | NOCOMPILE | GNU nested function
+20010209-1.c | NOCOMPILE | GNU nested function
+20010605-1.c | NOCOMPILE | GNU nested function
+20020412-1.c | NOCOMPILE | GNU nested function
+20030216-1.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+20030501-1.c | NOCOMPILE | GNU nested function
+20040308-1.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+20040520-1.c | NOCOMPILE | GNU nested function
+20041114-1.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+20061220-1.c | NOCOMPILE | GNU nested function
+20090219-1.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+920612-2.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+920721-4.c | NOCOMPILE | GNU nested function
+931002-1.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+990413-2.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+991014-1.c | NOCOMPILE | win-PE __int128 gap (deliberate)
+align-nest.c | NOCOMPILE | GNU nested function
+built-in-setjmp.c | NOCOMPILE | __builtin_setjmp/longjmp
+compare-3.c | NOCOMPILE | link_error()/missed-fold marker
+nest-align-1.c | NOCOMPILE | GNU nested function
+nest-stdar-1.c | NOCOMPILE | GNU nested function
+nestfunc-1.c | NOCOMPILE | GNU nested function
+nestfunc-2.c | NOCOMPILE | GNU nested function
+nestfunc-3.c | NOCOMPILE | GNU nested function
+nestfunc-5.c | NOCOMPILE | GNU nested function
+nestfunc-6.c | NOCOMPILE | GNU nested function
+nestfunc-7.c | NOCOMPILE | GNU nested function
+pr103405.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr105613.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr123625-2.c | NOCOMPILE | link_error()/missed-fold marker
+pr123625-3.c | NOCOMPILE | link_error()/missed-fold marker
+pr22061-3.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr22061-4.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr24135.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr28865.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr39228.c | NOCOMPILE | __builtin_apply / GNU builtin
+pr47237.c | NOCOMPILE | __builtin_apply / GNU builtin
+pr51447.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr60003.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr64242.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr70460.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr71494.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr80692.c | NOCOMPILE | mcc coverage gap (gcc-mingw builds)
+pr84521.c | NOCOMPILE | GNU nested function
+pr84748.c | NOCOMPILE | win-PE __int128 gap (deliberate)
+pr93213.c | NOCOMPILE | win-PE __int128 gap (deliberate)
+pure-1.c | NOCOMPILE | pure/const attribute + fold marker
+string-opt-18.c | NOCOMPILE | mempcpy link-glue gap
+va-arg-pack-1.c | NOCOMPILE | __builtin_va_arg_pack
