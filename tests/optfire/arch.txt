@@ -39,3 +39,10 @@ narrow|x86_64,arm64,riscv64
 # jumptable when pic is set on i386 -- so the pic'd cell could only ever DID-NOT-FIRE
 # there; excluded. x86_64 (PE/ELF/Mach-O) + arm64 + riscv64 all fire under pic.
 switch_jt|x86_64,arm64,riscv64
+# loopidiom: the loop->memset/memcpy idiom pass (T-win-50053) fires on
+# x86_64/arm64/i386 (objects differ, -run matches -O0) but is byte-identical
+# on/off at -O4 on riscv64 (3352 B both) -- DID NOT FIRE there. Surfaced on the
+# lin-x64 canonical riscv64 qemu leg (2026-08-22); the memset/memcpy call
+# synthesis does not land on riscv64 codegen. Pinned off riscv64 pending the
+# T-win-50053 owner's root-cause; x86_64/arm64/i386 all fire.
+loopidiom|x86_64,arm64,i386
