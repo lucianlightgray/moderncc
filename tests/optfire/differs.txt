@@ -49,6 +49,7 @@ switch_jt|-O2|switch-jumptable|-fPIC
 # call under -floop-idiom, a scalar loop under -fno-. Default-OFF knob (MCC_OPTD_OFF)
 # so o0- and shipped-On-neutral; the differ only shows when the flag is forced.
 loopidiom|-O4|loop-idiom|-
+popcountloop|-O2|loop-idiom|-
 bswap|-O2|bswap-idiom|-
 rotate|-O2|rotate-idiom|-
 # slp (T-lin-10470): straight-line SLP auto-vectorization. N adjacent isomorphic

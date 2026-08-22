@@ -51,6 +51,7 @@ switch_jt|x86_64,arm64,riscv64
 # now fires + runs correct on the riscv64 qemu leg (-O0-run == -O4-run,
 # 2026-08-22). All four arches fire.
 loopidiom|x86_64,arm64,i386,riscv64
+popcountloop|x86_64,arm64,i386,riscv64
 bswap|x86_64
 rotate|x86_64
 # loopvec: loop-vectorization's packed emit is x86_64-SysV only (gen_vector_op
