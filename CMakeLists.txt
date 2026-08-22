@@ -4483,6 +4483,15 @@ if(MCC_BUILD_TESTS)
             set_tests_properties("ast/reassoc-typecov" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120
                 ENVIRONMENT "MCC_TYPECOV_RUN=1")
+
+            add_test(NAME "ast/range-typecov"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/range-typecov.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_CURRENT_BINARY_DIR}/range-typecov")
+            set_tests_properties("ast/range-typecov" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120
+                ENVIRONMENT "MCC_TYPECOV_RUN=1")
         else()
             if(MCC_TARGETOS STREQUAL "Darwin")
                 set(_osxhp_why "osx/headers-parse's --min-files floor is measured by the Linux-host mcc parsing runtime/osx/include; a native Darwin mcc reads different type sizes and compiles a smaller corpus subset than that host, so the floor is host-specific and the cell is scoped to the host that banks it")
@@ -4494,7 +4503,7 @@ if(MCC_BUILD_TESTS)
         endif()
 
         if(APPLE)
-            foreach(_tcp IN ITEMS cse dse licm pre sroa select reassoc)
+            foreach(_tcp IN ITEMS cse dse licm pre sroa select reassoc range)
                 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake-macos-x64/mcc")
                     add_test(NAME "ast/${_tcp}-typecov-x86_64-osx"
                         COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
@@ -4514,7 +4523,7 @@ if(MCC_BUILD_TESTS)
         endif()
 
         if(APPLE AND MCC_CPU STREQUAL "arm64")
-            foreach(_tcp IN ITEMS dse sroa select reassoc)
+            foreach(_tcp IN ITEMS dse sroa select reassoc range)
                 add_test(NAME "ast/${_tcp}-typecov-arm64-osx"
                     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
                             "$<TARGET_FILE:mcc>"
@@ -6753,9 +6762,9 @@ if(MCC_BUILD_TESTS)
         # is x86_64 && !PE). Measured on native PE: cse=6/dse=2/ltemp=4/pre=4, each
         # -run==AOT-O0. DETAILS#t-lin-10480-typecov-jit-run.
         if(WIN32)
-            foreach(_tcp IN ITEMS cse dse licm pre sroa select reassoc)
+            foreach(_tcp IN ITEMS cse dse licm pre sroa select reassoc range)
                 set(_tcsub "")
-                if(NOT _tcp STREQUAL "dse" AND NOT _tcp STREQUAL "sroa" AND NOT _tcp STREQUAL "select" AND NOT _tcp STREQUAL "reassoc")
+                if(NOT _tcp STREQUAL "dse" AND NOT _tcp STREQUAL "sroa" AND NOT _tcp STREQUAL "select" AND NOT _tcp STREQUAL "reassoc" AND NOT _tcp STREQUAL "range")
                     set(_tcsub "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/${_tcp}_typecov_subject_noi128.c")
                 endif()
                 if(MCC_TEST_SH)
