@@ -2166,6 +2166,14 @@ static const cli_case_t cli_cases[] = {
 		 "cmp -s {W}/ulf.on.o {W}/ulf.off.o && echo U=same || echo U=fired",
 		 "R=55\nU=fired\n"},
 
+		{"loop_unroll_shapes", "",
+		 "printf 'int main(void){int s=0;for(int i=1;i<=5;i++)s+=i;for(int i=0;i<=10;i+=2)s+=i;for(int i=0;i<12;i+=3)s+=i;return s;}\\n' > {W}/uls.c && "
+		 "{MCC} -B{B} -I{I} -O2 -funroll-loops {W}/uls.c -o {W}/uls && {W}/uls; printf 'R=%d\\n' $?; "
+		 "{MCC} -B{B} -I{I} -O2 -funroll-loops -c {W}/uls.c -o {W}/uls.on.o; "
+		 "{MCC} -B{B} -I{I} -O2 -fno-unroll-loops -c {W}/uls.c -o {W}/uls.off.o; "
+		 "cmp -s {W}/uls.on.o {W}/uls.off.o && echo U=same || echo U=fired",
+		 "R=63\nU=fired\n"},
+
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
 		 " s.a=1; s.c=2;"

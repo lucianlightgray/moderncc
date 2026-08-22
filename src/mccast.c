@@ -16379,7 +16379,8 @@ static int ast_body_has_loop(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
 	if (li->op != 3 || li->unanalyzable || !li->has_iv)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (li->bound_kind != AST_LOOP_BOUND_CONST || li->iv_stride != 1)
+	if (li->bound_kind != AST_LOOP_BOUND_CONST || li->iv_stride < 1 ||
+			li->iv_stride > AST_UNROLL_CAP)
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal loop = li->header;
 	AstLocal parent = ast_parent(a, loop);
@@ -16387,7 +16388,10 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal cond = li->cond;
 	if (cond == AST_NONE || ast_kind(a, cond) != AST_Binary ||
-			ast_op(a, cond) != TOK_LT || ast_nchild(a, cond) != 2)
+			ast_nchild(a, cond) != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	int cop = ast_op(a, cond);
+	if (cop != TOK_LT && cop != TOK_LE)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ref_is_local_off(a, ast_child(a, cond, 0), li->iv_off))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -16402,7 +16406,11 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 		{ MCC_TRACE("br\n"); return 0; }
 	int64_t bnd = (int64_t)ast_ival(a, blit);
 	int64_t ini = (int64_t)ast_ival(a, ilit);
-	int64_t trip = bnd - ini;
+	int64_t stride = li->iv_stride;
+	int64_t span = bnd - ini + (cop == TOK_LE ? 1 : 0);
+	if (span < 1 || span > AST_UNROLL_CAP * stride)
+		{ MCC_TRACE("br\n"); return 0; }
+	int64_t trip = (span + stride - 1) / stride;
 	if (trip < 1 || trip > AST_UNROLL_CAP)
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal incr = ast_child(a, loop, 1);
