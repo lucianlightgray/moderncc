@@ -45,7 +45,17 @@ fi
 REF=""
 REFCC=""
 for refcc in "$GCC" "$CLANG"; do [ -n "$refcc" ] && { REFCC=$refcc; break; }; done
-echo "inputs (N)=$NS  reps=$REPS  perf=$([ -n "$PERF" ] && echo on || echo off)  timeout=$([ -n "$TIMEOUT" ] && echo on || echo off)"
+# mcc-gpu toolchain (heterogeneous CPU+GPU, T-lin-10526) is offered only for the
+# kernels that carry a -DMCC_GPU_OFFLOAD path (today: mandelbrot) and only when a
+# Vulkan device is present AND -lvulkan links. Its default run splits the work
+# ~50/50 across the GPU and the C11 thread pool (MCC_GPU_PERCENT overrides).
+GPU_OK=""
+if command -v vulkaninfo >/dev/null 2>&1 && vulkaninfo --summary >/dev/null 2>&1; then
+	printf 'int main(void){return 0;}\n' > "$WORK/vkprobe.c"
+	"$MCC" -B"$MB" "$WORK/vkprobe.c" -o "$WORK/vkprobe" -lvulkan >/dev/null 2>&1 && GPU_OK=1
+fi
+
+echo "inputs (N)=$NS  reps=$REPS  perf=$([ -n "$PERF" ] && echo on || echo off)  timeout=$([ -n "$TIMEOUT" ] && echo on || echo off)  gpu=$([ -n "$GPU_OK" ] && echo on || echo off)"
 echo "each build is verified at EVERY N against the serial reference; gcc and clang serial refs are cross-checked"
 
 bestrun() { # $1=exe $2=N -> INSN, MS (min over REPS), OUT; sets RC (124=timeout/HANG)
@@ -53,15 +63,19 @@ bestrun() { # $1=exe $2=N -> INSN, MS (min over REPS), OUT; sets RC (124=timeout
 	local bi="" bm=""
 	RC=0
 	for i in $(seq 1 "$REPS"); do
-		local t0=$EPOCHREALTIME rc ins ms
+		local t0=$EPOCHREALTIME rc ins ms gm
 		if [ -n "$PERF" ]; then
-			$TIMEOUT perf stat -x, -e instructions:u -o "$WORK/p" "$exe" "$n" >"$WORK/o" 2>/dev/null; rc=$?
+			$TIMEOUT perf stat -x, -e instructions:u -o "$WORK/p" "$exe" "$n" >"$WORK/o" 2>"$WORK/oe"; rc=$?
 		else
-			$TIMEOUT "$exe" "$n" >"$WORK/o" 2>/dev/null; rc=$?
+			$TIMEOUT "$exe" "$n" >"$WORK/o" 2>"$WORK/oe"; rc=$?
 		fi
 		[ $rc -ne 0 ] && { INSN=ERR; MS=ERR; OUT=ERR; RC=$rc; return; }
 		local t1=$EPOCHREALTIME
 		ms=$(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.1f",(b-a)*1000}')
+		# mcc-gpu reports compute-only wall (GPUs warmed; one-time Vulkan init and
+		# teardown excluded, as they would be amortized in a long-running process).
+		gm=$(grep -o 'MCCGPU_MS=[0-9.]*' "$WORK/oe" 2>/dev/null | head -1 | cut -d= -f2)
+		[ -n "$gm" ] && ms=$gm
 		if [ -n "$PERF" ]; then
 			ins=$(grep instructions:u "$WORK/p" | cut -d, -f1)
 			[ -z "$ins" ] && ins=0
@@ -79,7 +93,13 @@ for src in "$ROOT"/tests/benchmarks/*.c; do
 	echo "### $name"
 	# build each toolchain x -O once; run it against every N below
 	tags=""
-	for tc in "gcc" "clang" "mcc-nat" "mcc-coop" "mcc-coop-mn"; do
+	for tc in "gcc" "clang" "mcc-nat" "mcc-coop" "mcc-coop-mn" "mcc-gpu"; do
+		# mcc-gpu applies only to kernels with a -DMCC_GPU_OFFLOAD path, and only
+		# when a Vulkan device is available (else no row, not a failure).
+		if [ "$tc" = mcc-gpu ]; then
+			[ "$name" = mandelbrot ] || continue
+			[ -n "$GPU_OK" ] || { echo "  SKIP mcc-gpu (all -O): no linkable Vulkan device"; continue; }
+		fi
 		case $tc in
 			mcc-*) olevels="0 1 2 3 4" ;;
 			*)     olevels="0 1 2 3" ;;
@@ -92,6 +112,7 @@ for src in "$ROOT"/tests/benchmarks/*.c; do
 				mcc-nat)  "$MCC" -B"$MB" -O$o -pthread "$src" -o "$exe" -lm >"$WORK/be" 2>&1 ;;
 				mcc-coop) "$MCC" -B"$MB" -O$o -DMCC_THREADS_COOP "$src" -o "$exe" -lm >"$WORK/be" 2>&1 ;;
 				mcc-coop-mn) "$MCC" -B"$MB" -O$o -DMCC_THREADS_COOP -DMCC_COOP_MN -pthread "$src" -o "$exe" -lm >"$WORK/be" 2>&1 ;;
+				mcc-gpu)  "$MCC" -B"$MB" -I "$INC" -O$o -DMCC_GPU_OFFLOAD -pthread "$src" -o "$exe" -lvulkan -lm >"$WORK/be" 2>&1 ;;
 			esac
 			if [ $? -ne 0 ]; then
 				echo "  BUILD-FAIL $tc -O$o: $(head -1 "$WORK/be")"; FAILS=$((FAILS+1)); continue

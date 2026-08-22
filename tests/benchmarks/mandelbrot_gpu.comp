@@ -1,0 +1,61 @@
+#version 450
+/*
+ * GPU compute kernel for mandelbrot.c's -DMCC_GPU_OFFLOAD hybrid path
+ * (T-lin-10526). One invocation produces ONE packed output byte = 8 horizontal
+ * 1-bpp pixels, so there are no atomics and no sub-byte storage extensions.
+ *
+ * The arithmetic mirrors mbrot_worker() operation-for-operation in `double`,
+ * and every accumulating value is `precise` to forbid FMA contraction /
+ * reassociation, so the escape test lands on the same side of the boundary as
+ * the CPU (strict IEEE-754, no FMA on baseline x86-64) -> the produced bitmap
+ * is bit-identical and the host FNV checksum matches the serial reference.
+ *
+ * SSBO stores one byte per uint (low 8 bits); wasteful in VRAM but avoids
+ * std430 sub-word packing and keeps the host readback a trivial byte copy.
+ * Push constants carry the band [row_lo,row_hi) so the CPU threads can own the
+ * complementary band concurrently.
+ */
+layout(local_size_x = 256) in;
+
+layout(std430, binding = 0) buffer Out {
+	uint outb[];
+};
+
+layout(push_constant) uniform PC {
+	uint w;
+	uint h;
+	uint rowbytes;
+	uint row_lo;
+	uint row_hi;
+} pc;
+
+void main() {
+	uint nbytes = (pc.row_hi - pc.row_lo) * pc.rowbytes;
+	uint stride = gl_NumWorkGroups.x * gl_WorkGroupSize.x;
+	for (uint bi = gl_GlobalInvocationID.x; bi < nbytes; bi += stride) {
+		uint band_row = bi / pc.rowbytes;
+		uint row = pc.row_lo + band_row;
+		uint bytecol = bi - band_row * pc.rowbytes;
+		uint x0 = bytecol * 8u;
+		precise double ci = 2.0LF * double(row) / double(pc.h) - 1.0LF;
+		uint outbyte = 0u;
+		for (uint k = 0u; k < 8u; k++) {
+			uint x = x0 + k;
+			if (x >= pc.w)
+				continue;
+			precise double cr = 2.0LF * double(x) / double(pc.w) - 1.5LF;
+			precise double zr = 0.0LF;
+			precise double zi = 0.0LF;
+			int it = 0;
+			while (it < 50 && zr * zr + zi * zi <= 4.0LF) {
+				precise double t = zr * zr - zi * zi + cr;
+				zi = 2.0LF * zr * zi + ci;
+				zr = t;
+				it++;
+			}
+			if (zr * zr + zi * zi <= 4.0LF)
+				outbyte |= (0x80u >> (x & 7u));
+		}
+		outb[bi] = outbyte;
+	}
+}
