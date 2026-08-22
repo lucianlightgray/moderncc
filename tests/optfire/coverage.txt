@@ -63,7 +63,7 @@
 39|loop-interchange|dev|interchange
 40|loop-fusion|dev|fusion
 41|loop-distribution|gap|T-lin-10470
-42|idiom-recognition|partial|loopidiom, popcountloop, bswap, rotate, funnel — loop→memset (T-win-50053, -floop-idiom) + Kernighan popcount-loop `while(x){c++;x&=x-1;}`→straight-line portable-SWAR popcount (T-lin-10510, -floop-idiom, arch-independent) + bswap-from-shifts→native bswap + rotate (const/var, l/r)→native rol/ror + funnel-shift (both shapes const→`shld imm`; variable left→`shld cl`, right→`shrd cl`) (T-lin-10510, -fbswap-idiom/-frotate-idiom), all default-off; loop memcpy/runtime-bound + clz/ctz-loop/SWAR remain (funnel family complete on x86_64; popcount-loop all-arch; arm64 EXTR/i386 = other-box)
+42|idiom-recognition|partial|loopidiom, popcountloop, bswap, rotate — loop→memset (T-win-50053, -floop-idiom) + Kernighan popcount-loop `while(x){c++;x&=x-1;}`→straight-line portable-SWAR popcount (T-lin-10510, -floop-idiom, arch-independent) + bswap-from-shifts→native bswap + rotate (const/var, l/r)→native rol/ror + funnel-shift (both shapes const→`shld imm`; variable left→`shld cl`, right→`shrd cl`) (T-lin-10510, -fbswap-idiom/-frotate-idiom), all default-off; loop memcpy/runtime-bound + clz/ctz-loop/SWAR remain (funnel family complete on x86_64; popcount-loop all-arch; arm64 EXTR/i386 = other-box)
 43|loop-versioning|dev|vlat
 44|loop-rotation|base|while/for lowered to rotated form at codegen; no on/off knob
 45|loop-tiling|dev|tile

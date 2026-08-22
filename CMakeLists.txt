@@ -6868,6 +6868,8 @@ if(MCC_BUILD_TESTS)
                     set(_ofx_hdir "${CMAKE_BINARY_DIR}/optfire-hosted/${_ofx_cpu}")
                     set(_ofx_hosted "${_ofx_hdir}/mcc-hosted")
                     set(_ofx_hfix "FX_optfire-${_ofx_cpu}")
+                    set(_ofx_rawmcc "${_ofx_hdir}/mcc")
+                    set(_ofx_aotenv "OPTFIRE_EXECVIA=run;OPTFIRE_AOT=1;OPTFIRE_RUN=${_OF_QEMU_${_ofx_cpu}} -L ${_ofx_sr};OPTFIRE_MCCFLAGS=-w -B${_ofx_hdir}/B -L${_ofx_hdir}/B --sysroot=${_ofx_sr} -I${_ofx_sr}/usr/include -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
                     add_test(NAME "optfire-boot/${_ofx_cpu}"
                         COMMAND sh "${_of_boot}" "${_ofx_cpu}" "${MCC_CROSS_DIR}"
                                 "${_ofx_sr}" "${_ofx_hdir}" "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -6929,13 +6931,13 @@ if(MCC_BUILD_TESTS)
                             if(_ofx_run AND _ofxmode STREQUAL "differ")
                                 add_test(NAME "optfire-${_ofx_cpu}/${_ofcell}"
                                     COMMAND "${_of_sh}"
-                                            "${_ofxmode}" "${_ofx_hosted}" "${_ofsrc}"
+                                            "${_ofxmode}" "${_ofx_rawmcc}" "${_ofsrc}"
                                             "${CMAKE_BINARY_DIR}/optfire-${_ofx_cpu}" "${_ofcell}"
                                             "${_ofopt}" "${_ofarg}" "${_ofextra}" "${_ofx_tail}")
                                 set_tests_properties("optfire-${_ofx_cpu}/${_ofcell}" PROPERTIES
                                     FIXTURES_REQUIRED "MCC_BUILT;MCC_CROSS_BUILT;${_ofx_hfix}"
                                     SKIP_RETURN_CODE 77 LABELS qemu
-                                    ENVIRONMENT "OPTFIRE_EXECVIA=run")
+                                    ENVIRONMENT "${_ofx_aotenv}")
                             elseif(_ofx_have)
                                 add_test(NAME "optfire-${_ofx_cpu}/${_ofcell}"
                                     COMMAND "${_of_sh}"
