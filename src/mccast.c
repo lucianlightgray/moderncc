@@ -16449,7 +16449,7 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
 	AstLocal loop, parent, cond, blit, so, ilit, body, store, addr, val, bin, o0, o1, base;
 	int64_t bnd, ini, trip, nbytes;
-	int al, elemsize;
+	int al, elemsize, bytev;
 	CType ct;
 	Sym *ms;
 	AstLocal call, ref, dst, zero, len;
@@ -16491,7 +16491,11 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 		{ MCC_TRACE("br\n"); return 0; }
 	addr = ast_child(a, store, 0);
 	val = ast_child(a, store, 1);
-	if (val == AST_NONE || ast_kind(a, val) != AST_Literal || (int64_t)ast_ival(a, val) != 0)
+	if (val == AST_NONE || ast_kind(a, val) != AST_Literal)
+		{ MCC_TRACE("br\n"); return 0; }
+	if ((ast_stype_t(a, val) & VT_BTYPE) == VT_FLOAT ||
+			(ast_stype_t(a, val) & VT_BTYPE) == VT_DOUBLE ||
+			(ast_stype_t(a, val) & VT_BTYPE) == VT_LDOUBLE)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (addr == AST_NONE || ast_kind(a, addr) != AST_Load || ast_nchild(a, addr) != 1)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -16516,6 +16520,16 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	elemsize = type_size(&ct.ref->type, &al);
 	if (elemsize < 1)
 		{ MCC_TRACE("br\n"); return 0; }
+	{
+		uint64_t uv = (uint64_t)ast_ival(a, val), rep = 0, mask;
+		int k;
+		bytev = (int)(uv & 0xFF);
+		for (k = 0; k < elemsize && k < 8; k++)
+			rep |= (uint64_t)(unsigned char)bytev << (k * 8);
+		mask = elemsize >= 8 ? ~(uint64_t)0 : (((uint64_t)1 << (elemsize * 8)) - 1);
+		if ((uv & mask) != (rep & mask))
+			{ MCC_TRACE("br\n"); return 0; }
+	}
 	nbytes = trip * (int64_t)elemsize;
 	if (nbytes < 1 || nbytes > (int64_t)0x40000000)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -16532,7 +16546,7 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	ast_add_child(a, call, dst);
 	zero = ast_node(a, AST_Literal);
 	ast_set_type(a, zero, int_type.t, 0);
-	ast_set_ival(a, zero, value64(0, int_type.t));
+	ast_set_ival(a, zero, value64((uint64_t)bytev, int_type.t));
 	ast_set_op(a, zero, VT_CONST);
 	ast_add_child(a, call, zero);
 	len = ast_node(a, AST_Literal);
