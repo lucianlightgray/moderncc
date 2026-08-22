@@ -5,7 +5,7 @@ _Session state is per-session — `docs/sessions/{mac-arm64,lin-x64,win-x64}.md`
 
 ## Contracts — blocking, highest priority
 
-_Coop M:N track slices 1–3 all DONE+ARCHIVED: T-lin-10426 (generic MccPool, b328a85a), T-lin-10427 (gated MCC_COOP_MT primitives, 87b49371), **T-lin-10428 (M:N core, 50da1e68 — both spectral_norm kernels ~3.7x toward native under mcc-coop-mn)**. Remaining coop children in Open: T-lin-10429 (TLS safety — see its note: 10428's non-migrating design largely moots the hazard) and T-lin-10430 [X]win (Win32 multi-worker); both DEPS on 10428 now satisfied._
+_Coop M:N track FULLY DONE+ARCHIVED (all 5 children): T-lin-10426 (generic MccPool, b328a85a), T-lin-10427 (gated MCC_COOP_MT primitives, 87b49371), T-lin-10428 (M:N core, 50da1e68), T-lin-10429 (TLS safety — non-migrating, DONE 087f3935), T-lin-10430 [X]win (Win32 multi-worker, DONE 9aabf880 + verify 22159ba1). No open coop contracts. (Grooming fix, win-x64 2026-08-22: this line previously listed 10429/10430 as "remaining in Open" — both were already archived; corrected.)_
 
 ## In progress — mac-arm64   ← only mac-arm64 writes this zone
 
