@@ -50,3 +50,4 @@ switch_jt|-O2|switch-jumptable|-fPIC
 # so o0- and shipped-On-neutral; the differ only shows when the flag is forced.
 loopidiom|-O4|loop-idiom|-
 bswap|-O2|bswap-idiom|-
+rotate|-O2|rotate-idiom|-

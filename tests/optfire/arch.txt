@@ -52,3 +52,4 @@ switch_jt|x86_64,arm64,riscv64
 # 2026-08-22). All four arches fire.
 loopidiom|x86_64,arm64,i386,riscv64
 bswap|x86_64
+rotate|x86_64

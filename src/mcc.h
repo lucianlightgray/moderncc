@@ -2091,6 +2091,7 @@ ST_FUNC void gen_fabs(void);
 ST_FUNC void gen_sqrt(void);
 #if defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64)
 ST_FUNC void gen_bswap(int size);
+ST_FUNC void gen_rotl(int size, int count);
 #endif
 #if defined(MCC_TARGET_X86_64)
 ST_FUNC void gen_bitscan(int ctz, int size);

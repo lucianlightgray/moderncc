@@ -1621,6 +1621,7 @@ static int ast_tile_env;
 static int ast_unroll_env;
 static int ast_loopidiom_env;
 static int ast_bswap_idiom_env;
+static int ast_rotate_idiom_env;
 static int ast_tile_size;
 static int ast_vlat_env;
 int mccjit_recompiling;
@@ -2319,6 +2320,7 @@ static int ast_body_uses_func_alloca(void) { MCC_TRACE("enter\n");
 #define AST_OP_FMA 0x40014
 #define AST_OP_FNEG 0x40015
 #define AST_OP_BSWAP 0x40016
+#define AST_OP_ROTL 0x40023
 #define AST_OP_SIGNBIT 0x40017
 #define AST_OP_FFS 0x40018
 #define AST_OP_BITSCAN 0x40019
@@ -2634,6 +2636,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_unroll_env = mcc_opt(s1, MCC_OPT_LOOP_UNROLL);
 	ast_loopidiom_env = mcc_opt(s1, MCC_OPT_LOOP_IDIOM);
 	ast_bswap_idiom_env = mcc_opt(s1, MCC_OPT_BSWAP_IDIOM);
+	ast_rotate_idiom_env = mcc_opt(s1, MCC_OPT_ROTATE_IDIOM);
 	ast_jit_env = s1 && !mccjit_recompiling &&
 			(s1->embed_jit || s1->output_type == MCC_OUTPUT_MEMORY);
 	ast_jit_splice_env = mcc_opt(s1, MCC_OPT_JIT_SPLICE);
@@ -5729,6 +5732,10 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 		} else if (uop == AST_OP_BSWAP) { MCC_TRACE("br\n");
 			gen_bswap((int)ast_ival(a, n));
 #endif
+#if defined(MCC_TARGET_X86_64)
+		} else if (uop == AST_OP_ROTL) { MCC_TRACE("br\n");
+			gen_rotl((int)(ast_ival(a, n) >> 8), (int)(ast_ival(a, n) & 0xff));
+#endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 		} else if (uop == AST_OP_SIGNBIT) { MCC_TRACE("br\n");
 			gen_signbit((int)ast_ival(a, n));
@@ -7316,14 +7323,114 @@ static int ast_bswap_try(AstArena *a, AstLocal top) { MCC_TRACE("enter\n");
 	return 1;
 }
 
+#if defined(MCC_TARGET_X86_64)
+/* T-lin-10510 (win-x64): recognize the constant-count rotate idiom
+ * `(x << C) | (x >> (W-C))` (either term order) over one non-volatile UNSIGNED
+ * scalar Ref of width W bits, and fold it to AST_OP_ROTL (native `rol`). gcc/clang
+ * both emit `roll`. Value-exact; default-OFF (-frotate-idiom). Slice 1: constant
+ * count, x86_64 only (rol reg,imm); variable-count + arm64/i386 are follow-ups.
+ * Requires the right shift be LOGICAL (TOK_SHR) + base unsigned, so the fold is a
+ * true rotate (a signed SAR would sign-extend, not rotate). */
+static int ast_rotate_try(AstArena *a, AstLocal top) { MCC_TRACE("enter\n");
+	AstLocal terms[8], base = AST_NONE, shlterm = AST_NONE, shrterm = AST_NONE;
+	int nt, i, wbits = 0, sbytes = 0, btype = 0;
+	uint64_t shl_c = 0, shr_c = 0;
+	if (ast_kind(a, top) != AST_Binary || ast_op(a, top) != '|')
+		{ MCC_TRACE("br\n"); return 0; }
+	nt = ast_bswap_flatten(a, top, terms, 8);
+	if (nt != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < 2; i++) { MCC_TRACE("br\n");
+		AstLocal t = terms[i], bnode, cnode;
+		int so;
+		if (ast_kind(a, t) != AST_Binary || ast_nchild(a, t) != 2)
+			{ MCC_TRACE("br\n"); return 0; }
+		so = ast_op(a, t);
+		if (so != TOK_SHL && so != TOK_SHR && so != TOK_SAR)
+			{ MCC_TRACE("br\n"); return 0; }
+		bnode = ast_child(a, t, 0);
+		cnode = ast_child(a, t, 1);
+		if (ast_kind(a, cnode) != AST_Literal)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (base == AST_NONE) { MCC_TRACE("br\n");
+			if (ast_kind(a, bnode) != AST_Ref)
+				{ MCC_TRACE("br\n"); return 0; }
+			btype = ast_type_t(a, bnode);
+			if ((btype & VT_VOLATILE) || !(btype & VT_UNSIGNED))
+				{ MCC_TRACE("br\n"); return 0; }
+			switch (btype & VT_BTYPE) { MCC_TRACE("br\n");
+			case VT_SHORT:
+				wbits = 16;
+				sbytes = 2;
+				break;
+			case VT_INT:
+				wbits = 32;
+				sbytes = 4;
+				break;
+			case VT_LLONG:
+				wbits = 64;
+				sbytes = 8;
+				break;
+			default:
+				return 0;
+			}
+			base = bnode;
+		} else if (!ast_bswap_same_base(a, bnode, base)) { MCC_TRACE("br\n");
+			return 0;
+		}
+		if (so == TOK_SHL) { MCC_TRACE("br\n");
+			if (shlterm != AST_NONE)
+				{ MCC_TRACE("br\n"); return 0; }
+			shlterm = t;
+			shl_c = ast_ival(a, cnode);
+		} else { MCC_TRACE("br\n");
+			if (shrterm != AST_NONE)
+				{ MCC_TRACE("br\n"); return 0; }
+			shrterm = t;
+			shr_c = ast_ival(a, cnode);
+		}
+	}
+	if (shlterm == AST_NONE || shrterm == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (shl_c == 0 || shl_c >= (uint64_t)wbits || shr_c == 0 ||
+			shr_c >= (uint64_t)wbits)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (shl_c + shr_c != (uint64_t)wbits)
+		{ MCC_TRACE("br\n"); return 0; }
+	/* rotate-LEFT by shl_c: rewrite top OR to AST_Unary/AST_OP_ROTL over base */
+	{
+		AstLocal nb = ast_node(a, AST_Ref);
+		ast_copy_type(a, nb, a, base);
+		ast_set_op(a, nb, ast_op(a, base));
+		ast_set_sym(a, nb, ast_sym(a, base));
+		ast_set_ival(a, nb, ast_ival(a, base));
+		ast_set_fbits(a, nb, ast_fbits(a, base));
+		ast_clear_children(a, top);
+		ast_set_kind(a, top, AST_Unary);
+		ast_set_op(a, top, AST_OP_ROTL);
+		ast_set_ival(a, top, ((uint64_t)sbytes << 8) | (shl_c & 0xff));
+		ast_set_type(a, top, btype, ast_type_ref(a, base));
+		ast_set_sym(a, top, 0);
+		ast_add_child(a, top, nb);
+	}
+	return 1;
+}
+
+#endif
 static int ast_bswap_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
 	int total = 0;
-	if (!ast_bswap_idiom_env)
+	if (!ast_bswap_idiom_env && !ast_rotate_idiom_env)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
-		if (a->kind[n] == AST_Binary && a->op[n] == '|' && a->nchild[n] == 2)
+		if (a->kind[n] != AST_Binary || a->op[n] != '|' || a->nchild[n] != 2)
+			{ MCC_TRACE("br\n"); continue; }
+		if (ast_bswap_idiom_env)
 			{ MCC_TRACE("br\n"); total += ast_bswap_try(a, n); }
+#if defined(MCC_TARGET_X86_64)
+		if (ast_rotate_idiom_env && a->kind[n] == AST_Binary && a->op[n] == '|')
+			{ MCC_TRACE("br\n"); total += ast_rotate_try(a, n); }
+#endif
 	}
 	return total;
 }
@@ -22084,7 +22191,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					if (ast_unroll_env)
 						{ MCC_TRACE("br\n"); unrolled = ast_unroll_run(ast_cur); }
 					if (ast_loopidiom_env) 						{ MCC_TRACE("br\n"); ast_loopidiom_run(ast_cur); }
-					if (ast_bswap_idiom_env)
+					if (ast_bswap_idiom_env || ast_rotate_idiom_env)
 						{ MCC_TRACE("br\n"); bswapped = ast_bswap_run(ast_cur); }
 				}
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();

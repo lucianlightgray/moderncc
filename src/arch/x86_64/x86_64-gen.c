@@ -2931,6 +2931,17 @@ void gen_bitscan(int ctz, int size) { MCC_TRACE("enter\n");
 	vtop->type.t = VT_INT;
 }
 
+void gen_rotl(int size, int count) { MCC_TRACE("enter\n");
+	int r;
+	gv(MCC_RC_INT);
+	r = vtop->r & VT_VALMASK;
+	if (size == 2)
+		{ MCC_TRACE("br\n"); o(0x66); }
+	orex(size == 8, r, 0, 0xc1);
+	o(0xc0 + REG_VALUE(r));
+	o((unsigned)count & (size == 8 ? 63 : size == 2 ? 15 : 31));
+}
+
 void gen_bswap(int size) { MCC_TRACE("enter\n");
 	int r;
 	gv(MCC_RC_INT);
