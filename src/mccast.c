@@ -21594,6 +21594,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			Sym *ast_saved_free = sym_free_first;
 			sym_free_first = NULL;
 			int saved_loc = loc, saved_anon = anon_sym;
+			int saved_func_alloca = mcc_state->cg_func_alloca;
 			Section *rsec2 = cur_text_section->reloc;
 			volatile int faithful = 0;
 			volatile int ast_inv_verdict = 0;
@@ -22392,7 +22393,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			seqp_reset();
 			int keep = faithful ||
 								 (ast_rir_nofb_env && ast_replay_completed && !ast_fn_hole &&
-									!ast_fn_alloca);
+									!ast_fn_alloca && saved_func_alloca == 0);
 			if (keep && !faithful && funcname) { MCC_TRACE("br\n");
 				const char *sk = getenv("MCC_RIR_NOFB_SKIP");
 				if (sk && *sk) { MCC_TRACE("br\n");
@@ -22416,6 +22417,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 				rir_prod_note(keep ? "used" : "fallback");
 			}
 			if (!keep) { MCC_TRACE("br\n");
+				mcc_state->cg_func_alloca = saved_func_alloca;
 				memcpy(cur_text_section->data + ast_body_ind_sv, orig, body_len);
 				if (rel_len)
 					{ MCC_TRACE("br\n"); memcpy(ast_rsec->data + ast_reloc0_sv, orig_rel, rel_len); }
