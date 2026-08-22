@@ -59,7 +59,7 @@
 35|ivopts|covered|ivsr,ivsr_ptr
 36|iv-strength-reduce|covered|ivsr
 37|loop-vectorize|gap|T-lin-10470
-38|slp-vectorize|gap|T-lin-10470
+38|slp-vectorize|partial|slp — straight-line SLP: N adjacent isomorphic float/double ops on distinct contiguous array objects (c[k]=a[k] OP b[k]) pack into one 16B SSE op via gen_vector_op; loop-vectorize (37), >16B widths, non-array/aliasing bases still gap, T-lin-10470
 39|loop-interchange|dev|interchange
 40|loop-fusion|dev|fusion
 41|loop-distribution|gap|T-lin-10470

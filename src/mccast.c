@@ -1591,6 +1591,8 @@ static MCC_OPT_TLS int ast_range_env;
 static MCC_OPT_TLS int ast_divmagic_env;
 static MCC_OPT_TLS int ast_divrem_env;
 static MCC_OPT_TLS int ast_divrem_folds;
+static MCC_OPT_TLS int ast_vectorize_env;
+static MCC_OPT_TLS int ast_slp_folds;
 static MCC_OPT_TLS int ast_abs_env;
 static int ast_select_env;
 #define AST_SEL_MARK ((uint64_t)0x5E1EC7)
@@ -2635,6 +2637,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_vlat_env = mcc_opt(s1, MCC_OPT_LOOP_VLAT);
 	ast_unroll_env = mcc_opt(s1, MCC_OPT_LOOP_UNROLL);
 	ast_loopidiom_env = mcc_opt(s1, MCC_OPT_LOOP_IDIOM);
+	ast_vectorize_env = mcc_opt(s1, MCC_OPT_SLP_VECTORIZE);
 	ast_bswap_idiom_env = mcc_opt(s1, MCC_OPT_BSWAP_IDIOM);
 	ast_rotate_idiom_env = mcc_opt(s1, MCC_OPT_ROTATE_IDIOM);
 	ast_jit_env = s1 && !mccjit_recompiling &&
@@ -13318,6 +13321,152 @@ static int ast_divrem_run(AstArena *a) { MCC_TRACE("enter\n");
 	return folds;
 }
 
+static int ast_slp_mem(AstArena *a, AstLocal m, AstLocal *base, int64_t *idx,
+											 int *et, uint64_t *eref) { MCC_TRACE("enter\n");
+	if (ast_kind(a, m) != AST_Load || ast_nchild(a, m) != 1)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal addr = ast_child(a, m, 0);
+	if (ast_kind(a, addr) != AST_Binary || ast_op(a, addr) != '+' ||
+			ast_nchild(a, addr) != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	AstLocal b = ast_child(a, addr, 0), ix = ast_child(a, addr, 1);
+	int it, t;
+	uint64_t iv, tref;
+	if (!ast_ident_cval(a, ix, &it, &iv))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, b) != AST_Ref || !(ast_type_t(a, b) & VT_ARRAY))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!ast_ident_etype(a, m, &t, &tref) ||
+			((t & VT_BTYPE) != VT_FLOAT && (t & VT_BTYPE) != VT_DOUBLE))
+		{ MCC_TRACE("br\n"); return 0; }
+	*base = b;
+	*idx = (int64_t)iv;
+	*et = t;
+	*eref = tref;
+	return 1;
+}
+
+static AstLocal ast_slp_vload(AstArena *a, CType *V, CType *PV, AstLocal addr) { MCC_TRACE("enter\n");
+	AstLocal conv = ast_node(a, AST_Convert);
+	ast_set_type(a, conv, PV->t, (uint64_t)(uintptr_t)PV->ref);
+	ast_add_child(a, conv, addr);
+	AstLocal ld = ast_node(a, AST_Load);
+	ast_set_type(a, ld, V->t, (uint64_t)(uintptr_t)V->ref);
+	ast_add_child(a, ld, conv);
+	return ld;
+}
+
+static int ast_slp_try(AstArena *a, AstLocal s0) { MCC_TRACE("enter\n");
+	AstLocal lval0, val0, a0, b0, baseC, baseA, baseB;
+	int64_t idxC, idxA, idxB;
+	int etC, etA, etB, op, esz, lanes, j;
+	uint64_t erC, erA, erB;
+	AstLocal stmts[16];
+	if (ast_kind(a, s0) != AST_Store || ast_nchild(a, s0) != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	lval0 = ast_child(a, s0, 0);
+	val0 = ast_child(a, s0, 1);
+	if (ast_kind(a, val0) != AST_Binary || ast_nchild(a, val0) != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	op = ast_op(a, val0);
+	if (op != '+' && op != '-' && op != '*' && op != '/')
+		{ MCC_TRACE("br\n"); return 0; }
+	a0 = ast_child(a, val0, 0);
+	b0 = ast_child(a, val0, 1);
+	if (!ast_slp_mem(a, lval0, &baseC, &idxC, &etC, &erC) ||
+			!ast_slp_mem(a, a0, &baseA, &idxA, &etA, &erA) ||
+			!ast_slp_mem(a, b0, &baseB, &idxB, &etB, &erB))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (etC != etA || etC != etB || idxA != idxC || idxB != idxC)
+		{ MCC_TRACE("br\n"); return 0; }
+	esz = (etC & VT_BTYPE) == VT_FLOAT ? 4 : (etC & VT_BTYPE) == VT_DOUBLE ? 8 : 0;
+	if (!esz)
+		{ MCC_TRACE("br\n"); return 0; }
+	lanes = 16 / esz;
+	stmts[0] = s0;
+	{
+		AstLocal s = ast_next_sib(a, s0);
+		for (j = 1; j < lanes; j++) { MCC_TRACE("br\n");
+			AstLocal lv, vv, aj, bj, bC, bA, bB;
+			int64_t iC, iA, iB;
+			int tC, tA, tB;
+			uint64_t rC, rA, rB;
+			if (s == AST_NONE || ast_kind(a, s) != AST_Store || ast_nchild(a, s) != 2)
+				{ MCC_TRACE("br\n"); return 0; }
+			lv = ast_child(a, s, 0);
+			vv = ast_child(a, s, 1);
+			if (ast_kind(a, vv) != AST_Binary || ast_op(a, vv) != op ||
+					ast_nchild(a, vv) != 2)
+				{ MCC_TRACE("br\n"); return 0; }
+			aj = ast_child(a, vv, 0);
+			bj = ast_child(a, vv, 1);
+			if (!ast_slp_mem(a, lv, &bC, &iC, &tC, &rC) ||
+					!ast_slp_mem(a, aj, &bA, &iA, &tA, &rA) ||
+					!ast_slp_mem(a, bj, &bB, &iB, &tB, &rB))
+				{ MCC_TRACE("br\n"); return 0; }
+			if (tC != etC || tA != etA || tB != etB)
+				{ MCC_TRACE("br\n"); return 0; }
+			if (!ast_ident_same(a, bC, baseC) || !ast_ident_same(a, bA, baseA) ||
+					!ast_ident_same(a, bB, baseB))
+				{ MCC_TRACE("br\n"); return 0; }
+			if (iC != idxC + j || iA != idxA + j || iB != idxB + j)
+				{ MCC_TRACE("br\n"); return 0; }
+			stmts[j] = s;
+			s = ast_next_sib(a, s);
+		}
+	}
+	{
+		CType ebase, V, PV;
+		AstLocal addrC, addrA, addrB, vldC, vldA, vldB, vbin;
+		memset(&ebase, 0, sizeof ebase);
+		ebase.t = etC & (VT_BTYPE | VT_UNSIGNED | VT_LONG);
+		ebase.ref = (Sym *)(uintptr_t)erC;
+		mk_vector_type(&V, &ebase, lanes);
+		PV = V;
+		mk_pointer(&PV);
+		addrC = ast_dup_sub(a, ast_child(a, lval0, 0));
+		addrA = ast_dup_sub(a, ast_child(a, a0, 0));
+		addrB = ast_dup_sub(a, ast_child(a, b0, 0));
+		vldC = ast_slp_vload(a, &V, &PV, addrC);
+		vldA = ast_slp_vload(a, &V, &PV, addrA);
+		vldB = ast_slp_vload(a, &V, &PV, addrB);
+		vbin = ast_node(a, AST_Binary);
+		ast_set_op(a, vbin, op);
+		ast_set_type(a, vbin, V.t, (uint64_t)(uintptr_t)V.ref);
+		ast_add_child(a, vbin, vldA);
+		ast_add_child(a, vbin, vldB);
+		ast_clear_children(a, s0);
+		ast_set_type(a, s0, V.t, (uint64_t)(uintptr_t)V.ref);
+		ast_add_child(a, s0, vldC);
+		ast_add_child(a, s0, vbin);
+		for (j = 1; j < lanes; j++) { MCC_TRACE("br\n");
+			ast_set_kind(a, stmts[j], AST_BasicBlock);
+			ast_clear_children(a, stmts[j]);
+			ast_set_type(a, stmts[j], 0, 0);
+		}
+	}
+	return lanes;
+}
+
+static int ast_vectorize_run(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a), bb;
+	int folds = 0;
+	if (!ast_vectorize_env)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (bb = 0; bb < nn; bb++) { MCC_TRACE("br\n");
+		AstLocal s, nxt;
+		if (ast_kind(a, bb) != AST_BasicBlock)
+			{ MCC_TRACE("br\n"); continue; }
+		for (s = ast_first_child(a, bb); s != AST_NONE; s = nxt) { MCC_TRACE("br\n");
+			nxt = ast_next_sib(a, s);
+			if (ast_slp_try(a, s))
+				{ MCC_TRACE("br\n"); folds++; }
+		}
+	}
+	ast_slp_folds = folds;
+	return folds;
+}
+
 static MCC_OPT_TLS int ast_abs_folds;
 
 static AstLocal ast_abs_neg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
@@ -22109,6 +22258,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			int unrolled = 0;
 			int math_inlined = 0;
 			int bswapped = 0;
+			int vectorized = 0;
 			jmp_buf ast_outer_jmp;
 			int ast_outer_en = mcc_state->error_set_jmp_enabled;
 			int ast_saved_nberr = mcc_state->nb_errors;
@@ -22308,6 +22458,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 					if (ast_loopidiom_env) 						{ MCC_TRACE("br\n"); ast_loopidiom_run(ast_cur); }
 					if (ast_bswap_idiom_env || ast_rotate_idiom_env)
 						{ MCC_TRACE("br\n"); bswapped = ast_bswap_run(ast_cur); }
+					if (ast_vectorize_env)
+						{ MCC_TRACE("br\n"); vectorized = ast_vectorize_run(ast_cur); }
 				}
 				AstGateMask ast_search_sv_gates = ast_search_gates_now();
 				if (!ast_strat_order_forced)
@@ -22406,13 +22558,13 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
 						do_sra || do_unread ||
-						interchanged || fused || tiled || unrolled || math_inlined || bswapped)
+						interchanged || fused || tiled || unrolled || math_inlined || bswapped || vectorized)
 					{ MCC_TRACE("br\n"); ast_opt_total++; }
 				if (faithful && !do_inline && !do_promote && !do_bfold && !do_ident &&
 						!do_cprop && !do_cse && !do_licm && !do_dse && !do_sccp && !do_jt &&
 						!do_bf && !do_sethi && !do_tco && !do_narrow && !do_divmagic && !do_select &&
 						!do_cload && !do_sra && !do_unread && !interchanged && !fused &&
-						!tiled && !unrolled && !math_inlined && !bswapped)
+						!tiled && !unrolled && !math_inlined && !bswapped && !vectorized)
 					{ MCC_TRACE("br\n"); loc = saved_loc; }
 				if (ast_jit_splice_env && ast_opt_ok) { MCC_TRACE("br\n");
 					ast_promo_n = 0;
@@ -22433,7 +22585,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 						do_cse || do_licm || do_dse || do_sccp || do_jt || do_bf || do_sethi ||
 						do_tco || do_narrow || do_divmagic || do_select || do_cload ||
 						do_sra || do_unread ||
-						interchanged || fused || tiled || unrolled || math_inlined || bswapped) { MCC_TRACE("br\n");
+						interchanged || fused || tiled || unrolled || math_inlined || bswapped || vectorized) { MCC_TRACE("br\n");
 #define AST_PF_EMIT(ui)                                                          \
 	do {                                                                           \
 		ind = ast_body_ind_sv;                                                       \
