@@ -2991,6 +2991,22 @@ void gen_shld_var(int size) { MCC_TRACE("enter\n");
 	vtop -= 2;
 }
 
+void gen_shrd_var(int size) { MCC_TRACE("enter\n");
+	int r, fr;
+	gv(MCC_RC_RCX);
+	vswap();
+	gv(MCC_RC_INT);
+	vswap();
+	vrotb(3);
+	gv(MCC_RC_INT);
+	vrott(3);
+	r = vtop[-2].r & VT_VALMASK;
+	fr = vtop[-1].r & VT_VALMASK;
+	orex(size == 8, r, fr, 0xad0f);
+	o(0xc0 + REG_VALUE(r) + REG_VALUE(fr) * 8);
+	vtop -= 2;
+}
+
 void gen_bswap(int size) { MCC_TRACE("enter\n");
 	int r;
 	gv(MCC_RC_INT);

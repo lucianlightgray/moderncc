@@ -2327,6 +2327,7 @@ static int ast_body_uses_func_alloca(void) { MCC_TRACE("enter\n");
 #define AST_OP_ROTL 0x40023
 #define AST_OP_ROTR 0x40024
 #define AST_OP_FSHL 0x40026
+#define AST_OP_FSHR 0x40027
 #define AST_OP_SIGNBIT 0x40017
 #define AST_OP_FFS 0x40018
 #define AST_OP_BITSCAN 0x40019
@@ -5760,6 +5761,10 @@ static void ast_replay_value_inner(AstArena *a, AstLocal n) { MCC_TRACE("enter\n
 				ast_replay_value(a, ast_child(a, n, 1));
 				gen_shld((int)(ast_ival(a, n) >> 8), (int)(ast_ival(a, n) & 0xff));
 			}
+		} else if (uop == AST_OP_FSHR) { MCC_TRACE("br\n");
+			ast_replay_value(a, ast_child(a, n, 1));
+			ast_replay_value(a, ast_child(a, n, 2));
+			gen_shrd_var((int)(ast_ival(a, n) >> 8));
 #endif
 #ifdef MCC_IR_HAVE_X86_PRIMS
 		} else if (uop == AST_OP_SIGNBIT) { MCC_TRACE("br\n");
@@ -7847,6 +7852,115 @@ static int ast_funnel_var_try(AstArena *a, AstLocal top) { MCC_TRACE("enter\n");
 	return 1;
 }
 
+/* T-lin-10510 (win-x64): variable-count funnel-shift-RIGHT `(x>>n)|(y<<(W-n))`
+ * (mirror of ast_funnel_var_try; n a side-effect-free Ref, left count = `W-n`),
+ * over two DISTINCT non-volatile UNSIGNED scalar Refs x,y of width W∈{32,64} ->
+ * x86 `shrd dest,src,cl` (0F AD /r): SHRD dest,src,CL = (dest>>CL)|(src<<(W-CL)),
+ * so dest=x, src=y, count=n. Fold to a 3-child AST_OP_FSHR (child0=x=dest,
+ * child1=y=src, child2=n=count) -> gen_shrd_var. Unlike the SHL shape (which OR-
+ * commutativity lets ast_funnel_try lower to SHLD for the CONSTANT count), a
+ * VARIABLE right-funnel has a Binary `W-n` on the SHL side, so it cannot be a
+ * plain-Ref-count SHLD and genuinely needs SHRD. Same guards as the var-shl
+ * slice; same-base (x==y) is a variable rotate consumed upstream. */
+static int ast_funnel_varr_try(AstArena *a, AstLocal top) { MCC_TRACE("enter\n");
+	AstLocal terms[8], xb = AST_NONE, yb = AST_NONE, ncnt = AST_NONE;
+	AstLocal shlterm = AST_NONE, shrterm = AST_NONE;
+	int nt, i, wbits = 0, sbytes = 0, btype = 0;
+	if (ast_kind(a, top) != AST_Binary || ast_op(a, top) != '|')
+		{ MCC_TRACE("br\n"); return 0; }
+	nt = ast_bswap_flatten(a, top, terms, 8);
+	if (nt != 2)
+		{ MCC_TRACE("br\n"); return 0; }
+	for (i = 0; i < 2; i++) { MCC_TRACE("br\n");
+		AstLocal t = terms[i], bnode, cnode;
+		int so, bt2, wb, sb;
+		if (ast_kind(a, t) != AST_Binary || ast_nchild(a, t) != 2)
+			{ MCC_TRACE("br\n"); return 0; }
+		so = ast_op(a, t);
+		bnode = ast_child(a, t, 0);
+		cnode = ast_child(a, t, 1);
+		if (ast_kind(a, bnode) != AST_Ref)
+			{ MCC_TRACE("br\n"); return 0; }
+		bt2 = ast_type_t(a, bnode);
+		if ((bt2 & VT_VOLATILE) || !(bt2 & VT_UNSIGNED))
+			{ MCC_TRACE("br\n"); return 0; }
+		switch (bt2 & VT_BTYPE) { MCC_TRACE("br\n");
+		case VT_INT: wb = 32; sb = 4; break;
+		case VT_LLONG: wb = 64; sb = 8; break;
+		default: return 0;
+		}
+		if (wbits == 0) { MCC_TRACE("br\n"); wbits = wb; sbytes = sb; btype = bt2; }
+		else if (wb != wbits)
+			{ MCC_TRACE("br\n"); return 0; }
+		if (so == TOK_SHR || so == TOK_SAR) { MCC_TRACE("br\n");
+			/* right term: count is a plain Ref `n' -- the dest of shrd */
+			if (shrterm != AST_NONE || ast_kind(a, cnode) != AST_Ref)
+				{ MCC_TRACE("br\n"); return 0; }
+			shrterm = t; xb = bnode; ncnt = cnode;
+		} else if (so == TOK_SHL) { MCC_TRACE("br\n");
+			/* left term: count is `W - n' = Binary('-', Literal(W), n) */
+			AstLocal wlit, nn;
+			if (shlterm != AST_NONE || ast_kind(a, cnode) != AST_Binary ||
+					ast_op(a, cnode) != '-' || ast_nchild(a, cnode) != 2)
+				{ MCC_TRACE("br\n"); return 0; }
+			wlit = ast_child(a, cnode, 0);
+			nn = ast_child(a, cnode, 1);
+			if (ast_kind(a, wlit) != AST_Literal || ast_kind(a, nn) != AST_Ref)
+				{ MCC_TRACE("br\n"); return 0; }
+			if ((int)ast_ival(a, wlit) != wbits)
+				{ MCC_TRACE("br\n"); return 0; }
+			shlterm = t; yb = bnode;
+		} else {
+			MCC_TRACE("br\n");
+			return 0;
+		}
+	}
+	if (shlterm == AST_NONE || shrterm == AST_NONE || ncnt == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_bswap_same_base(a, xb, yb))
+		{ MCC_TRACE("br\n"); return 0; }
+	/* the shr count Ref and the (W-n) `n' Ref must be the SAME variable */
+	{
+		AstLocal shr_n = ast_child(a, shrterm, 1);
+		AstLocal sub = ast_child(a, shlterm, 1);
+		AstLocal sub_n = ast_child(a, sub, 1);
+		if (!ast_bswap_same_base(a, shr_n, sub_n))
+			{ MCC_TRACE("br\n"); return 0; }
+	}
+	/* rewrite: 3-child AST_Unary/AST_OP_FSHR (fresh Refs x=dest, y=src, n=count) */
+	{
+		AstLocal shr_n = ast_child(a, shrterm, 1);
+		AstLocal nbx = ast_node(a, AST_Ref);
+		AstLocal nby = ast_node(a, AST_Ref);
+		AstLocal nbn = ast_node(a, AST_Ref);
+		ast_copy_type(a, nbx, a, xb);
+		ast_set_op(a, nbx, ast_op(a, xb));
+		ast_set_sym(a, nbx, ast_sym(a, xb));
+		ast_set_ival(a, nbx, ast_ival(a, xb));
+		ast_set_fbits(a, nbx, ast_fbits(a, xb));
+		ast_copy_type(a, nby, a, yb);
+		ast_set_op(a, nby, ast_op(a, yb));
+		ast_set_sym(a, nby, ast_sym(a, yb));
+		ast_set_ival(a, nby, ast_ival(a, yb));
+		ast_set_fbits(a, nby, ast_fbits(a, yb));
+		ast_copy_type(a, nbn, a, shr_n);
+		ast_set_op(a, nbn, ast_op(a, shr_n));
+		ast_set_sym(a, nbn, ast_sym(a, shr_n));
+		ast_set_ival(a, nbn, ast_ival(a, shr_n));
+		ast_set_fbits(a, nbn, ast_fbits(a, shr_n));
+		ast_clear_children(a, top);
+		ast_set_kind(a, top, AST_Unary);
+		ast_set_op(a, top, AST_OP_FSHR);
+		ast_set_ival(a, top, (uint64_t)sbytes << 8);
+		ast_set_type(a, top, btype, ast_type_ref(a, xb));
+		ast_set_sym(a, top, 0);
+		ast_add_child(a, top, nbx);
+		ast_add_child(a, top, nby);
+		ast_add_child(a, top, nbn);
+	}
+	return 1;
+}
+
 #endif
 static int ast_bswap_run(AstArena *a) { MCC_TRACE("enter\n");
 	AstLocal nn = ast_count(a), n;
@@ -7869,6 +7983,8 @@ static int ast_bswap_run(AstArena *a) { MCC_TRACE("enter\n");
 				{ MCC_TRACE("br\n"); rf = ast_funnel_try(a, n); }
 			if (!rf && a->kind[n] == AST_Binary && a->op[n] == '|')
 				{ MCC_TRACE("br\n"); rf = ast_funnel_var_try(a, n); }
+			if (!rf && a->kind[n] == AST_Binary && a->op[n] == '|')
+				{ MCC_TRACE("br\n"); rf = ast_funnel_varr_try(a, n); }
 			total += rf;
 		}
 #endif

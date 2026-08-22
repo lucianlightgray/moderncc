@@ -2098,6 +2098,7 @@ ST_FUNC void gen_rotr_var(int size);
 #if defined(MCC_TARGET_X86_64)
 ST_FUNC void gen_shld(int size, int count);
 ST_FUNC void gen_shld_var(int size);
+ST_FUNC void gen_shrd_var(int size);
 ST_FUNC void gen_bitscan(int ctz, int size);
 #if defined(MCC_TARGET_X86_64)
 ST_FUNC int signbit_inline_on(void);
