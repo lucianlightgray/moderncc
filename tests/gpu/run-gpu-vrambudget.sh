@@ -24,6 +24,14 @@ diag() {
 set -- $(diag "")
 msr=$1; fv=$2; maxsb=$3
 if [ -z "$maxsb" ] || [ "$maxsb" -lt 1 ]; then
+	# The slot budget + VK_EXT_memory_budget free-VRAM reading this cell checks
+	# is Vulkan-specific. A Metal device's route reports only maxBufferLength
+	# (no slot/maxsb diag), so there is nothing to exercise here -- skip rather
+	# than fail (T-mac-30293).
+	if MCC_AST_EVAL_LADDER_GPU_DIAG=1 "$RUN" route --device-or-skip 2>&1 | grep -q 'maxBufferLength='; then
+		echo "gpu-vrambudget: SKIP -- Metal device (Vulkan-only VK_EXT_memory_budget slot-budget test)"
+		exit 77
+	fi
 	echo "FAIL gpu-vrambudget: could not read the slot-0 budget diag" >&2
 	exit 1
 fi
