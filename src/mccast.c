@@ -16448,7 +16448,7 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 
 static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
 	AstLocal loop, parent, cond, blit, so, ilit, body, store, addr, val, bin, o0, o1, base;
-	int64_t bnd, ini, trip, nbytes;
+	int64_t ini, nbytes;
 	int al, elemsize, bytev;
 	CType ct;
 	Sym *ms;
@@ -16466,7 +16466,7 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	if (!ast_ref_is_local_off(a, ast_child(a, cond, 0), li->iv_off))
 		{ MCC_TRACE("br\n"); return 0; }
 	blit = ast_dep_strip(a, ast_child(a, cond, 1));
-	if (blit == AST_NONE || ast_kind(a, blit) != AST_Literal)
+	if (blit == AST_NONE)
 		{ MCC_TRACE("br\n"); return 0; }
 	so = ast_li_prev_sib(a, loop);
 	if (!ast_interchange_is_init(a, so, li->iv_off))
@@ -16474,12 +16474,8 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	ilit = ast_dep_strip(a, ast_child(a, so, 1));
 	if (ilit == AST_NONE || ast_kind(a, ilit) != AST_Literal)
 		{ MCC_TRACE("br\n"); return 0; }
-	bnd = (int64_t)ast_ival(a, blit);
 	ini = (int64_t)ast_ival(a, ilit);
 	if (ini != 0)
-		{ MCC_TRACE("br\n"); return 0; }
-	trip = bnd - ini;
-	if (trip < 1)
 		{ MCC_TRACE("br\n"); return 0; }
 	body = ast_child(a, loop, 2);
 	if (body == AST_NONE || ast_kind(a, body) != AST_BasicBlock || ast_nchild(a, body) != 1)
@@ -16530,9 +16526,14 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 		if ((uv & mask) != (rep & mask))
 			{ MCC_TRACE("br\n"); return 0; }
 	}
-	nbytes = trip * (int64_t)elemsize;
-	if (nbytes < 1 || nbytes > (int64_t)0x40000000)
-		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, blit) == AST_Literal) {
+		nbytes = ((int64_t)ast_ival(a, blit) - ini) * (int64_t)elemsize;
+		if (nbytes < 1 || nbytes > (int64_t)0x40000000)
+			{ MCC_TRACE("br\n"); return 0; }
+	} else if (!(ast_stype_t(a, blit) & VT_UNSIGNED)) {
+		MCC_TRACE("br\n");
+		return 0;
+	}
 	ms = external_helper_sym(TOK_memset);
 	if (!ms)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -16549,10 +16550,26 @@ static int ast_loopidiom_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\
 	ast_set_ival(a, zero, value64((uint64_t)bytev, int_type.t));
 	ast_set_op(a, zero, VT_CONST);
 	ast_add_child(a, call, zero);
-	len = ast_node(a, AST_Literal);
-	ast_set_type(a, len, VT_LLONG, 0);
-	ast_set_ival(a, len, value64((uint64_t)nbytes, VT_LLONG));
-	ast_set_op(a, len, VT_CONST);
+	if (ast_kind(a, blit) == AST_Literal) {
+		len = ast_node(a, AST_Literal);
+		ast_set_type(a, len, VT_LLONG, 0);
+		ast_set_ival(a, len, value64((uint64_t)nbytes, VT_LLONG));
+		ast_set_op(a, len, VT_CONST);
+	} else {
+		AstLocal cvt, esz;
+		cvt = ast_node(a, AST_Convert);
+		ast_set_type(a, cvt, VT_LLONG | VT_UNSIGNED, 0);
+		ast_add_child(a, cvt, ast_dup_sub(a, blit));
+		esz = ast_node(a, AST_Literal);
+		ast_set_type(a, esz, VT_LLONG | VT_UNSIGNED, 0);
+		ast_set_ival(a, esz, value64((uint64_t)elemsize, VT_LLONG | VT_UNSIGNED));
+		ast_set_op(a, esz, VT_CONST);
+		len = ast_node(a, AST_Binary);
+		ast_set_op(a, len, '*');
+		ast_set_type(a, len, VT_LLONG | VT_UNSIGNED, 0);
+		ast_add_child(a, len, cvt);
+		ast_add_child(a, len, esz);
+	}
 	ast_add_child(a, call, len);
 	ast_set_type(a, call, int_type.t, 0);
 	ast_li_list_insert_before(a, parent, loop, call);
