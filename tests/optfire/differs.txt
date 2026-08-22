@@ -50,9 +50,7 @@ switch_jt|-O2|switch-jumptable|-fPIC
 # so o0- and shipped-On-neutral; the differ only shows when the flag is forced.
 loopidiom|-O4|loop-idiom|-
 bswap|-O2|bswap-idiom|-
-<<<<<<< Updated upstream
 rotate|-O2|rotate-idiom|-
-=======
 # slp (T-lin-10470): straight-line SLP auto-vectorization. N adjacent isomorphic
 # scalar float/double ops on contiguous distinct array objects (c[k]=a[k] OP b[k],
 # k=base..base+lanes-1) pack into one 16-byte SSE op (addps/subps/mulps/divps + pd)
@@ -61,4 +59,3 @@ rotate|-O2|rotate-idiom|-
 # packed emit only (arch-independent AST rewrite; other targets scalarize the
 # synthesized vector ops -> still correct, no speedup).
 slp|-O2|slp-vectorize|-
->>>>>>> Stashed changes
