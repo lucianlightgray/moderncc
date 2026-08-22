@@ -7007,6 +7007,57 @@ if(MCC_BUILD_TESTS)
                 endforeach()
             endif()
 
+            if(NOT APPLE AND MCC_CPU STREQUAL "x86_64")
+                # T-lin-10478/lin: native x86_64-ELF optfire -run leg. The base
+                # optfire/* cells prove fire+AOT-run; these run-verify the same
+                # differ cells through mcc's JIT (-run, internal-ELF relocator)
+                # against the -O0 -run oracle and additionally assert JIT==AOT
+                # (OPTFIRE_AOT=1). Mirrors the mac if(APPLE) native leg: the
+                # native mcc is always built (MCC_BUILT), so no hosted-boot /
+                # freshness fixture and no capability skip -- the OS/arch guard
+                # alone qualifies the leg, exactly as the arm64-osx native leg
+                # does. OS-qualified name (-elf) stays distinct from the base
+                # optfire/* (AOT), the qemu optfire-{arm64,riscv64}/* legs, and
+                # the WIN32 PE optfire-x86_64/* leg. differs*.txt only (the
+                # run-verify class); level/defstate/cdelta are fired-only.
+                file(GLOB _ofe_dfiles "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/differs*.txt")
+                foreach(_offile IN LISTS _ofe_dfiles)
+                    file(STRINGS "${_offile}" _ofelines)
+                    foreach(_ol IN LISTS _ofelines)
+                        if(NOT _ol MATCHES "^#" AND NOT _ol STREQUAL "")
+                            string(REPLACE "|" ";" _of "${_ol}")
+                            list(GET _of 0 _ofname)
+                            list(GET _of 1 _ofopt)
+                            list(GET _of 2 _ofarg)
+                            list(LENGTH _of _oflen)
+                            set(_ofextra "-")
+                            if(_oflen GREATER 3)
+                                list(GET _of 3 _ofextra)
+                            endif()
+                            set(_ofeskip 0)
+                            list(FIND _of_archnames "${_ofname}" _ofeai)
+                            if(NOT _ofeai EQUAL -1)
+                                list(GET _of_archcpus ${_ofeai} _ofereq)
+                                string(REPLACE "," ";" _ofereq "${_ofereq}")
+                                if(NOT MCC_CPU IN_LIST _ofereq)
+                                    set(_ofeskip 1)
+                                endif()
+                            endif()
+                            set(_ofesrc "${CMAKE_CURRENT_SOURCE_DIR}/tests/optfire/src/${_ofname}.c")
+                            if(NOT _ofeskip AND EXISTS "${_ofesrc}")
+                                add_test(NAME "optfire-x86_64-elf/${_ofname}"
+                                    COMMAND "${_of_sh}" "differ" "${_mcc_exe}" "${_ofesrc}"
+                                            "${CMAKE_BINARY_DIR}/optfire-x86_64-elf" "${_ofname}"
+                                            "${_ofopt}" "${_ofarg}" "${_ofextra}" "-")
+                                set_tests_properties("optfire-x86_64-elf/${_ofname}" PROPERTIES
+                                    FIXTURES_REQUIRED "MCC_BUILT" SKIP_RETURN_CODE 77 LABELS native
+                                    ENVIRONMENT "OPTFIRE_EXECVIA=run;OPTFIRE_AOT=1;OPTFIRE_MCCFLAGS=-B${CMAKE_BINARY_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/runtime/include")
+                            endif()
+                        endif()
+                    endforeach()
+                endforeach()
+            endif()
+
             # Row-count ratchet. These cells are registered one-per-row from globbed
             # tables, so deleting a row deletes a cell and ctest reports the same N/N
             # with a smaller N. A drop is a hard error; adding rows is fine, and the
