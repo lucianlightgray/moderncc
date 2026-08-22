@@ -17,7 +17,7 @@ _Session state → `docs/sessions/mac-arm64.md`. Narrative checkpoints → `docs
 ## In progress — lin-x64     ← only lin-x64 writes this zone
 
 _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/log/lin-x64.md`. Zone kept as a one-line pointer per the 2026-08-21 hygiene overhaul: task STATE only here, no prose (INSTRUCTIONS.md §1)._
-- No active lin claims (2026-08-22T15:00Z: T-lin-10541 unlocked-stdio Linux fix DONE+archived; T-lin-10470 SLP slice 1 DONE, released OPEN). State+caps: docs/sessions/lin-x64.md — narrative: docs/log/lin-x64.md
+- T-lin-10470 [S] IN_PROGRESS (loop-vectorize slice 2, P2 parity id37 — countable loop c[i]=a[i] OP b[i] → strip-mined vector body). State+caps: docs/sessions/lin-x64.md — narrative: docs/log/lin-x64.md
 
 ## In progress — win-x64     ← only win-x64 writes this zone
 - No active win claims — SESSION HANDOFF 2026-08-22T15:01Z (user wrap-up). 6 deliverables pushed: *-win32 o0 rebank d1022b09c + T-lin-10510 bswap/rotate idiom family (e35de8cef/c532b842d/9e3519f2d/4d3a26990) + lin SLP native-PE verify. Funnel-shift WIP (recognizer done, gen_shld encoding bug) banked NOT committed. State: docs/sessions/win-x64.md — log: docs/log/win-x64.md
