@@ -1586,6 +1586,7 @@ static MCC_OPT_TLS int ast_strict_overflow_env;
 static MCC_OPT_TLS int ast_dse_call_env;
 static MCC_OPT_TLS int ast_tco_ptr_env;
 static MCC_OPT_TLS int ast_cse_comm_env;
+static MCC_OPT_TLS int ast_cse_comm_rel_env;
 static MCC_OPT_TLS int ast_range_env;
 static MCC_OPT_TLS int ast_divmagic_env;
 static MCC_OPT_TLS int ast_abs_env;
@@ -2570,6 +2571,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_dse_call_env = mcc_opt(s1, MCC_OPT_TREE_DSE);
 	ast_tco_ptr_env = mcc_opt(s1, MCC_OPT_OPTIMIZE_SIBLING_CALLS);
 	ast_cse_comm_env = mcc_opt(s1, MCC_OPT_GCSE);
+	ast_cse_comm_rel_env = mcc_opt(s1, MCC_OPT_GCSE_COMM_REL);
 	ast_range_env = mcc_opt(s1, MCC_OPT_TREE_VRP);
 	ast_divmagic_env = mcc_opt(s1, MCC_OPT_DIVMAGIC);
 	ast_abs_env = mcc_opt(s1, MCC_OPT_IF_CONVERSION_ABS);
@@ -10828,6 +10830,8 @@ static void ast_cse_setref(AstArena *a, AstLocal n, AstLocal ref) { MCC_TRACE("e
 }
 
 static int ast_cse_commutative_op(int op) { MCC_TRACE("enter\n");
+	if ((op == TOK_EQ || op == TOK_NE) && ast_cse_comm_rel_env)
+		{ MCC_TRACE("br\n"); return 1; }
 	return op == '+' || op == '*' || op == '&' || op == '|' || op == '^';
 }
 
