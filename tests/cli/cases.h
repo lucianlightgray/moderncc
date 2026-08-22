@@ -3949,5 +3949,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -O2 -run {W}/fs.c && echo run2=OK && "
 		 "{MCC} -B{B} -I{I} -O0 -run {W}/fs.c && echo run0=OK",
 		 "o2refs=0 noflag=many\nrun2=OK\nrun0=OK"},
+		{"foldstr_strchr_literal_o2", "",
+		 "printf 'extern char* strchr(const char*,int);extern char* strrchr(const char*,int);int main(void){if(*strchr(\"abcde\",99)!=99)return 1;if(strchr(\"abcde\",120)!=0)return 2;if(*strchr(\"abcde\",0)!=0)return 3;if(*strrchr(\"abXcdX\",88)!=88)return 4;if(*(strrchr(\"abXcdX\",88)+1)!=0)return 5;if(strrchr(\"abcde\",122)!=0)return 6;if(*strchr(\"hello\",104)!=104)return 7;return 0;}' > {W}/scr.c && "
+		 "{MCC} -B{B} -I{I} -O2 -S {W}/scr.c -o {W}/scr.s 2>/dev/null && "
+		 "{MCC} -B{B} -I{I} -O2 -fno-fold-str -S {W}/scr.c -o {W}/scr.no.s 2>/dev/null && "
+		 "echo o2refs=$(grep -cE 'strchr|strrchr' {W}/scr.s) noflag=$([ $(grep -cE 'strchr|strrchr' {W}/scr.no.s) -gt 0 ] && echo many || echo none) && "
+		 "{MCC} -B{B} -I{I} -O2 -run {W}/scr.c && echo run2=OK && "
+		 "{MCC} -B{B} -I{I} -O0 -run {W}/scr.c && echo run0=OK",
+		 "o2refs=0 noflag=many\nrun2=OK\nrun0=OK"},
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));

@@ -13780,6 +13780,8 @@ static const struct {
 		{"strcmp", 1},   {"__builtin_strcmp", 1},
 		{"strncmp", 2},  {"__builtin_strncmp", 2},
 		{"memcmp", 3},   {"__builtin_memcmp", 3},
+		{"strchr", 5},   {"__builtin_strchr", 5},
+		{"strrchr", 6},  {"__builtin_strrchr", 6},
 };
 
 static int foldstr_name_kind(const char *nm) { MCC_TRACE("enter\n");
@@ -13825,13 +13827,44 @@ static int foldstr_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	kind = foldstr_name_kind(nm);
 	if (kind < 0)
 		{ MCC_TRACE("br\n"); return 0; }
-	need = kind == 0 ? 1 : kind == 1 ? 2 : 3;
+	need = kind == 0 ? 1 : (kind == 1 || kind == 5 || kind == 6) ? 2 : 3;
 	if (nb_args != need)
 		{ MCC_TRACE("br\n"); return 0; }
 
 	s0 = format_str_literal(vtop - nb_args + 1, &av0);
 	if (!s0)
 		{ MCC_TRACE("br\n"); return 0; }
+	if (kind == 5 || kind == 6) { MCC_TRACE("br\n");
+		uint64_t ch;
+		int slen = 0, idx = -1, k;
+		SValue res_sv;
+		if (!foldstr_intarg(vtop, &ch))
+			{ MCC_TRACE("br\n"); return 0; }
+		while (slen < av0 && s0[slen])
+			{ MCC_TRACE("br\n"); slen++; }
+		if (slen >= av0)
+			{ MCC_TRACE("br\n"); return 0; }
+		for (k = 0; k <= slen; k++) { MCC_TRACE("br\n");
+			if (s0[k] == (char)ch) { MCC_TRACE("br\n");
+				idx = k;
+				if (kind == 5)
+					{ MCC_TRACE("br\n"); break; }
+			}
+		}
+		res_sv = *(vtop - nb_args + 1);
+		for (k = 0; k < nb_args; k++)
+			{ MCC_TRACE("br\n"); vpop(); }
+		vpop();
+		if (idx < 0) { MCC_TRACE("br\n");
+			vpushi(0);
+			vtop->type = ftype->type;
+		} else { MCC_TRACE("br\n");
+			res_sv.c.i += idx;
+			res_sv.type = ftype->type;
+			vpushv(&res_sv);
+		}
+		return 1;
+	}
 	if (kind == 0) { MCC_TRACE("br\n");
 		int n = 0;
 		while (n < av0 && s0[n])
