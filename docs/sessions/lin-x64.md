@@ -6,10 +6,10 @@ the commit log (`git log -1 --format=%cI` by this author); the `Last seen` below
 is advisory.
 
 Next ID: 10542
-Last seen: 2026-08-22T15:54Z
+Last seen: 2026-08-22T17:07Z
 Capabilities: x86_64-linux native · arm64/riscv64/i386 via qemu-user · x86_64-PE via wine (canary) · gpu-vulkan OK (2026-08-22 RE-CHECK: vulkaninfo does NOT hang; enumerates AMD Radeon 610M [RADV] + NVIDIA RTX 5070 Ti; tests/gpu/run.sh full-scale N=2^32 = 9/9 checks green, cpu==gpu differential PASS, half-split 4917 M/s. NOTE the vk host device-score picks the AMD iGPU, not the NVIDIA dGPU — prior "device-blocked: vulkaninfo hangs" was stale)
 
-STATUS (2026-08-22T15:54Z — GOAL-LOOP, P1 EXHAUSTED → P2 optimizer parity; user asked to wrap up in-flight work): **NO active lin claims, tree CLEAN, all pushed.** Full narrative → docs/log/lin-x64.md.
+STATUS (2026-08-22T17:07Z — GOAL-LOOP): **NO active lin claims, tree CLEAN, all pushed.** Just closed **T-lin-10492 (P1, LAST P1-cluster item) DONE 5a3549c16** — qemu optfire differ cells (arm64+riscv64) now run the AOT-vs-JIT oracle (OPTFIRE_AOT=1, route (a)); test-infra-only, no source change (mcc's Linux crt link needs only crt1/crti/crtn, resolved by the default {R}-crtprefix once --sysroot is passed). 383/383 optfire green, no AOT-vs-JIT divergence on either cross arch. Also delisted a pre-existing coverage-ledger 'funnel' red (win T-lin-10510 loose end). **P1 (100% JIT coverage) now fully exhausted → next is P2 optimizer parity** (biggest gcc/clang gaps: T-lin-10470 auto-vec continuation, 10471 GVN[mac], 10473 IPA[mac], 10474 escape-analysis, 10475 TFA, 10425 packed-vector, 10455/10457 superopt; or round-2 pool). Full narrative → docs/log/lin-x64.md.
 
 **This session's P2 deliverables (all verified + pushed):**
 1. Census unblock (3dc76230f) — rebanked wide RIR-coverage census on elf + delisted fleet-wide `rir-coverage-census` KNOWN_RED; diagnosed compound (not single-cause) drift, coordinated the accept with mac (option-a).
