@@ -1818,6 +1818,7 @@ static int ast_jit_eligible(Sym *sym) { MCC_TRACE("enter\n");
 	return np >= 1;
 }
 
+static int ast_jit_body_has_vla(void);
 static int ast_body_uses_func_alloca(void);
 
 static int ast_jit_slot_taken(const char *fn) { MCC_TRACE("enter\n");
@@ -1846,10 +1847,10 @@ static int ast_jit_slot_taken(const char *fn) { MCC_TRACE("enter\n");
 static int ast_jit_want(const char *fn, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_jit_selected(fn))
 		{ MCC_TRACE("br\n"); return 0; }
-	if (ast_body_uses_func_alloca()) { MCC_TRACE("br\n");
+	if (ast_jit_body_has_vla()) { MCC_TRACE("br\n");
 		if (mcc_env_on("MCC_JIT_VERBOSE"))
 			{ MCC_TRACE("br\n"); fprintf(stderr,
-							"mccjit: refuse-to-JIT %s — body allocates on the frame (VLA/alloca)\n",
+							"mccjit: refuse-to-JIT %s — body allocates a VLA\n",
 							fn ? fn : "?"); }
 		return 0;
 	}
@@ -2262,6 +2263,20 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_IMAG 0x40003
 #define AST_OP_VLA 0x40004
 #define AST_OP_VLA_RESTORE 0x40005
+
+static int ast_jit_body_has_vla(void) { MCC_TRACE("enter\n");
+	AstArena *a = ast_cur;
+	AstLocal n, nn;
+	if (!a)
+		{ MCC_TRACE("br\n"); return 0; }
+	nn = ast_count(a);
+	for (n = 0; n < nn; n++) { MCC_TRACE("br\n");
+		if (ast_kind(a, n) == AST_Unary &&
+				(ast_op(a, n) == AST_OP_VLA || ast_op(a, n) == AST_OP_VLA_RESTORE))
+			{ MCC_TRACE("br\n"); return 1; }
+	}
+	return 0;
+}
 
 static int ast_body_uses_func_alloca(void) { MCC_TRACE("enter\n");
 	AstArena *a = ast_cur;
