@@ -59,3 +59,10 @@ rotate|-O2|rotate-idiom|-
 # packed emit only (arch-independent AST rewrite; other targets scalarize the
 # synthesized vector ops -> still correct, no speedup).
 slp|-O2|slp-vectorize|-
+# loopvec (T-lin-10470): loop auto-vectorization. A countable for(i=ini;i<B;i++)
+# c[i]=a[i] OP b[i] over distinct contiguous array objects, const trip B-ini an exact
+# multiple of the 16-byte lane count (no remainder yet), strip-mines to stride=lanes
+# with a packed vector body (addps/subps/mulps/divps + pd) via gen_vector_op. Default-OFF
+# knob (MCC_OPTD_OFF) so o0-/shipped-On-neutral; differ only shows when -floop-vectorize
+# is forced. x86_64 packed emit only (other targets scalarize -> still correct).
+loopvec|-O2|loop-vectorize|-

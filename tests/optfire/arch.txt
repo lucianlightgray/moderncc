@@ -53,3 +53,10 @@ switch_jt|x86_64,arm64,riscv64
 loopidiom|x86_64,arm64,i386,riscv64
 bswap|x86_64
 rotate|x86_64
+# loopvec: loop-vectorization's packed emit is x86_64-SysV only (gen_vector_op
+# packed path); the transform is #if-gated to x86_64 && !PE, and on strict-align
+# arm64/riscv64 the scalarized 16-byte vector-store libcall in a strided loop
+# SEGVs (the packed win is x86_64-only anyway) -- so the pass declines there and
+# the cell is pinned to x86_64. Non-x86_64 packed (NEON/RVV) + the arm64/riscv64
+# scalarization fix are T-lin-10470 follow-ups.
+loopvec|x86_64

@@ -145,7 +145,8 @@
 	MCC_OPT_ROW(FOLD_STR,                      "fold-str",                     MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(BSWAP_IDIOM,                   "bswap-idiom",                  MCC_OPTD_OFF) \
 	MCC_OPT_ROW(ROTATE_IDIOM,                  "rotate-idiom",                 MCC_OPTD_OFF) \
-	MCC_OPT_ROW(SLP_VECTORIZE,                 "slp-vectorize",                MCC_OPTD_OFF)
+	MCC_OPT_ROW(SLP_VECTORIZE,                 "slp-vectorize",                MCC_OPTD_OFF) \
+	MCC_OPT_ROW(LOOP_VECTORIZE,                "loop-vectorize",               MCC_OPTD_OFF)
 
 enum {
 #define MCC_OPT_ROW(id, name, dflt) MCC_OPT_##id,
