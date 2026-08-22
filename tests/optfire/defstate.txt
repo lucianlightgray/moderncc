@@ -84,3 +84,26 @@ abs_below|-O3|if-conversion-abs|off
 math_fabs|-O1|builtin-math-fabs|on
 math_sqrt|-O1|builtin-math|on
 math_prepass|-O1|builtin-math-prepass|on
+#
+# --- differ-only gates: the off-side of their default-activation rung
+#
+# differs.txt forces these gates on both sides, so it proves the pass CAN fire
+# but never pins the rung where it turns on BY DEFAULT. Each pair below is the
+# standard both-sides shape on the differ's own source, which is forceable one
+# rung under (so the off-half is a live tripwire, not vacuous): the on row says
+# default-on at the rung, the _below row says default-off one rung under and
+# reddens if that boundary ever moves. Rungs are the empirically-measured
+# default-on level (probe 2026-08-22); five sibling differ gates (reg-color,
+# promote-arrow/-incdec, storeval-callstore, call-window) are excluded because
+# forcing them one rung under changes nothing -- structurally unavailable, so an
+# off-side cell there would be vacuous. REF DETAILS.md#t-lin-10480-below-boundary
+merge_strings|-O2|merge-constants|on
+merge_strings_below|-O1|merge-constants|off
+zero_bss|-O4|zero-initialized-in-bss|on
+zero_bss_below|-O3|zero-initialized-in-bss|off
+cse_join|-O4|gcse-join|on
+cse_join_below|-O3|gcse-join|off
+cprop_join|-O4|tree-copy-prop|on
+cprop_join_below|-O3|tree-copy-prop|off
+sroa_arr|-O4|tree-sroa|on
+sroa_arr_below|-O3|tree-sroa|off
