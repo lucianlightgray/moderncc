@@ -337,7 +337,7 @@ ST_FUNC void load(int r, SValue *sv) { MCC_TRACE("enter\n");
 				fc = SIGN7(fc);
 				rb = rr;
 				do32bit = 0;
-			} else if (bt == VT_LLONG) { MCC_TRACE("br\n");
+			} else if (bt == VT_LLONG || bt == VT_PTR) { MCC_TRACE("br\n");
 				zext = 1;
 			}
 		}
