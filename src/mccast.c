@@ -10618,6 +10618,7 @@ static int ast_tco_run(AstArena *a, Sym *fsym) { MCC_TRACE("enter\n");
 		int t = ls->type.t;
 		int tbt = t & VT_BTYPE;
 		if ((!ast_ident_intt(t) && tbt != VT_FLOAT && tbt != VT_DOUBLE &&
+				 tbt != VT_LDOUBLE &&
 				 !(ast_tco_ptr_env && tbt == VT_PTR)) ||
 				(t & VT_VOLATILE) || (t & (VT_ARRAY | VT_VLA)))
 			{ MCC_TRACE("br\n"); return 0; }

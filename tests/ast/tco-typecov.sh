@@ -19,7 +19,7 @@ tco=$(MCC_STATS=strategy "$MCC" -O4 -c "$src" -o "$WORK/s.o" 2>&1 |
 echo "tail-call opts ($(basename "$src")) = $tco"
 
 if [ -z "$tco" ] || [ "$tco" -lt 8 ]; then
-	echo "FAIL: width-complete tco did not fire over the 6 integer widths char/short/int/unsigned/long/long-long + float + double (tco=$tco, want >=8)"
+	echo "FAIL: width-complete tco did not fire over the 6 integer widths char/short/int/unsigned/long/long-long + float + double (tco=$tco, want >=8; long double is a 9th leg where distinct -- x87/binary128 -- but not required, only its result is checked)"
 	exit 1
 fi
 
@@ -42,4 +42,4 @@ if [ -n "$MCC_TYPECOV_RUN" ]; then
 	echo "  JIT -run verified (P1 b): -O0-run == -O4-run == AOT-O0 ($r0)"
 fi
 
-echo "ast/tco-typecov OK: tail-call opt width-complete over 6 integer widths + float + double (tco=$tco over $(basename "$src")), result-invariant ($r4)"
+echo "ast/tco-typecov OK: tail-call opt width-complete over 6 integer widths + float + double (+ long double where distinct) (tco=$tco over $(basename "$src")), result-invariant ($r4)"

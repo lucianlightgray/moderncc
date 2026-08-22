@@ -19,6 +19,14 @@ long fl(long n, long acc){ if(n<=0) return acc; return fl(n-1, acc+n); }
 long long fq(long long n, long long acc){ if(n<=0) return acc; return fq(n-1, acc+n); }
 float ff(int n, float acc){ if(n<=0) return acc; return ff(n-1, acc + (float)n); }
 double fd(int n, double acc){ if(n<=0) return acc; return fd(n-1, acc + (double)n); }
+/* long double: an extended-precision accumulator. tco admits VT_LDOUBLE too;
+ * this leg is ABI-divergent (x87 80-bit on x86_64-linux, binary128 on
+ * riscv64/arm64-linux, but == double on win-PE / arm64-osx), so the cell
+ * FLOOR stays >=8 (int+float+double, fires everywhere) and does NOT require
+ * the ldouble leg to fire -- but its -O0==-O4==-run result is checked on every
+ * platform, so an ldouble-tco miscompile is caught anywhere. Verified FIRING
+ * on lin-x86_64 (x87) + riscv64 (binary128): there tco reads 9. */
+long double fldl(int n, long double acc){ if(n<=0) return acc; return fldl(n-1, acc + (long double)n); }
 
 int main(void)
 {
@@ -31,8 +39,9 @@ int main(void)
 	 * (SIGSEGV under larger env blocks / emulators). Seeding decouples "big
 	 * 64-bit result" from "deep recursion"; tco firing is depth-independent so
 	 * tco=8 is unchanged. (Fix + refinement: mac-arm64.) */
-	printf("%d %d %d %u %ld %lld %.0f %.0f\n",
+	printf("%d %d %d %u %ld %lld %.0f %.0f %.0Lf\n",
 				 (int)fc(10, 0), (int)fs(20, 0), fi(100, 0), fu(50u, 0u),
-				 fl(1000L, 0L), fq(10000LL, 5000000000LL), (double)ff(50, 0.0f), fd(100, 0.0));
+				 fl(1000L, 0L), fq(10000LL, 5000000000LL), (double)ff(50, 0.0f), fd(100, 0.0),
+				 fldl(100, 0.0L));
 	return 0;
 }
