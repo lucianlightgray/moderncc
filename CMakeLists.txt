@@ -9413,7 +9413,25 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("ci/gate-contract-known-positive" "${_nopy_why}")
             mcc_skip_test("ci/registration-stubs" "${_nopy_why}")
             mcc_skip_test("rir/drop-ratchet" "${_nopy_why}")
-            mcc_skip_test("rir/rec-miss" "${_nopy_why}")
+            # T-win-50026: rir/rec-miss is a pure-CMake cell (cmake/rir_recmiss.cmake)
+            # -- it needs NEITHER python3 NOR a self-rebuilding mcc, only a native mcc
+            # that can compile+run the exec subjects and honor MCC_RIR_REC_FORCE_MISS.
+            # So it does NOT belong to the selfhost/census skip class above: activate it
+            # here (it runs+passes on win-MSVC: 6 subjects agree with -O0, force-miss
+            # moves 3 objects). Keep it skipped only when cross-compiling, where the
+            # compiled subjects cannot run on the build host.
+            if(NOT CMAKE_CROSSCOMPILING)
+                add_test(NAME "rir/rec-miss"
+                    COMMAND "${CMAKE_COMMAND}"
+                            -DMCC=$<TARGET_FILE:mcc>
+                            -DSRCDIR=${CMAKE_CURRENT_SOURCE_DIR}
+                            -DBINDIR=${CMAKE_CURRENT_BINARY_DIR}
+                            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/rir_recmiss.cmake")
+                set_tests_properties("rir/rec-miss" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT TIMEOUT 300)
+            else()
+                mcc_skip_test("rir/rec-miss" "cross build: the compiled exec subjects cannot run on the build host")
+            endif()
             mcc_skip_test("rir-coverage" "${_nopy_why}")
             mcc_skip_test("node-census" "${_nopy_why}")
             mcc_skip_test("rir-gap-classes" "${_nopy_why}")
@@ -9433,7 +9451,15 @@ int main(void) { return 0; }" MCC_RUN_API_IS_HOST)
             mcc_skip_test("slice-census" "${_nopy_why}" LABELS census)
             mcc_skip_test("loop-census" "${_nopy_why}" LABELS census)
             mcc_skip_test("loop-census-numeric" "${_nopy_why}" LABELS census)
-            mcc_skip_test("rir-nofb-probe" "${_nopy_why}" LABELS census)
+            # T-win-50026/T-win-50058: rir-nofb-probe (exec corpus) does NOT need a
+            # self-rebuilding mcc (that is rir-nofb-probe-self, below) -- python3 and the
+            # exec corpus are present on win-MSVC and it uses the JIT -run path. It is held
+            # back on win-PE for a REAL reason, not the selfhost/python gap: it exposes
+            # unfaithful VLA RIR-replay (mcc -fno-replay-fallback -run SEGVs on
+            # tests/exec/vla/{reuse,continue,label,vla_empty_init}.c bodies, masked by the
+            # replay fallback in normal exec so the exec corpus stays green). Tracked as
+            # T-win-50058; un-skip once that is fixed or the bodies are triaged/banked.
+            mcc_skip_test("rir-nofb-probe" "win-PE: exposes unfaithful VLA RIR-replay (SEGV under -fno-replay-fallback, masked by the fallback in normal exec); python3+exec-corpus ARE present so this is not the selfhost/census-python gap -- tracked as T-win-50058" LABELS census)
             mcc_skip_test("rir-nofb-probe-self" "${_nopy_why}" LABELS census)
             mcc_skip_test("emit-map-full-language" "${_nopy_why}" LABELS census)
             mcc_skip_test("emit-map-selfhost" "${_nopy_why}" LABELS census)
