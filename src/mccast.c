@@ -17556,9 +17556,9 @@ static int ast_loopvec_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n"
 	AstLocal loop, cond, blit, so, ilit, body, store, lval, val, a0, b0;
 	AstLocal baseC, baseA, baseB, addrC, addrA, addrB, vldC, vldA, vldB, vbin;
 	AstLocal ivref, incrbb, newincr, lv, rhs, parent, after;
-	AstLocal tails[8];
+	AstLocal tails[8], boundnode, tailloop, maskexpr;
 	int64_t B, ini, trip, full, rem, rem_start, j;
-	int etC, etA, etB, op, esz, lanes, ntail, k;
+	int etC, etA, etB, op, esz, lanes, ntail, k, is_rt;
 	uint64_t erC, erA, erB;
 	CType ebase, V, PV;
 	if (li->op != 3 || li->unanalyzable || !li->has_iv || li->iv_stride != 1)
@@ -17570,10 +17570,16 @@ static int ast_loopvec_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n"
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ref_is_local_off(a, ast_child(a, cond, 0), li->iv_off))
 		{ MCC_TRACE("br\n"); return 0; }
-	blit = ast_dep_strip(a, ast_child(a, cond, 1));
-	if (blit == AST_NONE || ast_kind(a, blit) != AST_Literal)
-		{ MCC_TRACE("br\n"); return 0; }
-	B = (int64_t)ast_ival(a, blit);
+	boundnode = ast_child(a, cond, 1);
+	blit = ast_dep_strip(a, boundnode);
+	is_rt = (blit == AST_NONE || ast_kind(a, blit) != AST_Literal);
+	if (is_rt) { MCC_TRACE("br\n");
+		if (!ast_ident_pure(a, boundnode))
+			{ MCC_TRACE("br\n"); return 0; }
+		B = 0;
+	} else { MCC_TRACE("br\n");
+		B = (int64_t)ast_ival(a, blit);
+	}
 	so = ast_li_prev_sib(a, loop);
 	if (!ast_interchange_is_init(a, so, li->iv_off))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -17581,6 +17587,8 @@ static int ast_loopvec_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n"
 	if (ilit == AST_NONE || ast_kind(a, ilit) != AST_Literal)
 		{ MCC_TRACE("br\n"); return 0; }
 	ini = (int64_t)ast_ival(a, ilit);
+	if (is_rt && ini != 0)
+		{ MCC_TRACE("br\n"); return 0; }
 	incrbb = li->incr;
 	if (incrbb == AST_NONE || ast_kind(a, incrbb) != AST_BasicBlock)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -17613,22 +17621,29 @@ static int ast_loopvec_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n"
 	if (!esz)
 		{ MCC_TRACE("br\n"); return 0; }
 	lanes = 16 / esz;
-	if (B <= ini)
-		{ MCC_TRACE("br\n"); return 0; }
-	trip = B - ini;
-	full = (trip / lanes) * lanes;
-	if (full == 0)
-		{ MCC_TRACE("br\n"); return 0; }
-	rem = trip - full;
-	rem_start = ini + full;
+	rem = 0;
+	rem_start = 0;
 	ntail = 0;
-	for (j = rem_start; j < B; j++) { MCC_TRACE("br\n");
-		AstLocal tc = ast_dup_sub(a, store);
-		AstLocal tlv = ast_child(a, tc, 0), tv = ast_child(a, tc, 1);
-		ast_lvec_setidx(a, ast_child(a, tlv, 0), li->iv_off, j, li->iv_tt);
-		ast_lvec_setidx(a, ast_child(a, ast_child(a, tv, 0), 0), li->iv_off, j, li->iv_tt);
-		ast_lvec_setidx(a, ast_child(a, ast_child(a, tv, 1), 0), li->iv_off, j, li->iv_tt);
-		tails[ntail++] = tc;
+	tailloop = AST_NONE;
+	if (is_rt) { MCC_TRACE("br\n");
+		tailloop = ast_dup_sub(a, loop);
+	} else { MCC_TRACE("br\n");
+		if (B <= ini)
+			{ MCC_TRACE("br\n"); return 0; }
+		trip = B - ini;
+		full = (trip / lanes) * lanes;
+		if (full == 0)
+			{ MCC_TRACE("br\n"); return 0; }
+		rem = trip - full;
+		rem_start = ini + full;
+		for (j = rem_start; j < B; j++) { MCC_TRACE("br\n");
+			AstLocal tc = ast_dup_sub(a, store);
+			AstLocal tlv = ast_child(a, tc, 0), tv = ast_child(a, tc, 1);
+			ast_lvec_setidx(a, ast_child(a, tlv, 0), li->iv_off, j, li->iv_tt);
+			ast_lvec_setidx(a, ast_child(a, ast_child(a, tv, 0), 0), li->iv_off, j, li->iv_tt);
+			ast_lvec_setidx(a, ast_child(a, ast_child(a, tv, 1), 0), li->iv_off, j, li->iv_tt);
+			tails[ntail++] = tc;
+		}
 	}
 	memset(&ebase, 0, sizeof ebase);
 	ebase.t = etC & (VT_BTYPE | VT_UNSIGNED | VT_LONG);
@@ -17664,10 +17679,17 @@ static int ast_loopvec_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n"
 	ast_add_child(a, newincr, rhs);
 	ast_clear_children(a, incrbb);
 	ast_add_child(a, incrbb, newincr);
-	if (rem > 0) { MCC_TRACE("br\n");
+	parent = ast_parent(a, loop);
+	after = ast_next_sib(a, loop);
+	if (is_rt) { MCC_TRACE("br\n");
+		maskexpr = ast_bf_bin(a, '&', li->iv_tt, ast_dup_sub(a, boundnode),
+													ast_bf_lit(a, li->iv_tt, ~(uint64_t)(lanes - 1)));
+		ast_clear_children(a, cond);
+		ast_add_child(a, cond, ivref);
+		ast_add_child(a, cond, maskexpr);
+		ast_li_list_insert_before(a, parent, after, tailloop);
+	} else if (rem > 0) { MCC_TRACE("br\n");
 		ast_set_ival(a, blit, (uint64_t)rem_start);
-		parent = ast_parent(a, loop);
-		after = ast_next_sib(a, loop);
 		for (k = 0; k < ntail; k++) { MCC_TRACE("br\n");
 			ast_li_list_insert_before(a, parent, after, tails[k]);
 		}
