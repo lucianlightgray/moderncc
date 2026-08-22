@@ -31,7 +31,6 @@ test name, the run-opt `cell:-Olevel` key, etc. Every row needs a `REF` to a
 ```
 builtin_expect_is_code_neutral | ctest | arm64 | arm64-LP64 branch-consumed long-cast QoI: __builtin_expect object-size bloat vs plain if; gated cpu!=arm64 by T-lin-10453 | REF DETAILS.md#t-lin-10453 | since 2026-08-20
 slice/cref-oracle-gcc-c-torture-execute | ctest | windows | device-gated: slicerun times out on pr123625-3.c's GPU warmup dispatch only under the full 1694-prog PARALLEL run with the RTX 2060 active (standalone+1-file+GPU-hidden all finish); mcc SEGV (4823e7f36) + clang-lm harness vacuity (cc74f4449) already fixed -> cell otherwise rich+clean (qualified=1463, 1.2M tuples, 0 miscompiles); only the GPU-dispatch concurrency stall remains | REF DETAILS.md#t-win-50061-slicerun-gpu-dispatch-stall | since 2026-08-22
-rir-coverage-census | ctest | ALL | wide-corpus denominator drift: tests/exec/optimizer/divrem_fuse.c (b3d117f3, T-lin-10509) grew the wide census corpus 402->403 files but re-banked only ast/o0-baseline, not sources_wide + the per-format wide floors; a macho re-bank writes host-wrong shared values (macho wide floors are unbanked/skipped) -> needs a coordinated re-bank on lin(elf)+win boxes | REF DETAILS.md#rir-coverage-census-divrem-drift | since 2026-08-22
 ```
 
 _(Seed row: the exemplar the process review named. Sessions add rows here instead
