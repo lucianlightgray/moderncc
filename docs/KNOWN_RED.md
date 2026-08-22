@@ -31,6 +31,7 @@ test name, the run-opt `cell:-Olevel` key, etc. Every row needs a `REF` to a
 ```
 builtin_expect_is_code_neutral | ctest | arm64 | arm64-LP64 branch-consumed long-cast QoI: __builtin_expect object-size bloat vs plain if; gated cpu!=arm64 by T-lin-10453 | REF DETAILS.md#t-lin-10453 | since 2026-08-20
 slice/cref-oracle-gcc-c-torture-execute | ctest | windows | device-gated: slicerun times out on pr123625-3.c's GPU warmup dispatch only under the full 1694-prog PARALLEL run with the RTX 2060 active (standalone+1-file+GPU-hidden all finish); mcc SEGV (4823e7f36) + clang-lm harness vacuity (cc74f4449) already fixed -> cell otherwise rich+clean (qualified=1463, 1.2M tuples, 0 miscompiles); only the GPU-dispatch concurrency stall remains | REF DETAILS.md#t-win-50061-slicerun-gpu-dispatch-stall | since 2026-08-22
+cli/unlocked_stdio_builtins | ctest | linux | mcc emits printf_unlocked/fprintf_unlocked (glibc-only GNU exts) but this box's glibc dropped/hid them (nm -D libc: absent) -> link-fail. mac's 213d13e22 shimmed only __APPLE__||_WIN32, assumed Linux glibc has them. PROVEN pre-existing on pristine worktree (stash SLP src edits -> still fails; optimizer-only+default-off cannot cause a link-time unresolved-ref). Fix = extend the inline locked-equivalent shim to Linux (owes rebank) -> T-lin-10541 | REF DETAILS.md#t-lin-10541-unlocked-linux | since 2026-08-22
 ```
 
 _(Seed row: the exemplar the process review named. Sessions add rows here instead
