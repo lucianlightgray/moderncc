@@ -52,7 +52,15 @@ def run(cmd, cwd=None, timeout=TIMEOUT, env=None):
 
 def build_and_run(cc, src, work, tag, cflags, opt):
     exe = os.path.join(work, "o_%s" % tag)
-    rc, out = run([cc] + cflags + [opt, src, "-o", exe])
+    ccf = cflags
+    if os.name == "nt" and "clang" in os.path.basename(cc).lower():
+        # clang on Windows defaults to the MSVC target, where the math
+        # functions live in the CRT and `-lm` fails to link ("cannot open
+        # m.lib"); gcc-mingw still needs `-lm`. Without this the clang oracle
+        # nocompiles every program, qualified drops to 0 and the cross oracle
+        # is vacuous on Windows. Unix and the gcc-mingw suite are unaffected.
+        ccf = [f for f in cflags if f != "-lm"]
+    rc, out = run([cc] + ccf + [opt, src, "-o", exe])
     if rc != 0:
         return ("nocompile", out[:400])
     rc, out = run([exe], cwd=work)
