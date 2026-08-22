@@ -1818,7 +1818,7 @@ static int ast_jit_eligible(Sym *sym) { MCC_TRACE("enter\n");
 	return np >= 1;
 }
 
-static int ast_jit_body_has_vla(void);
+static int ast_body_uses_func_alloca(void);
 
 static int ast_jit_slot_taken(const char *fn) { MCC_TRACE("enter\n");
 	MCCState *s1 = mcc_state;
@@ -1846,10 +1846,10 @@ static int ast_jit_slot_taken(const char *fn) { MCC_TRACE("enter\n");
 static int ast_jit_want(const char *fn, Sym *sym) { MCC_TRACE("enter\n");
 	if (!ast_jit_selected(fn))
 		{ MCC_TRACE("br\n"); return 0; }
-	if (ast_jit_body_has_vla()) { MCC_TRACE("br\n");
+	if (ast_body_uses_func_alloca()) { MCC_TRACE("br\n");
 		if (mcc_env_on("MCC_JIT_VERBOSE"))
 			{ MCC_TRACE("br\n"); fprintf(stderr,
-							"mccjit: refuse-to-JIT %s — body allocates a VLA\n",
+							"mccjit: refuse-to-JIT %s — body allocates on the frame (VLA/alloca)\n",
 							fn ? fn : "?"); }
 		return 0;
 	}
@@ -2263,7 +2263,7 @@ static int ast_struct_eq(AstArena *a, AstLocal x, AstLocal y, int depth);
 #define AST_OP_VLA 0x40004
 #define AST_OP_VLA_RESTORE 0x40005
 
-static int ast_jit_body_has_vla(void) { MCC_TRACE("enter\n");
+static int ast_body_uses_func_alloca(void) { MCC_TRACE("enter\n");
 	AstArena *a = ast_cur;
 	AstLocal n, nn;
 	if (!a)
@@ -2273,6 +2273,14 @@ static int ast_jit_body_has_vla(void) { MCC_TRACE("enter\n");
 		if (ast_kind(a, n) == AST_Unary &&
 				(ast_op(a, n) == AST_OP_VLA || ast_op(a, n) == AST_OP_VLA_RESTORE))
 			{ MCC_TRACE("br\n"); return 1; }
+		if (ast_kind(a, n) == AST_Invoke) { MCC_TRACE("br\n");
+			AstLocal ce = ast_first_child(a, n);
+			if (ce != AST_NONE && ast_kind(a, ce) == AST_Ref) { MCC_TRACE("br\n");
+				Sym *cs = (Sym *)(uintptr_t)ast_sym(a, ce);
+				if (cs && (cs->v == TOK_alloca || cs->asm_label == TOK_alloca))
+					{ MCC_TRACE("br\n"); return 1; }
+			}
+		}
 	}
 	return 0;
 }
@@ -21577,7 +21585,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			volatile int ast_replay_completed = 0;
 			const char *volatile ast_unf_why = "abort";
 			const int ast_fn_hole = ast_arena_has_hole(ast_cur);
-			const int ast_fn_vla = ast_jit_body_has_vla();
+			const int ast_fn_alloca = ast_body_uses_func_alloca();
 			AstAsmEff ast_fn_asm;
 			const int ast_fn_has_asm = ast_body_asm_eff(ast_cur, &ast_fn_asm);
 			ast_fn_asm_live = ast_fn_has_asm;
@@ -22369,7 +22377,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			seqp_reset();
 			int keep = faithful ||
 								 (ast_rir_nofb_env && ast_replay_completed && !ast_fn_hole &&
-									!ast_fn_vla);
+									!ast_fn_alloca);
 			if (keep && !faithful && funcname) { MCC_TRACE("br\n");
 				const char *sk = getenv("MCC_RIR_NOFB_SKIP");
 				if (sk && *sk) { MCC_TRACE("br\n");
