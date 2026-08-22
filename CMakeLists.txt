@@ -2213,6 +2213,12 @@ add_test(NAME "gpu/always-gpu-parity-full-language"
             -DCC_NAME=CC_gcc -DGCC_MAJOR=15)
 set_tests_properties("gpu/always-gpu-parity-full-language" PROPERTIES
     FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 1800)
+add_test(NAME "gpu/f64-oracle-soundness"
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/gpu/f64_oracle_soundness.sh"
+            "$<TARGET_FILE:mcc>" "${CMAKE_BINARY_DIR}"
+            "${CMAKE_BINARY_DIR}/f64-oracle-soundness")
+set_tests_properties("gpu/f64-oracle-soundness" PROPERTIES
+    FIXTURES_REQUIRED MCC_BUILT SKIP_RETURN_CODE 77 TIMEOUT 600)
 if(TARGET mcc_mccdefs)
     add_dependencies(mcc mcc_mccdefs)
 endif()
