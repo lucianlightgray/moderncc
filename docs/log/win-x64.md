@@ -4,6 +4,20 @@ Moved out of `TODO.md` In-progress zone per INSTRUCTIONS.md rev-2 §4.1. Older
 per-session checkpoints (pre-2026-08-21T20:00Z) live in git history on the
 `## In progress — win-x64` TODO zone; the durable facts are consolidated here.
 
+## 2026-08-22T16:05Z -- T-lin-10510 VARIABLE-COUNT funnel slice DONE (d236d85f1) — loop continuation
+
+Continued the /goal loop after landing the const funnel slice (per §10.11 a completed slice re-enters the loop; the stop-hook correctly flagged that a slice-completion is not an empty-poll STOP). §11 selection: tier-5 [S], P2 mission priority (P1 exhausted fleet-wide), highest locality — I hold the hot, verified idiom substrate and no other session is near it. Reclaimed T-lin-10510.
+
+**First finding (free win):** the CONSTANT funnel family is already complete. `(x>>C)|(y<<(W-C))` needs no separate recognizer — OR is commutative, so `ast_funnel_try` treats the SHL term `y<<(W-C)` as dest and the SHR term `x>>C` as src, folding to `shld y,x,(W-C)` = same value. Verified `(x>>8)|(y<<24)` → `shldl $0x18,%ecx,%eax`. So a const-SHRD recognizer would be redundant.
+
+**Landed (d236d85f1):** variable-count funnel-shl `(x<<n)|(y>>(W-n))` (n a Ref, right count `W-n`, distinct unsigned x,y, W∈{32,64}) → `shld dest,src,cl` (0F A5 /r). New `ast_funnel_var_try` (x86_64-gated, chained after `ast_funnel_try`; same-base is a variable rotate consumed upstream by `ast_rotate_var_try`) folds to a **3-child** AST_OP_FSHL (child0=x=dest, child1=y=src, child2=n=count; nchild==3 marks the variable form). The FSHL emit branch now dispatches on nchild (3→gen_shld_var, else const gen_shld).
+
+**The crux — a 3-operand register emit.** SHLD-by-CL needs dest+src in GP regs AND the count in CL simultaneously; gv2 only handles two. Solution in `gen_shld_var`: `gv(RC_RCX)` pins n→RCX (n then stays a live vstack entry, so subsequent GP loads avoid RCX), then `vswap;gv(RC_INT);vswap` materializes y and `vrotb(3);gv(RC_INT);vrott(3)` rotates x to the top for its GP load and restores stack order [x,y,n]; emit with rm=dest(x)/reg=src(y), CL implicit; `vtop-=2` pops n+y leaving dest. The vrotb/vrott primitives (mccgen.c) rotate the vstack — vrotb(3) brings vtop[-2] to the top, vrott(3) restores it.
+
+**VERIFY (native x86_64-PE, MSVC cmake-release, rebuilt on the merged tree over lin's T-lin-10470 runtime-trip loop-vec):** `shldl %cl,%eax,%edx` / `shldq %cl,%rax,%rdx`; all three flag arms byte-identical to gcc-O2 across a shift-amount sweep (n=1,8,15,22,29 / 1,14,27,40,53) on both widths; negatives DECLINE (signed base, mismatched count vars n≠m, same-base→`roll %cl`, the funnel-SHR/shrd shape, `-fno-`→scalar); optfire `rotate` cell extended (vfnl/vfnl64) PASS; `bswap`+`slp` no-regress; o0/On-neutral (default-off); cross-arch clean by construction (`ast_funnel_var_try`/`gen_shld_var` both `#if MCC_TARGET_X86_64`). The debug (llvm-mingw) build again gave fast disasm confirmation (`0f a5 c2`) before the ~9-min MSVC release run — its exes still segfault, run-verify stays on cmake-release.
+
+**Funnel status:** const (both shl/shr shapes) + variable-shl lower to SHLD. Sole remaining funnel gap = the SHRD shape for a VARIABLE count `(x>>n)|(y<<(W-n))` → `shrd reg,cl` (needs a mirror `ast_funnel_varr_try` + `gen_shrd_var`, `0F AD /r`) — a further clean win-native slice. arm64 EXTR + i386 are other-box legs.
+
 ## 2026-08-22T15:50Z -- T-lin-10510 FUNNEL-SHIFT-LEFT slice DONE (0ac9f006f) — finished the prior session's banked WIP
 
 Resumed under /goal ("finish previous session's work"). The one incomplete item from the handoff below was the **constant funnel-shift** `(x<<C)|(y>>(W-C))`→x86 `shld`. Re-derived it clean on the HEAD Windows tree per the DETAILS resume map (the WIP source lived ONLY in the base-pinned WSL clone — I never touched it; re-splice-on-HEAD, never whole-file-copy the diverged clone).
