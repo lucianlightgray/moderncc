@@ -61,3 +61,12 @@ that sh / python. GOTCHA: `git commit -m @'...'@` here-strings mangle multi-line
 apostrophe messages under PowerShell 5.1 and an autostash on a same-command
 `pull --rebase` can split a commit — use `git commit -F <file>` and pull/push as
 separate commands.
+
+
+## 2026-08-22T02:15Z — T-lin-10480 part 4 (win-PE typecov -run leg, P1) + T-win-50053 cross-build regression fix
+
+/goal loop. Pulled lin's coop-M:N fiber-park rework (3177c67a, T-lin-10525) — mcc unaffected (runtime header only); smoked cli/coop_mn_win32_multiworker GREEN on native PE (lin's request; the Win32-Fibers path just worked).
+
+**T-lin-10480 part (4) DONE (7f9a33cf, DETAILS#t-lin-10480-typecov-x86_64-pe).** Picked by GOAL P1 + §11: win's optfire differ+counter -run legs already close P1(a+b) for optfire; the ast typecov family (cse/dse/licm/pre) was the last native-PE P1 leg. Added an if(WIN32) block registering ast/{cse,dse,licm,pre}-typecov-x86_64-pe, reusing the shared scripts + the MCC_TYPECOV_RUN env (asserts -O0-run == -O<hi>-run == AOT-O0) mac built. MEASURED native PE: cse=6/dse=2/ltemp=4/pre=4, each -run==AOT-O0; `_noi128` subjects (PE has no __int128); no -B/-I needed (build-dir mcc.exe resolves its runtime). 4/4 green, cli 477/477, o0-neutral test-registration. T-lin-10480 re-PARKED (parts 2/3 shared/lin-domain remain).
+
+**T-win-50053 cross-build regression FIXED (2d9c6399, DETAILS#t-win-50053-cross-build-fix).** While running mcc_cross_build during the typecov verify, found the loop-idiom pass I built in T-win-50053 broke the cross build: `ast_loopidiom_apply` (all-targets) calls `ast_promo_size_unknown`, defined only inside the `#if X86_64||ARM64||RISCV64` guard (mccast.c:4455) → LNK2019 building mcc-arm on arm32/i386. Broken on ALL fleets since ca2199e2 — the loop-idiom slices verified only native x86_64-PE. Fix = relocate the tiny arch-independent helper out of the guard (o0-neutral static-fn move). Verified: mcc_cross_build GREEN, ast/rir-parity-x86_64-win32 GREEN (cross mcc healthy), typecov-x86_64-pe 4/4, cli 477/477. FYI'd lin+mac (2d9c6399): pull before any cross build. T-win-50053 re-OPENED (feature slices init≠0 / restrict-ptr memcpy / parity-wiring remain). LESSON: an unguarded function calling into an arch-`#if` region is a cross-build-only link break native verification misses — run mcc_cross_build when adding such calls.
