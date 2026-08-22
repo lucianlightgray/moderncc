@@ -4,6 +4,14 @@ Moved out of `TODO.md` In-progress zone per INSTRUCTIONS.md rev-2 §4.1. Older
 per-session checkpoints (pre-2026-08-21T20:00Z) live in git history on the
 `## In progress — win-x64` TODO zone; the durable facts are consolidated here.
 
+## 2026-08-22T15:01Z -- SESSION HANDOFF: SLP native-PE verify + funnel-shift WIP banked (user-directed wrap-up)
+
+After completing the bswap+rotate idiom family, continued the loop: (1) ran the full optfire-x86_64 suite on native win-PE = **82/82** (incl. lin's just-landed SLP T-lin-10470/7efcc0f12) — the win-x64 role, confirming the fleet's SLP/GVN/unroll + my bswap/rotate all fire+run on the box lin/mac can't run; addressed lin's FYI. (2) Started a **constant funnel-shift** slice `(x<<C)|(y>>(W-C))`→`shld` (gated under the EXISTING -frotate-idiom to avoid more mccopt.h/differs.txt churn after the SLP collision). RECOGNIZER WORKS (FUN_DBG confirmed MATCH) but `gen_shld`'s x86 encoding is wrong (emits `or %cl,%cl` not shld) — NOT committed (broken codegen). Precise resume map in DETAILS (recognizer done; gen_shld two-register SHLD encoding needs a hexdump-vs-gcc fix). The WIP is uncommitted in the WSL clone only.
+
+USER wrapped the session here. Windows tree clean, all 6 deliverables pushed. NET: bswap+rotate idiom family (P2 parity) complete; fleet's optimizer work confirmed win-PE-clean; funnel-shift 95% (recognizer done, one gen_shld encoding bug). Next session: fix gen_shld (DETAILS map), then variable funnel / SHRD mirror, or the bigger follow-ups (popcount-loop, SWAR) / other-box legs (arm64=mac, i386).
+
+FLEET-CHURN LESSON (reinforced): `src/mccopt.h`'s MCC_OPT_LIST tail and `tests/optfire/differs.txt` are hot shared append-points — every new optimizer knob+cell risks a rebase collision with concurrent OPT-ROUND2 work (lin's SLP botched-merge db445f7ea was mine). Mitigations that worked this session: gate a related feature under an EXISTING knob (funnel under -frotate-idiom = zero mccopt.h/differs.txt rows), and re-splice diffs onto HEAD rather than whole-file-copy the base-pinned WSL clone.
+
 ## 2026-08-22T14:44Z -- T-lin-10510 rotate-right mirror DONE — bswap+rotate idiom family COMPLETE (P2, 4d3a26990)
 
 Continued the loop. Completed the rotate parity with the variable rotate-RIGHT mirror `(x>>n)|(x<<(W-n))` → `ror reg,cl`. New unary op AST_OP_ROTR (0x40024) + gen_rotr_var (the 0xd3 shift-by-CL group with `/1` = ror, vs gen_rotl_var's `/0`); 2-child node, recognizer mirrors the var-left one with SHL/SHR roles swapped. So all four rotate spellings now fold: const/variable × left/right, plus bswap. Verified x86_64-linux (optfire differ all-4-forms PASS, `ror %cl,%eax` emitted, vror/vror64==gcc, ^exec 375/375, 4 cross-builds) + native x86_64-PE (optfire-x86_64/rotate PASS). Code **4d3a26990**.
