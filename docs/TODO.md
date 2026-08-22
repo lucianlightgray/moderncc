@@ -70,7 +70,7 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
 - [ ] T-lin-10470 [S] OPTIMIZER GAP: auto-VECTORIZATION / SLP — no mcc knob (loop + straight-line SIMD). Large; gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10471 [S] OPTIMIZER GAP: general GVN (global value numbering) beyond the existing CSE/PRE. Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
-      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
+      OWNER: mac-arm64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-22T01:12Z | DEPS: — | NOTE: claiming a bounded GVN slice — relational-commutative CSE (a==b ≡ b==a, a!=b ≡ b!=a) behind a new default-off -fgcse-comm-rel; mcc's CSE already does +*&|^ commutativity but not EQ/NE.
 - [ ] T-lin-10473 [S] OPTIMIZER GAP: interprocedural const-prop / dead-arg elimination / function specialization+cloning (AOT; mcc only has JIT-side specfold). Gap from T-lin-10468. REF: DETAILS.md#t-lin-10468-optimizer-gaps
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T15:11Z | DEPS: —
 - [ ] T-lin-10474 [S] OPTIMIZER GAP: escape-analysis → heap-to-stack allocation + ALLOCATION SINKING (LuaJIT SINK / Julia / Dart style; the reachable high-value novel opt for AOT C per T-lin-10467 langs-11-20). REF: DETAILS.md#t-lin-10467-langs-11-20
