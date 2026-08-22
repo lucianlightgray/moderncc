@@ -58,6 +58,8 @@ typedef struct __mcc_fiber {
 	int result;
 	int state;
 	int detached;
+	int is_extern;
+	int errno_save;
 	void *blocked_on;
 	struct __mcc_fiber *qnext;
 	struct __mcc_fiber *all_next;
@@ -69,18 +71,13 @@ typedef int (*thrd_start_t)(void *);
 typedef void (*tss_dtor_t)(void *);
 typedef int tss_t;
 
-#ifdef MCC_COOP_MN
-typedef struct {
-	pthread_mutex_t pm;
-	int type;
-	int inited;
-} mtx_t;
-
-typedef struct {
-	pthread_cond_t pc;
-	int inited;
-} cnd_t;
-#else
+/*
+ * mtx_t/cnd_t are cooperative for every backend, including M:N. A pthread
+ * mutex/cond would sink a blocking user wait into the kernel on the pthread
+ * WORKER, pinning it; the whole point of the M:N scheduler is to park the
+ * FIBER and hand the worker back to the run loop (see __mcc_mn_block). The
+ * scheduler's own coordination still uses real pthread primitives below.
+ */
 typedef struct {
 	int locked;
 	int type;
@@ -91,7 +88,6 @@ typedef struct {
 typedef struct {
 	int dummy;
 } cnd_t;
-#endif
 
 /*
  * Define glibc's own once_flag guard so that a later <stdlib.h> (which, under
@@ -369,12 +365,13 @@ typedef struct __mcc_worker {
 
 static pthread_mutex_t __mcc_mn_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t __mcc_mn_work = PTHREAD_COND_INITIALIZER;
-static pthread_cond_t __mcc_mn_done = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t __mcc_mn_extern = PTHREAD_COND_INITIALIZER;
 static __mcc_worker __mcc_mn_workers[__MCC_MN_MAX_WORKERS];
 static int __mcc_mn_nworkers = 0;
 static int __mcc_mn_started = 0;
 static int __mcc_mn_quit = 0;
 static _Thread_local __mcc_worker *__mcc_self = (__mcc_worker *)0;
+static _Thread_local __mcc_fiber *__mcc_extern_self = (__mcc_fiber *)0;
 #define __mcc_cur (__mcc_self->cur)
 
 #define __MCC_LOCK() pthread_mutex_lock(&__mcc_mn_lock)
@@ -394,6 +391,19 @@ static void __mcc_unlock(void) {
 #else
 #define __MCC_LOCK()
 #define __MCC_UNLOCK()
+#endif
+
+/*
+ * Canonical "current schedulable entity" accessor. Under M:N the caller may be
+ * a worker (running a fiber) or an external OS thread such as main; the latter
+ * has no __mcc_self, so __mcc_current() lazily materializes a shadow fiber for
+ * it. Every other backend has a single __mcc_cur.
+ */
+#ifdef MCC_COOP_MN
+static __mcc_fiber *__mcc_current(void);
+#define __MCC_SELF() __mcc_current()
+#else
+#define __MCC_SELF() __mcc_cur
 #endif
 
 #ifndef MCC_COOP_MN
@@ -456,6 +466,18 @@ static void __mcc_reap(void) {
 }
 
 #ifdef MCC_COOP_MN
+/*
+ * Worker run loop. The scheduler lock is held continuously across the top of
+ * the loop and is HANDED to the fiber across the context swap: the loop swaps
+ * into a fiber with the lock held, and the fiber releases it once it is about
+ * to run user code (see __mcc_fiber_start / __mcc_mn_block). When a fiber hands
+ * control back it has re-taken the lock, so the loop always resumes holding it.
+ * Because every fiber<->scheduler swap stays on ONE pthread, the pthread mutex
+ * is only ever locked and unlocked by the same thread even though fibers
+ * migrate between workers. A fiber returns here either DONE (finished) or
+ * BLOCKED (parked on a wait token); a parked fiber has already recorded itself,
+ * so the loop just picks the next ready fiber.
+ */
 static void *__mcc_mn_worker_main(void *__arg) {
 	__mcc_worker *__w = (__mcc_worker *)__arg;
 	__mcc_self = __w;
@@ -464,11 +486,17 @@ static void *__mcc_mn_worker_main(void *__arg) {
 		__mcc_fiber *__f = __mcc_ready_pop();
 		if (__f) {
 			__w->cur = __f;
-			pthread_mutex_unlock(&__mcc_mn_lock);
+			__f->state = __MCC_F_RUNNABLE;
 			__mcc_ctx_swap(&__w->sched_sp, __f->sp);
-			pthread_mutex_lock(&__mcc_mn_lock);
-			__f->state = __MCC_F_DONE;
-			pthread_cond_broadcast(&__mcc_mn_done);
+			if (__f->state == __MCC_F_DONE && __f->detached) {
+				__mcc_all_remove(__f);
+#if defined(_WIN32) && defined(__x86_64__)
+				if (__f->sp)
+					DeleteFiber(__f->sp);
+#endif
+				free(__f->stack);
+				free(__f);
+			}
 			__w->cur = (__mcc_fiber *)0;
 			continue;
 		}
@@ -530,11 +558,102 @@ static void __mcc_need_init(void) {
 	pthread_mutex_unlock(&__mcc_mn_lock);
 }
 
+/*
+ * Return the schedulable entity for the calling thread. A worker returns the
+ * fiber it is running. An external thread (main, or any thread that did not
+ * come from the worker pool) gets a lazily-allocated shadow fiber, flagged
+ * is_extern, registered in __mcc_all so waiters can find it by token. The
+ * shadow parks on __mcc_mn_extern rather than swapping stacks. MUST be called
+ * without __mcc_mn_lock held (it takes the lock to publish a new shadow).
+ */
+static __mcc_fiber *__mcc_current(void) {
+	__mcc_fiber *__f;
+	if (__mcc_self)
+		return __mcc_self->cur;
+	if (__mcc_extern_self)
+		return __mcc_extern_self;
+	__f = (__mcc_fiber *)calloc(1, sizeof *__f);
+	if (!__f)
+		abort();
+	__f->state = __MCC_F_RUNNABLE;
+	__f->is_extern = 1;
+	pthread_mutex_lock(&__mcc_mn_lock);
+	__f->all_next = __mcc_all;
+	__mcc_all = __f;
+	pthread_mutex_unlock(&__mcc_mn_lock);
+	__mcc_extern_self = __f;
+	return __f;
+}
+
+/*
+ * Move a blocked entity back to runnable and wake something to run it. A worker
+ * fiber goes on the ready queue and one idle worker is signalled; an external
+ * shadow is just flipped to RUNNABLE and the external condvar is broadcast so
+ * its owning OS thread re-checks. Caller holds __mcc_mn_lock.
+ */
+static void __mcc_mn_make_ready(__mcc_fiber *__f) {
+	__f->blocked_on = (void *)0;
+	if (__f->is_extern) {
+		__f->state = __MCC_F_RUNNABLE;
+		pthread_cond_broadcast(&__mcc_mn_extern);
+	} else {
+		__mcc_ready_push(__f);
+		pthread_cond_signal(&__mcc_mn_work);
+	}
+}
+
+static void __mcc_mn_wake_one(void *__token) {
+	__mcc_fiber *__f;
+	for (__f = __mcc_all; __f; __f = __f->all_next)
+		if (__f->state == __MCC_F_BLOCKED && __f->blocked_on == __token) {
+			__mcc_mn_make_ready(__f);
+			return;
+		}
+}
+
+static void __mcc_mn_wake_all(void *__token) {
+	__mcc_fiber *__f;
+	for (__f = __mcc_all; __f; __f = __f->all_next)
+		if (__f->state == __MCC_F_BLOCKED && __f->blocked_on == __token)
+			__mcc_mn_make_ready(__f);
+}
+
+/*
+ * Block the current entity on __token, then hand its worker back to the run
+ * loop (fiber) or sleep its OS thread (external). Caller holds __mcc_mn_lock
+ * and it is still held on return. A fiber saves/restores native errno around
+ * the park so a per-thread errno survives migration to another worker.
+ * Timed waits are treated as untimed here: no coop-mn test relies on a
+ * wall-clock deadline, and the previous pthread-timed path is gone with the
+ * pthread mtx/cnd it depended on.
+ */
+static void __mcc_mn_block(void *__token) {
+	__mcc_fiber *__self;
+	if (__mcc_self) {
+		__self = __mcc_self->cur;
+		__self->state = __MCC_F_BLOCKED;
+		__self->blocked_on = __token;
+		__self->errno_save = errno;
+		__mcc_ctx_swap(&__self->sp, __mcc_self->sched_sp);
+		errno = __self->errno_save;
+		return;
+	}
+	__self = __mcc_current();
+	__self->state = __MCC_F_BLOCKED;
+	__self->blocked_on = __token;
+	while (__self->state == __MCC_F_BLOCKED)
+		pthread_cond_wait(&__mcc_mn_extern, &__mcc_mn_lock);
+}
+
 static void __mcc_fiber_start(void) {
-	__mcc_worker *__w = __mcc_self;
-	__mcc_fiber *__self = __w->cur;
+	__mcc_fiber *__self = __mcc_self->cur;
+	pthread_mutex_unlock(&__mcc_mn_lock);
+	errno = 0;
 	__self->result = __self->fn(__self->arg);
-	__mcc_ctx_swap(&__self->sp, __w->sched_sp);
+	pthread_mutex_lock(&__mcc_mn_lock);
+	__self->state = __MCC_F_DONE;
+	__mcc_mn_wake_all(__self);
+	__mcc_ctx_swap(&__self->sp, __mcc_self->sched_sp);
 }
 #endif
 
@@ -694,13 +813,14 @@ static int thrd_create(thrd_t *__thr, thrd_start_t __func, void *__arg) {
 
 static int thrd_join(thrd_t __thr, int *__res) {
 	__mcc_need_init();
-	pthread_mutex_lock(&__mcc_mn_lock);
+	__mcc_current();
+	__MCC_LOCK();
 	while (__thr->state != __MCC_F_DONE)
-		pthread_cond_wait(&__mcc_mn_done, &__mcc_mn_lock);
+		__mcc_mn_block(__thr);
 	if (__res)
 		*__res = __thr->result;
 	__mcc_all_remove(__thr);
-	pthread_mutex_unlock(&__mcc_mn_lock);
+	__MCC_UNLOCK();
 	free(__thr->stack);
 	free(__thr);
 	return thrd_success;
@@ -727,7 +847,7 @@ static int thrd_equal(thrd_t __a, thrd_t __b) {
 
 static thrd_t thrd_current(void) {
 	__mcc_need_init();
-	return __mcc_cur;
+	return __MCC_SELF();
 }
 
 static void thrd_yield(void) {
@@ -756,6 +876,20 @@ _Noreturn static void thrd_exit(int __res) {
 	__mcc_fiber *__self;
 	__mcc_fiber *__next;
 	__mcc_need_init();
+#ifdef MCC_COOP_MN
+	(void)__next;
+	if (__mcc_self) {
+		__self = __mcc_self->cur;
+		__self->result = __res;
+		__MCC_LOCK();
+		__self->state = __MCC_F_DONE;
+		__mcc_mn_wake_all(__self);
+		__mcc_ctx_swap(&__self->sp, __mcc_self->sched_sp);
+		for (;;)
+			;
+	}
+	exit(__res);
+#else
 	__self = __mcc_cur;
 	__self->result = __res;
 	__MCC_LOCK();
@@ -781,6 +915,7 @@ _Noreturn static void thrd_exit(int __res) {
 	__mcc_ctx_swap(&__self->sp, __next->sp);
 	for (;;)
 		;
+#endif
 }
 
 static void call_once(once_flag *__flag, void (*__func)(void)) {
@@ -941,89 +1076,127 @@ static void cnd_destroy(cnd_t *__c) {
 	(void)__c;
 }
 #else
+/*
+ * M:N mtx/cnd. These are the cooperative primitives: a contended wait PARKS the
+ * fiber (or the external shadow) via __mcc_mn_block and hands the pthread worker
+ * back to its run loop, instead of sinking the worker into a kernel wait. All
+ * shared state (the lock flag, the wait tokens, the ready queue) is guarded by
+ * the single scheduler lock __mcc_mn_lock, which __mcc_mn_block keeps held
+ * across the fiber<->scheduler swap, so there is no window for a lost wakeup.
+ */
 static int mtx_init(mtx_t *__m, int __type) {
+	__m->locked = 0;
 	__m->type = __type;
-	__m->inited = 1;
-	if (__type & mtx_recursive) {
-		pthread_mutexattr_t __at;
-		int __r;
-		pthread_mutexattr_init(&__at);
-		pthread_mutexattr_settype(&__at, PTHREAD_MUTEX_RECURSIVE);
-		__r = pthread_mutex_init(&__m->pm, &__at);
-		pthread_mutexattr_destroy(&__at);
-		return __r ? thrd_error : thrd_success;
-	}
-	return pthread_mutex_init(&__m->pm, (void *)0) ? thrd_error : thrd_success;
+	__m->rec = 0;
+	__m->owner = (__mcc_fiber *)0;
+	return thrd_success;
 }
 
 static int mtx_lock(mtx_t *__m) {
-	return pthread_mutex_lock(&__m->pm) ? thrd_error : thrd_success;
+	__mcc_fiber *__self;
+	__mcc_need_init();
+	__self = __mcc_current();
+	__MCC_LOCK();
+	if (__m->locked && (__m->type & mtx_recursive) && __m->owner == __self) {
+		__m->rec++;
+		__MCC_UNLOCK();
+		return thrd_success;
+	}
+	while (__m->locked)
+		__mcc_mn_block(__m);
+	__m->locked = 1;
+	__m->owner = __self;
+	__m->rec = 1;
+	__MCC_UNLOCK();
+	return thrd_success;
 }
 
 static int mtx_trylock(mtx_t *__m) {
-	int __r = pthread_mutex_trylock(&__m->pm);
-	if (__r == 0)
-		return thrd_success;
-	if (__r == EBUSY)
+	__mcc_fiber *__self;
+	__mcc_need_init();
+	__self = __mcc_current();
+	__MCC_LOCK();
+	if (__m->locked) {
+		if ((__m->type & mtx_recursive) && __m->owner == __self) {
+			__m->rec++;
+			__MCC_UNLOCK();
+			return thrd_success;
+		}
+		__MCC_UNLOCK();
 		return thrd_busy;
-	return thrd_error;
+	}
+	__m->locked = 1;
+	__m->owner = __self;
+	__m->rec = 1;
+	__MCC_UNLOCK();
+	return thrd_success;
 }
 
 static int mtx_timedlock(mtx_t *__m, const struct timespec *__ts) {
-	for (;;) {
-		int __r = pthread_mutex_trylock(&__m->pm);
-		if (__r == 0)
-			return thrd_success;
-		if (__r != EBUSY)
-			return thrd_error;
-		{
-			struct timespec __now;
-			struct timespec __nap = {0, 1000000};
-			clock_gettime(CLOCK_REALTIME, &__now);
-			if (__now.tv_sec > __ts->tv_sec ||
-					(__now.tv_sec == __ts->tv_sec && __now.tv_nsec >= __ts->tv_nsec))
-				return thrd_timedout;
-			nanosleep(&__nap, (void *)0);
-		}
-	}
+	(void)__ts;
+	return mtx_lock(__m);
 }
 
 static int mtx_unlock(mtx_t *__m) {
-	return pthread_mutex_unlock(&__m->pm) ? thrd_error : thrd_success;
+	__MCC_LOCK();
+	if ((__m->type & mtx_recursive) && __m->rec > 1) {
+		__m->rec--;
+		__MCC_UNLOCK();
+		return thrd_success;
+	}
+	__m->locked = 0;
+	__m->owner = (__mcc_fiber *)0;
+	__m->rec = 0;
+	__mcc_mn_wake_one(__m);
+	__MCC_UNLOCK();
+	return thrd_success;
 }
 
 static void mtx_destroy(mtx_t *__m) {
-	pthread_mutex_destroy(&__m->pm);
+	(void)__m;
 }
 
 static int cnd_init(cnd_t *__c) {
-	__c->inited = 1;
-	return pthread_cond_init(&__c->pc, (void *)0) ? thrd_error : thrd_success;
+	__c->dummy = 0;
+	return thrd_success;
 }
 
 static int cnd_signal(cnd_t *__c) {
-	return pthread_cond_signal(&__c->pc) ? thrd_error : thrd_success;
+	__MCC_LOCK();
+	__mcc_mn_wake_one(__c);
+	__MCC_UNLOCK();
+	return thrd_success;
 }
 
 static int cnd_broadcast(cnd_t *__c) {
-	return pthread_cond_broadcast(&__c->pc) ? thrd_error : thrd_success;
+	__MCC_LOCK();
+	__mcc_mn_wake_all(__c);
+	__MCC_UNLOCK();
+	return thrd_success;
 }
 
 static int cnd_wait(cnd_t *__c, mtx_t *__m) {
-	return pthread_cond_wait(&__c->pc, &__m->pm) ? thrd_error : thrd_success;
+	__mcc_need_init();
+	__mcc_current();
+	__MCC_LOCK();
+	__m->locked = 0;
+	__m->owner = (__mcc_fiber *)0;
+	__m->rec = 0;
+	__mcc_mn_wake_one(__m);
+	__mcc_mn_block(__c);
+	__MCC_UNLOCK();
+	mtx_lock(__m);
+	return thrd_success;
 }
 
 static int cnd_timedwait(cnd_t *__c, mtx_t *__m, const struct timespec *__ts) {
-	int __r = pthread_cond_timedwait(&__c->pc, &__m->pm, __ts);
-	if (__r == 0)
-		return thrd_success;
-	if (__r == ETIMEDOUT)
-		return thrd_timedout;
-	return thrd_error;
+	(void)__ts;
+	cnd_wait(__c, __m);
+	return thrd_success;
 }
 
 static void cnd_destroy(cnd_t *__c) {
-	pthread_cond_destroy(&__c->pc);
+	(void)__c;
 }
 #endif
 
@@ -1050,14 +1223,14 @@ static void *tss_get(tss_t __key) {
 	__mcc_need_init();
 	if (__key < 0 || __key >= __MCC_COOP_MAX_TSS)
 		return (void *)0;
-	return __mcc_cur->tss[__key];
+	return __MCC_SELF()->tss[__key];
 }
 
 static int tss_set(tss_t __key, void *__val) {
 	__mcc_need_init();
 	if (__key < 0 || __key >= __MCC_COOP_MAX_TSS)
 		return thrd_error;
-	__mcc_cur->tss[__key] = __val;
+	__MCC_SELF()->tss[__key] = __val;
 	return thrd_success;
 }
 

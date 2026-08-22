@@ -84,14 +84,6 @@ for src in "$ROOT"/tests/benchmarks/*.c; do
 			mcc-*) olevels="0 1 2 3 4" ;;
 			*)     olevels="0 1 2 3" ;;
 		esac
-		# known-unrunnable (backend limitation, not a kernel bug): coro_prime_sieve
-		# spawns one fiber per prime; mcc-coop-mn (M:N) blocks the worker on a
-		# channel wait instead of parking the fiber, so a pipeline deeper than
-		# nproc deadlocks (T-lin-10525). Skip that one pairing, keep the rest.
-		if [ "$name" = coro_prime_sieve ] && [ "$tc" = mcc-coop-mn ]; then
-			echo "  SKIP $tc (all -O): known M:N deadlock for >nproc-stage pipelines — T-lin-10525"
-			continue
-		fi
 		for o in $olevels; do
 			exe="$WORK/${name}_${tc}_O${o}"
 			case $tc in
