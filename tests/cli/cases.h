@@ -2198,6 +2198,14 @@ static const cli_case_t cli_cases[] = {
 		 "cmp -s {W}/gcr.on.o {W}/gcr.off.o && echo U=same || echo U=fired",
 		 "R=4\nU=fired\n"},
 
+		{"gcse_comm_ord", "",
+		 "printf 'static int h(int a,int b){int t=(a<b);int u=(b>a);int v=(a<=b);int w=(b>=a);return t+u+v+w;}int main(void){return h(5,7)+h(9,3);}\\n' > {W}/gco.c && "
+		 "{MCC} -B{B} -I{I} -O2 -fgcse -fgcse-comm-rel {W}/gco.c -o {W}/gco && {W}/gco; printf 'R=%d\\n' $?; "
+		 "{MCC} -B{B} -I{I} -O2 -fgcse -fgcse-comm-rel -c {W}/gco.c -o {W}/gco.on.o; "
+		 "{MCC} -B{B} -I{I} -O2 -fgcse -fno-gcse-comm-rel -c {W}/gco.c -o {W}/gco.off.o; "
+		 "cmp -s {W}/gco.on.o {W}/gco.off.o && echo U=same || echo U=fired",
+		 "R=4\nU=fired\n"},
+
 		{"pedantic_diagnostics", "",
 		 "printf 'int f(void){ int n=3; struct S{int a;char b[n];int c;} s;"
 		 " s.a=1; s.c=2;"

@@ -7655,6 +7655,20 @@ static int ast_rel_negate(int op) { MCC_TRACE("enter\n");
 	return -1;
 }
 
+static int ast_rel_swap(int op) { MCC_TRACE("enter\n");
+	switch (op) { MCC_TRACE("br\n");
+	case TOK_LT: return TOK_GT;
+	case TOK_GT: return TOK_LT;
+	case TOK_LE: return TOK_GE;
+	case TOK_GE: return TOK_LE;
+	case TOK_ULT: return TOK_UGT;
+	case TOK_UGT: return TOK_ULT;
+	case TOK_ULE: return TOK_UGE;
+	case TOK_UGE: return TOK_ULE;
+	}
+	return -1;
+}
+
 static int ast_bt_bits(int t) { MCC_TRACE("enter\n");
 	switch (t & VT_BTYPE) { MCC_TRACE("br\n");
 	case VT_BYTE: return 8;
@@ -10870,6 +10884,14 @@ static int ast_cse_same(AstArena *a, AstLocal x, AstLocal y) { MCC_TRACE("enter\
 			ast_kind(a, y) == AST_Binary && ast_nchild(a, x) == 2 &&
 			ast_nchild(a, y) == 2 && ast_op(a, x) == ast_op(a, y) &&
 			ast_cse_commutative_op(ast_op(a, x)) && ast_type_t(a, x) == ast_type_t(a, y)) { MCC_TRACE("br\n");
+		AstLocal x0 = ast_child(a, x, 0), x1 = ast_child(a, x, 1);
+		AstLocal y0 = ast_child(a, y, 0), y1 = ast_child(a, y, 1);
+		return ast_ident_same(a, x0, y1) && ast_ident_same(a, x1, y0);
+	}
+	if (ast_cse_comm_env && ast_cse_comm_rel_env && ast_kind(a, x) == AST_Binary &&
+			ast_kind(a, y) == AST_Binary && ast_nchild(a, x) == 2 &&
+			ast_nchild(a, y) == 2 && ast_rel_swap(ast_op(a, x)) == ast_op(a, y) &&
+			ast_type_t(a, x) == ast_type_t(a, y)) { MCC_TRACE("br\n");
 		AstLocal x0 = ast_child(a, x, 0), x1 = ast_child(a, x, 1);
 		AstLocal y0 = ast_child(a, y, 0), y1 = ast_child(a, y, 1);
 		return ast_ident_same(a, x0, y1) && ast_ident_same(a, x1, y0);
