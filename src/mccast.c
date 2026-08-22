@@ -17109,6 +17109,8 @@ static int ast_interchange_apply(AstArena *a, AstLocal outer, AstLocal inner) { 
 }
 
 #define AST_UNROLL_CAP 8
+#define AST_UNROLL_MAXTRIP 32
+#define AST_UNROLL_BUDGET 128
 
 static int ast_body_has_loop(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE)
@@ -17119,6 +17121,19 @@ static int ast_body_has_loop(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 		{ MCC_TRACE("br\n"); if (ast_body_has_loop(a, c))
 			{ MCC_TRACE("br\n"); return 1; } }
 	return 0;
+}
+
+static int ast_subtree_nodes(AstArena *a, AstLocal n, int cap) { MCC_TRACE("enter\n");
+	int cnt;
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	cnt = 1;
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c)) { MCC_TRACE("br\n");
+		cnt += ast_subtree_nodes(a, c, cap);
+		if (cnt > cap)
+			{ MCC_TRACE("br\n"); return cap + 1; }
+	}
+	return cnt;
 }
 
 static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
@@ -17160,6 +17175,21 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 		{ MCC_TRACE("br\n"); return 0; }
 	int64_t bnd = (int64_t)ast_ival(a, blit);
 	int64_t ini = (int64_t)ast_ival(a, ilit);
+	AstLocal incr = li->incr;
+	AstLocal body = li->body;
+	if (body == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_body_has_loop(a, body))
+		{ MCC_TRACE("br\n"); return 0; }
+	int body_nodes = ast_subtree_nodes(a, body, AST_UNROLL_BUDGET);
+	int64_t eff_cap = AST_UNROLL_CAP;
+	if (body_nodes > 0) { MCC_TRACE("br\n");
+		int64_t bcap = (int64_t)AST_UNROLL_BUDGET / body_nodes;
+		if (bcap > AST_UNROLL_MAXTRIP)
+			{ MCC_TRACE("br\n"); bcap = AST_UNROLL_MAXTRIP; }
+		if (bcap > eff_cap)
+			{ MCC_TRACE("br\n"); eff_cap = bcap; }
+	}
 	int64_t trip;
 	if (neq) { MCC_TRACE("br\n");
 		int64_t diff = bnd - ini;
@@ -17170,17 +17200,11 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 		int incl = (cop == TOK_LE || cop == TOK_GE);
 		int64_t base = ascending ? (bnd - ini) : (ini - bnd);
 		int64_t span = base + (incl ? 1 : 0);
-		if (span < 1 || span > AST_UNROLL_CAP * astride)
+		if (span < 1 || span > eff_cap * astride)
 			{ MCC_TRACE("br\n"); return 0; }
 		trip = (span + astride - 1) / astride;
 	}
-	if (trip < 1 || trip > AST_UNROLL_CAP)
-		{ MCC_TRACE("br\n"); return 0; }
-	AstLocal incr = li->incr;
-	AstLocal body = li->body;
-	if (body == AST_NONE)
-		{ MCC_TRACE("br\n"); return 0; }
-	if (ast_body_has_loop(a, body))
+	if (trip < 1 || trip > eff_cap)
 		{ MCC_TRACE("br\n"); return 0; }
 	for (int64_t k = 0; k < trip; k++) { MCC_TRACE("br\n");
 		ast_li_list_insert_before(a, parent, loop, ast_dup_sub(a, body));
