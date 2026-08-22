@@ -4452,6 +4452,16 @@ static void ast_subtree_span(AstArena *a, AstLocal n, int *lo, int *hi) { MCC_TR
 		{ MCC_TRACE("br\n"); ast_subtree_span(a, c, lo, hi); }
 }
 
+/* A struct type the arena recorded without its Sym. type_size() reads
+ * `type->ref->r` unconditionally for VT_STRUCT, so asking it for the size of one
+ * of these is a null dereference inside the compiler rather than a wrong answer.
+ * The promotion planner only ever wants the size to decide how much of the frame
+ * an object covers, and every caller here can treat "unknown" as "covers
+ * everything from its offset up", which is the safe direction. */
+static int ast_promo_size_unknown(const CType *t) { MCC_TRACE("enter\n");
+	return (t->t & VT_BTYPE) == VT_STRUCT && !t->ref;
+}
+
 #if (defined(MCC_TARGET_X86_64) || defined(MCC_TARGET_ARM64) || defined(MCC_TARGET_RISCV64))
 static int ast_promo_reg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 	if (n == AST_NONE || ast_kind(a, n) != AST_Ref)
@@ -4656,16 +4666,6 @@ static void ast_promo_poison_vla_size(AstArena *a, AstLocal n, const int *coff,
 																							 cpoison); }
 		ct = ct.ref->type;
 	}
-}
-
-/* A struct type the arena recorded without its Sym. type_size() reads
- * `type->ref->r` unconditionally for VT_STRUCT, so asking it for the size of one
- * of these is a null dereference inside the compiler rather than a wrong answer.
- * The promotion planner only ever wants the size to decide how much of the frame
- * an object covers, and every caller here can treat "unknown" as "covers
- * everything from its offset up", which is the safe direction. */
-static int ast_promo_size_unknown(const CType *t) { MCC_TRACE("enter\n");
-	return (t->t & VT_BTYPE) == VT_STRUCT && !t->ref;
 }
 
 static int ast_plan_promotion(AstArena *a) { MCC_TRACE("enter\n");
