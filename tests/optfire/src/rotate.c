@@ -28,13 +28,24 @@ static unsigned long long fnl64(unsigned long long x, unsigned long long y)
 {
 	return (x << 40) | (y >> 24);
 }
+static unsigned vfnl(unsigned x, unsigned y, int n)
+{
+	return (x << n) | (y >> (32 - n));
+}
+static unsigned long long vfnl64(unsigned long long x, unsigned long long y,
+                                 int n)
+{
+	return (x << n) | (y >> (64 - n));
+}
 
 int main(void)
 {
 	unsigned v = 0x12345678u, u = 0x9abcdef0u;
 	unsigned long long w = 0x1122334455667788ull, t = 0x99aabbccddeeff00ull;
-	printf("%08x %08x %016llx %08x %08x %016llx %08x %08x %016llx\n", rl(v),
-	       rr(v), rl64(w), vrl(v, 11), vrr(v, 5), vrl64(w, 20), fnl(v, u),
-	       fnlr(v, u), fnl64(w, t));
+	printf("%08x %08x %016llx %08x %08x %016llx %08x %08x %016llx %08x "
+	       "%016llx\n",
+	       rl(v), rr(v), rl64(w), vrl(v, 11), vrr(v, 5), vrl64(w, 20),
+	       fnl(v, u), fnlr(v, u), fnl64(w, t), vfnl(v, u, 7),
+	       vfnl64(w, t, 20));
 	return 0;
 }
