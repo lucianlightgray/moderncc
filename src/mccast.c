@@ -21577,6 +21577,7 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			volatile int ast_replay_completed = 0;
 			const char *volatile ast_unf_why = "abort";
 			const int ast_fn_hole = ast_arena_has_hole(ast_cur);
+			const int ast_fn_vla = ast_jit_body_has_vla();
 			AstAsmEff ast_fn_asm;
 			const int ast_fn_has_asm = ast_body_asm_eff(ast_cur, &ast_fn_asm);
 			ast_fn_asm_live = ast_fn_has_asm;
@@ -22367,7 +22368,8 @@ void ast_func_end(Sym *sym) { MCC_TRACE("enter\n");
 			mcc_state->warn_none = ast_sv_warn;
 			seqp_reset();
 			int keep = faithful ||
-								 (ast_rir_nofb_env && ast_replay_completed && !ast_fn_hole);
+								 (ast_rir_nofb_env && ast_replay_completed && !ast_fn_hole &&
+									!ast_fn_vla);
 			if (keep && !faithful && funcname) { MCC_TRACE("br\n");
 				const char *sk = getenv("MCC_RIR_NOFB_SKIP");
 				if (sk && *sk) { MCC_TRACE("br\n");
