@@ -16381,8 +16381,6 @@ static int ast_body_has_loop(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
 static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
 	if (li->op != 3 || li->unanalyzable || !li->has_iv)
 		{ MCC_TRACE("br\n"); return 0; }
-	if (li->bound_kind != AST_LOOP_BOUND_CONST)
-		{ MCC_TRACE("br\n"); return 0; }
 	int64_t stride = li->iv_stride;
 	if (stride == 0 || stride < -AST_UNROLL_CAP || stride > AST_UNROLL_CAP)
 		{ MCC_TRACE("br\n"); return 0; }
@@ -16398,9 +16396,12 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 	int cop = ast_op(a, cond);
 	int ascending = (cop == TOK_LT || cop == TOK_LE);
 	int descending = (cop == TOK_GT || cop == TOK_GE);
-	if (!ascending && !descending)
+	int neq = (cop == TOK_NE);
+	if (!ascending && !descending && !neq)
 		{ MCC_TRACE("br\n"); return 0; }
 	if ((ascending && stride < 1) || (descending && stride > -1))
+		{ MCC_TRACE("br\n"); return 0; }
+	if (!neq && li->bound_kind != AST_LOOP_BOUND_CONST)
 		{ MCC_TRACE("br\n"); return 0; }
 	if (!ast_ref_is_local_off(a, ast_child(a, cond, 0), li->iv_off))
 		{ MCC_TRACE("br\n"); return 0; }
@@ -16415,12 +16416,20 @@ static int ast_unroll_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n")
 		{ MCC_TRACE("br\n"); return 0; }
 	int64_t bnd = (int64_t)ast_ival(a, blit);
 	int64_t ini = (int64_t)ast_ival(a, ilit);
-	int incl = (cop == TOK_LE || cop == TOK_GE);
-	int64_t base = ascending ? (bnd - ini) : (ini - bnd);
-	int64_t span = base + (incl ? 1 : 0);
-	if (span < 1 || span > AST_UNROLL_CAP * astride)
-		{ MCC_TRACE("br\n"); return 0; }
-	int64_t trip = (span + astride - 1) / astride;
+	int64_t trip;
+	if (neq) { MCC_TRACE("br\n");
+		int64_t diff = bnd - ini;
+		if (diff == 0 || diff % stride != 0)
+			{ MCC_TRACE("br\n"); return 0; }
+		trip = diff / stride;
+	} else { MCC_TRACE("br\n");
+		int incl = (cop == TOK_LE || cop == TOK_GE);
+		int64_t base = ascending ? (bnd - ini) : (ini - bnd);
+		int64_t span = base + (incl ? 1 : 0);
+		if (span < 1 || span > AST_UNROLL_CAP * astride)
+			{ MCC_TRACE("br\n"); return 0; }
+		trip = (span + astride - 1) / astride;
+	}
 	if (trip < 1 || trip > AST_UNROLL_CAP)
 		{ MCC_TRACE("br\n"); return 0; }
 	AstLocal incr = ast_child(a, loop, 1);
