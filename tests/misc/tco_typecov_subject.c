@@ -22,8 +22,13 @@ double fd(int n, double acc){ if(n<=0) return acc; return fd(n-1, acc + (double)
 
 int main(void)
 {
+	/* Call depths are kept modest (<=10000) so the -O0 baseline -- which does
+	 * NOT tco, i.e. recurses to full depth -- does not overflow the stack under
+	 * larger env blocks / emulators (a deeper fq(100000) SIGSEGVs env-marginally
+	 * at -O0; tco firing is structural and depth-independent, so this preserves
+	 * the tco=8 count while making -O0 robust everywhere). */
 	printf("%d %d %d %u %ld %lld %.0f %.0f\n",
 				 (int)fc(10, 0), (int)fs(20, 0), fi(100, 0), fu(50u, 0u),
-				 fl(1000L, 0L), fq(100000LL, 0LL), (double)ff(50, 0.0f), fd(100, 0.0));
+				 fl(1000L, 0L), fq(10000LL, 0LL), (double)ff(50, 0.0f), fd(100, 0.0));
 	return 0;
 }
