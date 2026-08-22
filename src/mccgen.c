@@ -13809,7 +13809,9 @@ static int foldstr_try(Sym *ftype, int nb_args) { MCC_TRACE("enter\n");
 	int i, kind = -1, need, av0, av1;
 	int64_t res;
 
-	if ((!CONST_WANTED || NOEVAL_WANTED) && !constant_p_depth)
+	if (!((CONST_WANTED && !NOEVAL_WANTED) || constant_p_depth ||
+			(!NOEVAL_WANTED && mcc_state->optflag[MCC_OPT_FOLD_STR] != 0 &&
+				mcc_state->optflag[MCC_OPT_FOLD_STR] != MCC_OPT_UNSET)))
 		{ MCC_TRACE("br\n"); return 0; }
 	if (mcc_state->nobuiltin || mcc_state->freestanding)
 		{ MCC_TRACE("br\n"); return 0; }

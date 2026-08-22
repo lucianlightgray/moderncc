@@ -3941,5 +3941,13 @@ static const cli_case_t cli_cases[] = {
 		 "{MCC} -B{B} -I{I} -floop-idiom -O4 -run {W}/lidi.c && echo runon=OK && "
 		 "{MCC} -B{B} -I{I} -O0 -run {W}/lidi.c && echo runo0=OK",
 		 "fire=1/1 noopt=0/0\nrunon=OK\nruno0=OK\n"},
+		{"foldstr_literal_general_o2", "",
+		 "printf 'extern unsigned long strlen(const char*);extern int strcmp(const char*,const char*);extern int memcmp(const void*,const void*,unsigned long);int main(void){if((int)strlen(\"abcde\")!=5)return 1;if(!(strcmp(\"abc\",\"abd\")<0))return 2;if(memcmp(\"abc\",\"abc\",3)!=0)return 3;if(!(strcmp(\"zb\",\"za\")>0))return 4;return 0;}' > {W}/fs.c && "
+		 "{MCC} -B{B} -I{I} -O2 -S {W}/fs.c -o {W}/fs.o2.s 2>/dev/null && "
+		 "{MCC} -B{B} -I{I} -O2 -fno-fold-str -S {W}/fs.c -o {W}/fs.no.s 2>/dev/null && "
+		 "echo o2refs=$(grep -cE 'strlen|strcmp|memcmp' {W}/fs.o2.s) noflag=$([ $(grep -cE 'strlen|strcmp|memcmp' {W}/fs.no.s) -gt 0 ] && echo many || echo none) && "
+		 "{MCC} -B{B} -I{I} -O2 -run {W}/fs.c && echo run2=OK && "
+		 "{MCC} -B{B} -I{I} -O0 -run {W}/fs.c && echo run0=OK",
+		 "o2refs=0 noflag=many\nrun2=OK\nrun0=OK"},
 };
 static const int cli_cases_count = (int)(sizeof(cli_cases) / sizeof(cli_cases[0]));
