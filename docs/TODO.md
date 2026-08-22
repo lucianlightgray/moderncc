@@ -1,5 +1,8 @@
 # TODO
 
+## Operator notes
+- When the user asks to restart the computer: first close/kill the Terminal app running Claude (it blocks the restart), then issue the restart — e.g. a detached `nohup sh -c 'sleep 2; killall Terminal; sleep 2; osascript -e "tell application \"System Events\" to restart"' &`.
+
 ## Sessions
 _Session state is per-session — `docs/sessions/{mac-arm64,lin-x64,win-x64}.md` (Next ID, heartbeat, capabilities, STATUS). No shared table (migration complete 2026-08-21: all three sessions write their own file; the transitional mirror table is dropped per INSTRUCTIONS.md §4.1 / Appendix)._
 
