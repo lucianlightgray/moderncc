@@ -592,7 +592,7 @@ _Session state → `docs/sessions/lin-x64.md`. Narrative checkpoints → `docs/l
 - [ ] T-lin-10508 [S] OPT ROUND2: store-merging — coalesce adjacent narrow stores (same base, contiguous offsets, no aliasing load) into one wide store. chain-store is re-promotion, not this. RIR peephole. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
 - [ ] T-lin-10509 [S] OPT ROUND2: DivRemPairs — variable-divisor a/b + a%b → one idiv (x86 RAX/RDX) / sdiv+msub (arm64). divmagic is const-divisor only. RIR/mccgen peephole. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
-      OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
+      OWNER: lin-x64 | STATE: IN_PROGRESS | SHA: — | TS: 2026-08-22T10:38Z | DEPS: — | CLAIMED (lin-x64 2026-08-22T10:38Z) while mac verifies 10480. Plan: research div/mod RIR+codegen across arches → fuse same-operand a/b + a%b to one division. lin drives x86_64 (idiv RAX/RDX) + riscv64/arm64 via qemu; native arm64-osx (mac) + native-PE (win) handoff for final verify.
 - [ ] T-lin-10510 [S] OPT ROUND2: bit-idiom recognition (rotate/funnel-shift/bswap-from-shifts, popcount/clz/ctz loops → instruction) + SWAR word-at-a-time (GP-register, size-friendly). Distinct from 10469/10470. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
       OWNER: — | STATE: OPEN | SHA: — | TS: 2026-08-21T23:30Z | DEPS: —
 - [ ] T-lin-10511 [S] OPT ROUND2: inline small mem/str builtins for RUNTIME args (memcpy/memset/memcmp → word loads/stores) + expand-memcmp/MergeICmps (foldstr only const-folds literals today). Fires at O0 if ungated → rebank. REF: DETAILS.md#t-lin-10493-optimizer-gaps-round2
