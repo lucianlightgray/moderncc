@@ -1,6 +1,7 @@
 extern int printf(const char *, ...);
 
 float va[8], vb[8], vadd8[8], vsub8[8];
+float ra[10], rb[10], radd10[10];
 double wa[4], wb[4], wmul4[4];
 
 __attribute__((noinline)) static void loop_add(void)
@@ -24,6 +25,13 @@ __attribute__((noinline)) static void loop_dmul(void)
 		wmul4[i] = wa[i] * wb[i];
 }
 
+__attribute__((noinline)) static void loop_add10(void)
+{
+	int i;
+	for (i = 0; i < 10; i++)
+		radd10[i] = ra[i] + rb[i];
+}
+
 int main(int argc, char **argv)
 {
 	int i;
@@ -36,9 +44,14 @@ int main(int argc, char **argv)
 		wa[i] = (double)(argc + i + 1);
 		wb[i] = 3.0;
 	}
+	for (i = 0; i < 10; i++) {
+		ra[i] = (float)(argc + i);
+		rb[i] = (float)(2 * i);
+	}
 	loop_add();
 	loop_sub();
 	loop_dmul();
+	loop_add10();
 	for (i = 0; i < 8; i++)
 		printf("%g ", vadd8[i]);
 	printf("| ");
@@ -47,6 +60,9 @@ int main(int argc, char **argv)
 	printf("| ");
 	for (i = 0; i < 4; i++)
 		printf("%g ", wmul4[i]);
+	printf("| ");
+	for (i = 0; i < 10; i++)
+		printf("%g ", radd10[i]);
 	printf("\n");
 	return 0;
 }

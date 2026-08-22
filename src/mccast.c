@@ -17438,13 +17438,26 @@ static int ast_lvec_mem(AstArena *a, AstLocal m, int iv_off, AstLocal *base,
 	return 1;
 }
 
+static void ast_lvec_setidx(AstArena *a, AstLocal addr, int iv_off, int64_t j,
+														int iv_tt) { MCC_TRACE("enter\n");
+	AstLocal o0 = ast_child(a, addr, 0), o1 = ast_child(a, addr, 1);
+	AstLocal iv = ast_ref_is_local_off(a, o1, iv_off) ? o1 : o0;
+	ast_set_kind(a, iv, AST_Literal);
+	ast_set_op(a, iv, VT_CONST);
+	ast_set_type(a, iv, iv_tt, 0);
+	ast_set_ival(a, iv, (uint64_t)j);
+	ast_set_sym(a, iv, 0);
+	ast_clear_children(a, iv);
+}
+
 static int ast_loopvec_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n");
 #if defined(MCC_TARGET_X86_64) && !defined(MCC_TARGET_PE)
 	AstLocal loop, cond, blit, so, ilit, body, store, lval, val, a0, b0;
 	AstLocal baseC, baseA, baseB, addrC, addrA, addrB, vldC, vldA, vldB, vbin;
-	AstLocal ivref, incrbb, newincr, lv, rhs;
-	int64_t B, ini, trip;
-	int etC, etA, etB, op, esz, lanes;
+	AstLocal ivref, incrbb, newincr, lv, rhs, parent, after;
+	AstLocal tails[8];
+	int64_t B, ini, trip, full, rem, rem_start, j;
+	int etC, etA, etB, op, esz, lanes, ntail, k;
 	uint64_t erC, erA, erB;
 	CType ebase, V, PV;
 	if (li->op != 3 || li->unanalyzable || !li->has_iv || li->iv_stride != 1)
@@ -17502,8 +17515,20 @@ static int ast_loopvec_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n"
 	if (B <= ini)
 		{ MCC_TRACE("br\n"); return 0; }
 	trip = B - ini;
-	if (trip % lanes != 0)
+	full = (trip / lanes) * lanes;
+	if (full == 0)
 		{ MCC_TRACE("br\n"); return 0; }
+	rem = trip - full;
+	rem_start = ini + full;
+	ntail = 0;
+	for (j = rem_start; j < B; j++) { MCC_TRACE("br\n");
+		AstLocal tc = ast_dup_sub(a, store);
+		AstLocal tlv = ast_child(a, tc, 0), tv = ast_child(a, tc, 1);
+		ast_lvec_setidx(a, ast_child(a, tlv, 0), li->iv_off, j, li->iv_tt);
+		ast_lvec_setidx(a, ast_child(a, ast_child(a, tv, 0), 0), li->iv_off, j, li->iv_tt);
+		ast_lvec_setidx(a, ast_child(a, ast_child(a, tv, 1), 0), li->iv_off, j, li->iv_tt);
+		tails[ntail++] = tc;
+	}
 	memset(&ebase, 0, sizeof ebase);
 	ebase.t = etC & (VT_BTYPE | VT_UNSIGNED | VT_LONG);
 	ebase.ref = (Sym *)(uintptr_t)erC;
@@ -17538,6 +17563,14 @@ static int ast_loopvec_apply(AstArena *a, AstLoopInfo *li) { MCC_TRACE("enter\n"
 	ast_add_child(a, newincr, rhs);
 	ast_clear_children(a, incrbb);
 	ast_add_child(a, incrbb, newincr);
+	if (rem > 0) { MCC_TRACE("br\n");
+		ast_set_ival(a, blit, (uint64_t)rem_start);
+		parent = ast_parent(a, loop);
+		after = ast_next_sib(a, loop);
+		for (k = 0; k < ntail; k++) { MCC_TRACE("br\n");
+			ast_li_list_insert_before(a, parent, after, tails[k]);
+		}
+	}
 	return 1;
 #else
 	(void)a;
