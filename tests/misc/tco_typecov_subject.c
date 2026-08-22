@@ -22,13 +22,17 @@ double fd(int n, double acc){ if(n<=0) return acc; return fd(n-1, acc + (double)
 
 int main(void)
 {
-	/* Call depths are kept modest (<=10000) so the -O0 baseline -- which does
-	 * NOT tco, i.e. recurses to full depth -- does not overflow the stack under
-	 * larger env blocks / emulators (a deeper fq(100000) SIGSEGVs env-marginally
-	 * at -O0; tco firing is structural and depth-independent, so this preserves
-	 * the tco=8 count while making -O0 robust everywhere). */
+	/* fq SEEDS the accumulator high (5000000000LL) rather than recursing deep:
+	 * the result 5050005000 stays > 2^32 (exercises the full 64-bit llong range,
+	 * so an int-truncating long-long tco bug is still caught for anti-vacuity),
+	 * while the recursion depth stays 10000 -- the -O0 baseline does NOT tco
+	 * (recurses to full depth), and a >2^32 result via depth alone (sum(1..n) is
+	 * O(n^2) -> n>~93000 frames) would overflow the -O0 stack env-marginally
+	 * (SIGSEGV under larger env blocks / emulators). Seeding decouples "big
+	 * 64-bit result" from "deep recursion"; tco firing is depth-independent so
+	 * tco=8 is unchanged. (Fix + refinement: mac-arm64.) */
 	printf("%d %d %d %u %ld %lld %.0f %.0f\n",
 				 (int)fc(10, 0), (int)fs(20, 0), fi(100, 0), fu(50u, 0u),
-				 fl(1000L, 0L), fq(10000LL, 0LL), (double)ff(50, 0.0f), fd(100, 0.0));
+				 fl(1000L, 0L), fq(10000LL, 5000000000LL), (double)ff(50, 0.0f), fd(100, 0.0));
 	return 0;
 }
