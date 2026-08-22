@@ -4452,6 +4452,14 @@ if(MCC_BUILD_TESTS)
                         "${CMAKE_CURRENT_BINARY_DIR}/pre-typecov")
             set_tests_properties("ast/pre-typecov" PROPERTIES
                 FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120)
+
+            add_test(NAME "ast/sroa-typecov"
+                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/sroa-typecov.sh"
+                        "$<TARGET_FILE:mcc>"
+                        "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_CURRENT_BINARY_DIR}/sroa-typecov")
+            set_tests_properties("ast/sroa-typecov" PROPERTIES
+                FIXTURES_REQUIRED MCC_BUILT TIMEOUT 120)
         else()
             if(MCC_TARGETOS STREQUAL "Darwin")
                 set(_osxhp_why "osx/headers-parse's --min-files floor is measured by the Linux-host mcc parsing runtime/osx/include; a native Darwin mcc reads different type sizes and compiles a smaller corpus subset than that host, so the floor is host-specific and the cell is scoped to the host that banks it")
@@ -4463,7 +4471,7 @@ if(MCC_BUILD_TESTS)
         endif()
 
         if(APPLE)
-            foreach(_tcp IN ITEMS cse dse licm pre)
+            foreach(_tcp IN ITEMS cse dse licm pre sroa)
                 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake-macos-x64/mcc")
                     add_test(NAME "ast/${_tcp}-typecov-x86_64-osx"
                         COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
@@ -4483,14 +4491,16 @@ if(MCC_BUILD_TESTS)
         endif()
 
         if(APPLE AND MCC_CPU STREQUAL "arm64")
-            add_test(NAME "ast/dse-typecov-arm64-osx"
-                COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/dse-typecov.sh"
-                        "$<TARGET_FILE:mcc>"
-                        "${CMAKE_CURRENT_SOURCE_DIR}"
-                        "${CMAKE_CURRENT_BINARY_DIR}/dse-typecov-arm64-osx")
-            set_tests_properties("ast/dse-typecov-arm64-osx" PROPERTIES
-                FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_TYPECOV_RUN=1"
-                LABELS "macho;native" TIMEOUT 120)
+            foreach(_tcp IN ITEMS dse sroa)
+                add_test(NAME "ast/${_tcp}-typecov-arm64-osx"
+                    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
+                            "$<TARGET_FILE:mcc>"
+                            "${CMAKE_CURRENT_SOURCE_DIR}"
+                            "${CMAKE_CURRENT_BINARY_DIR}/${_tcp}-typecov-arm64-osx")
+                set_tests_properties("ast/${_tcp}-typecov-arm64-osx" PROPERTIES
+                    FIXTURES_REQUIRED MCC_BUILT ENVIRONMENT "MCC_TYPECOV_RUN=1"
+                    LABELS "macho;native" TIMEOUT 120)
+            endforeach()
             foreach(_tcp IN ITEMS cse licm pre)
                 add_test(NAME "ast/${_tcp}-typecov-arm64-osx"
                     COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tests/ast/${_tcp}-typecov.sh"
@@ -6720,9 +6730,9 @@ if(MCC_BUILD_TESTS)
         # is x86_64 && !PE). Measured on native PE: cse=6/dse=2/ltemp=4/pre=4, each
         # -run==AOT-O0. DETAILS#t-lin-10480-typecov-jit-run.
         if(WIN32)
-            foreach(_tcp IN ITEMS cse dse licm pre)
+            foreach(_tcp IN ITEMS cse dse licm pre sroa)
                 set(_tcsub "")
-                if(NOT _tcp STREQUAL "dse")
+                if(NOT _tcp STREQUAL "dse" AND NOT _tcp STREQUAL "sroa")
                     set(_tcsub "${CMAKE_CURRENT_SOURCE_DIR}/tests/misc/${_tcp}_typecov_subject_noi128.c")
                 endif()
                 if(MCC_TEST_SH)
