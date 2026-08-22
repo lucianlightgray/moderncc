@@ -10616,8 +10616,9 @@ static int ast_tco_run(AstArena *a, Sym *fsym) { MCC_TRACE("enter\n");
 		if ((ls->r & VT_VALMASK) != VT_LOCAL || !(ls->r & VT_LVAL) || (ls->r & VT_SYM))
 			{ MCC_TRACE("br\n"); return 0; }
 		int t = ls->type.t;
-		if ((!ast_ident_intt(t) &&
-				 !(ast_tco_ptr_env && (t & VT_BTYPE) == VT_PTR)) ||
+		int tbt = t & VT_BTYPE;
+		if ((!ast_ident_intt(t) && tbt != VT_FLOAT && tbt != VT_DOUBLE &&
+				 !(ast_tco_ptr_env && tbt == VT_PTR)) ||
 				(t & VT_VOLATILE) || (t & (VT_ARRAY | VT_VLA)))
 			{ MCC_TRACE("br\n"); return 0; }
 		poff[np] = (int)ls->c;
