@@ -31,7 +31,6 @@ test name, the run-opt `cell:-Olevel` key, etc. Every row needs a `REF` to a
 ```
 builtin_expect_is_code_neutral | ctest | arm64 | arm64-LP64 branch-consumed long-cast QoI: __builtin_expect object-size bloat vs plain if; gated cpu!=arm64 by T-lin-10453 | REF DETAILS.md#t-lin-10453 | since 2026-08-20
 slice/cref-oracle-gcc-c-torture-execute | ctest | windows | device-gated: slicerun times out on pr123625-3.c's GPU warmup dispatch only under the full 1694-prog PARALLEL run with the RTX 2060 active (standalone+1-file+GPU-hidden all finish); mcc SEGV (4823e7f36) + clang-lm harness vacuity (cc74f4449) already fixed -> cell otherwise rich+clean (qualified=1463, 1.2M tuples, 0 miscompiles); only the GPU-dispatch concurrency stall remains | REF DETAILS.md#t-win-50061-slicerun-gpu-dispatch-stall | since 2026-08-22
-rir-coverage | ctest | macos | macho self-corpus coverage floors drifted below bank (3 bodies no longer lowerable: ast_cse_commutative_op/ast_ident_common/pp_need_space; kept-coverage ~88% < banked ~91.5%) after lin T-lin-10471 (accepted ast_cse_commutative_op lowerability loss) + T-lin-10470 loop-vec + win T-lin-10510 idioms; ELF floors rebanked (3dc76230f), macho owed. PROVEN pre-existing via pristine-worktree rebuild (identical fail without any T-mac-30295 change). Fix = careful macho-keys-only rebank (T-mac-30296) | REF DETAILS.md#t-mac-30296-macho-rir-coverage-rebank | since 2026-08-22
 ```
 
 _(Seed row: the exemplar the process review named. Sessions add rows here instead

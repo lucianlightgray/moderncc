@@ -30,38 +30,38 @@
  "self": {
   "O0": {
    "arena": {
-    "bodies": 3420,
-    "body_bytes": 1754434,
-    "coverage": 84.7018,
-    "discarded_bytes": 206693,
+    "bodies": 3450,
+    "body_bytes": 1999244,
+    "coverage": 81.8428,
+    "discarded_bytes": 224408,
     "failed": {
      "elf": 0,
      "macho": 0
     },
-    "gap_bodies": 2,
+    "gap_bodies": 1,
     "gap_bytes": 0,
     "kept_coverage": {
      "elf": 88.2188,
-     "macho": 91.3697
+     "macho": 88.7754
     },
-    "modelled_bytes": 1754434,
+    "modelled_bytes": 1999244,
     "modelled_coverage": 100.0,
     "residual": {
      "elf": 0,
      "macho": 120
     },
-    "text": 1827282,
-    "used_bytes": 1547741
+    "text": 2168592,
+    "used_bytes": 1774836
    },
    "capture": {
-    "bodies": 3420,
+    "bodies": 3450,
     "coverage": 100.0,
-    "faithful_bytes": 1754434,
+    "faithful_bytes": 1999244,
     "residual": {
      "elf": 0,
      "macho": 120
     },
-    "text": 1827282
+    "text": 2168592
    },
    "lowerable": {
     "elf": {
@@ -83,22 +83,22 @@
      "region_nodes_pct": 17.4023
     },
     "macho": {
-     "big_region_nodes_pct": 5.9371,
+     "big_region_nodes_pct": 5.9911,
      "blockers": {
       "asm": 0.0,
-      "call": 0.0336,
-      "frame": 0.408,
-      "global": 1.4188,
+      "call": 0.0311,
+      "frame": 0.4328,
+      "global": 1.406,
       "opaque": 0.0,
-      "reg": 0.9464,
-      "type": 0.4565
+      "reg": 1.0232,
+      "type": 0.4827
      },
-     "bodies_pct": 10.176,
-     "bytes_pct": 2.802,
-     "nodes_pct": 42.6305,
-     "nodes_pct_loose": 66.9792,
-     "nodes_pct_strict": 26.1216,
-     "region_nodes_pct": 18.1936
+     "bodies_pct": 10.2742,
+     "bytes_pct": 2.7542,
+     "nodes_pct": 42.4914,
+     "nodes_pct_loose": 67.0375,
+     "nodes_pct_strict": 26.2371,
+     "region_nodes_pct": 18.0384
     },
     "pe": {
      "big_region_nodes_pct": 4.9024,
@@ -122,38 +122,38 @@
   },
   "O1": {
    "arena": {
-    "bodies": 3422,
-    "body_bytes": 1748185,
-    "coverage": 86.4255,
-    "discarded_bytes": 174318,
+    "bodies": 3450,
+    "body_bytes": 1997148,
+    "coverage": 81.177,
+    "discarded_bytes": 238452,
     "failed": {
      "elf": 0,
      "macho": 0
     },
-    "gap_bodies": 2,
+    "gap_bodies": 1,
     "gap_bytes": 0,
     "kept_coverage": {
      "elf": 90.0286,
-     "macho": 91.3683
+     "macho": 88.0604
     },
-    "modelled_bytes": 1748185,
+    "modelled_bytes": 1997148,
     "modelled_coverage": 100.0,
     "residual": {
      "elf": 0,
      "macho": 120
     },
-    "text": 1821067,
-    "used_bytes": 1573867
+    "text": 2166496,
+    "used_bytes": 1758696
    },
    "capture": {
-    "bodies": 3422,
+    "bodies": 3450,
     "coverage": 100.0,
-    "faithful_bytes": 1747496,
+    "faithful_bytes": 1997008,
     "residual": {
      "elf": 0,
      "macho": 120
     },
-    "text": 1820378
+    "text": 2166356
    },
    "lowerable": {
     "elf": {
@@ -175,22 +175,22 @@
      "region_nodes_pct": 17.4154
     },
     "macho": {
-     "big_region_nodes_pct": 5.9371,
+     "big_region_nodes_pct": 5.9879,
      "blockers": {
       "asm": 0.0,
-      "call": 0.0336,
-      "frame": 0.4099,
-      "global": 1.4178,
+      "call": 0.0312,
+      "frame": 0.4373,
+      "global": 1.4048,
       "opaque": 0.0,
-      "reg": 0.948,
-      "type": 0.4578
+      "reg": 1.0245,
+      "type": 0.4849
      },
-     "bodies_pct": 10.176,
-     "bytes_pct": 2.7968,
-     "nodes_pct": 42.6305,
-     "nodes_pct_loose": 66.9792,
-     "nodes_pct_strict": 26.1216,
-     "region_nodes_pct": 18.1936
+     "bodies_pct": 10.2742,
+     "bytes_pct": 2.7486,
+     "nodes_pct": 42.4912,
+     "nodes_pct_loose": 67.0378,
+     "nodes_pct_strict": 26.2378,
+     "region_nodes_pct": 18.0375
     },
     "pe": {
      "big_region_nodes_pct": 4.9067,
@@ -214,38 +214,38 @@
   },
   "O2": {
    "arena": {
-    "bodies": 3422,
-    "body_bytes": 1779446,
-    "coverage": 84.9598,
-    "discarded_bytes": 173747,
+    "bodies": 3450,
+    "body_bytes": 2059800,
+    "coverage": 80.7224,
+    "discarded_bytes": 237844,
     "failed": {
      "elf": 0,
      "macho": 0
     },
-    "gap_bodies": 3,
-    "gap_bytes": 467,
+    "gap_bodies": 2,
+    "gap_bytes": 472,
     "kept_coverage": {
      "elf": 90.2096,
-     "macho": 91.5516
+     "macho": 88.4301
     },
-    "modelled_bytes": 1778979,
-    "modelled_coverage": 99.9738,
+    "modelled_bytes": 2059328,
+    "modelled_coverage": 99.9771,
     "residual": {
      "elf": 0,
      "macho": 120
     },
-    "text": 1889401,
-    "used_bytes": 1605232
+    "text": 2256480,
+    "used_bytes": 1821484
    },
    "capture": {
-    "bodies": 3422,
+    "bodies": 3450,
     "coverage": 100.0,
-    "faithful_bytes": 1747496,
+    "faithful_bytes": 1997008,
     "residual": {
      "elf": 0,
      "macho": 120
     },
-    "text": 1820378
+    "text": 2166356
    },
    "lowerable": {
     "elf": {
@@ -267,22 +267,22 @@
      "region_nodes_pct": 17.4154
     },
     "macho": {
-     "big_region_nodes_pct": 5.9371,
+     "big_region_nodes_pct": 5.9879,
      "blockers": {
       "asm": 0.0,
-      "call": 0.0338,
-      "frame": 0.3653,
-      "global": 1.3637,
+      "call": 0.031,
+      "frame": 0.3771,
+      "global": 1.3371,
       "opaque": 0.0,
-      "reg": 0.8913,
-      "type": 0.4368
+      "reg": 0.9526,
+      "type": 0.4571
      },
-     "bodies_pct": 10.176,
-     "bytes_pct": 2.5839,
-     "nodes_pct": 42.6305,
-     "nodes_pct_loose": 66.9792,
-     "nodes_pct_strict": 26.1216,
-     "region_nodes_pct": 18.1936
+     "bodies_pct": 10.2742,
+     "bytes_pct": 2.5126,
+     "nodes_pct": 42.4912,
+     "nodes_pct_loose": 67.0378,
+     "nodes_pct_strict": 26.2378,
+     "region_nodes_pct": 18.0375
     },
     "pe": {
      "big_region_nodes_pct": 4.9067,
@@ -306,38 +306,38 @@
   },
   "O3": {
    "arena": {
-    "bodies": 3422,
-    "body_bytes": 1793017,
-    "coverage": 79.5106,
-    "discarded_bytes": 173747,
+    "bodies": 3450,
+    "body_bytes": 2070696,
+    "coverage": 76.534,
+    "discarded_bytes": 237844,
     "failed": {
      "elf": 0,
      "macho": 0
     },
-    "gap_bodies": 3,
-    "gap_bytes": 467,
+    "gap_bodies": 2,
+    "gap_bytes": 472,
     "kept_coverage": {
      "elf": 90.2838,
-     "macho": 91.5516
+     "macho": 88.491
     },
-    "modelled_bytes": 1792550,
-    "modelled_coverage": 99.974,
+    "modelled_bytes": 2070224,
+    "modelled_coverage": 99.9772,
     "residual": {
      "elf": 0,
      "macho": 120
     },
-    "text": 2035960,
-    "used_bytes": 1618803
+    "text": 2394204,
+    "used_bytes": 1832380
    },
    "capture": {
-    "bodies": 3422,
+    "bodies": 3450,
     "coverage": 100.0,
-    "faithful_bytes": 1747496,
+    "faithful_bytes": 1997008,
     "residual": {
      "elf": 0,
      "macho": 120
     },
-    "text": 1820378
+    "text": 2166356
    },
    "lowerable": {
     "elf": {
@@ -359,22 +359,22 @@
      "region_nodes_pct": 17.4154
     },
     "macho": {
-     "big_region_nodes_pct": 5.9371,
+     "big_region_nodes_pct": 5.9879,
      "blockers": {
       "asm": 0.0,
-      "call": 0.0338,
-      "frame": 0.3653,
-      "global": 1.3637,
+      "call": 0.0309,
+      "frame": 0.3846,
+      "global": 1.3378,
       "opaque": 0.0,
-      "reg": 0.8913,
-      "type": 0.4368
+      "reg": 0.9475,
+      "type": 0.4546
      },
-     "bodies_pct": 10.176,
-     "bytes_pct": 2.5839,
-     "nodes_pct": 42.6305,
-     "nodes_pct_loose": 66.9792,
-     "nodes_pct_strict": 26.1216,
-     "region_nodes_pct": 18.1936
+     "bodies_pct": 10.2742,
+     "bytes_pct": 2.5169,
+     "nodes_pct": 42.4912,
+     "nodes_pct_loose": 67.0378,
+     "nodes_pct_strict": 26.2378,
+     "region_nodes_pct": 18.0375
     },
     "pe": {
      "big_region_nodes_pct": 4.9067,
