@@ -4,6 +4,16 @@ Moved out of `TODO.md` In-progress zone per INSTRUCTIONS.md rev-2 §4.1. Older
 per-session checkpoints (pre-2026-08-21T20:00Z) live in git history on the
 `## In progress — win-x64` TODO zone; the durable facts are consolidated here.
 
+## 2026-08-22T16:13Z -- T-lin-10510 funnel-SHRD slice DONE (0bb96754a) — win-native bit-idiom family COMPLETE
+
+Loop continuation (§10.11). §11 pick again T-lin-10510 (tier-5 [S], P2, top locality). Landed the last funnel piece: variable funnel-shift-RIGHT `(x>>n)|(y<<(W-n))` → `shrd dest,src,cl` (0F AD /r; SHRD dest,src,CL = (dest>>CL)|(src<<(W-CL)), so dest=x, src=y, count=n). New `ast_funnel_varr_try` is the exact mirror of the var-shl recognizer (SHR term `x>>n` plain-Ref count → dest; SHL term `y<<(W-n)` Binary count → src), folding to a 3-child AST_OP_FSHR (0x40027) → new `gen_shrd_var` (byte-identical 3-operand register dance to gen_shld_var — pin n→RCX, vswap/vrotb/vrott to load x,y into GP — only the opcode differs, 0xad0f vs 0xa50f).
+
+**Why a dedicated recognizer:** the CONST right-funnel folds to SHLD for free (OR-commutativity), but the VARIABLE right-funnel has a Binary `W-n` on the SHL side, which the plain-Ref-count-requiring funnel/funnel_var recognizers reject — so SHRD is genuinely needed. Verified the full chain-decline logic before building (rotate_* / funnel / funnel_var all correctly pass it through to funnel_varr; same-base caught by rotate_varr upstream).
+
+**VERIFY (native x86_64-PE, MSVC cmake-release):** `shrdl %cl,%eax,%edx` / `shrdq %cl,%rax,%rdx`; all 3 flag arms == gcc-O2 across a shift sweep on both widths; negatives DECLINE (signed, mismatched count vars, same-base→`rorl %cl`, flag-off); optfire `rotate` cell (vfnr/vfnr64) PASS; bswap/slp no-regress; o0/On-neutral; cross-arch clean by construction.
+
+**MILESTONE:** the win-native bit-idiom family is COMPLETE on x86_64 — **bswap** (from-shifts) + **rotate** (const/var × left/right = rol/ror) + **funnel** (const both shapes → shld imm; variable left → shld cl; variable right → shrd cl). This closes the clean, bounded, default-OFF win-native idiom-recognition work under T-lin-10510. Remaining T-lin-10510 follow-ups are all OTHER-BOX (arm64 EXTR/REV/ROR/ROL = mac; i386 = same encoding but no local executor to run-verify) or LARGER multi-part (popcount/clz/ctz-LOOP recognition, SWAR word-at-a-time) or rebank-gated fleet-policy defaults (x*C strength-reduction = lin's rebank domain). Also slimmed the T-lin-10510 TODO NOTE (it had accumulated three slices of prose) down to a concise summary + DETAILS pointer per the one-line-plus-pointer hygiene rule.
+
 ## 2026-08-22T16:05Z -- T-lin-10510 VARIABLE-COUNT funnel slice DONE (d236d85f1) — loop continuation
 
 Continued the /goal loop after landing the const funnel slice (per §10.11 a completed slice re-enters the loop; the stop-hook correctly flagged that a slice-completion is not an empty-poll STOP). §11 selection: tier-5 [S], P2 mission priority (P1 exhausted fleet-wide), highest locality — I hold the hot, verified idiom substrate and no other session is near it. Reclaimed T-lin-10510.
