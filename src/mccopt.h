@@ -141,6 +141,7 @@
 	MCC_OPT_ROW(SWITCH_JUMPTABLE,              "switch-jumptable",             MCC_OPTD_SPECIAL) \
 	MCC_OPT_ROW(LOOP_IDIOM,                    "loop-idiom",                   MCC_OPTD_OFF) \
 	MCC_OPT_ROW(GCSE_COMM_REL,                 "gcse-comm-rel",                MCC_OPTD_OFF) \
+	MCC_OPT_ROW(DIVREM_PAIRS,                  "divrem-pairs",                 MCC_OPTD_LEVEL(2)) \
 	MCC_OPT_ROW(FOLD_STR,                      "fold-str",                     MCC_OPTD_LEVEL(2))
 
 enum {

@@ -26,7 +26,7 @@ void mcc_stats_set_flush_hook(void (*fn)(void)) { MCC_TRACE("enter\n");
 	mcc_stats_flush_hook = fn;
 }
 
-#define MCCSTATS_STRAT_N 24
+#define MCCSTATS_STRAT_N 25
 #define MCCSTATS_GATE_N 42
 #define MCCSTATS_SPARK_N 40
 #define MCCSTATS_MAXROWS 48
@@ -36,7 +36,7 @@ static const char *const mccstats_strat_name[MCCSTATS_STRAT_N] = {
 		"bfold", "ident", "narrow", "cprop", "cse", "ltemp", "ivsr",
 		"pre", "licm", "dse", "sccp", "jt", "bf", "range",
 		"divmagic", "abs", "select", "reassoc", "sethi", "tco", "inline",
-		"cload", "sra", "sroa"};
+		"cload", "sra", "sroa", "divrem"};
 
 enum {
 	MCCSTATS_S_BFOLD = 0,

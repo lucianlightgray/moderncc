@@ -1589,6 +1589,8 @@ static MCC_OPT_TLS int ast_cse_comm_env;
 static MCC_OPT_TLS int ast_cse_comm_rel_env;
 static MCC_OPT_TLS int ast_range_env;
 static MCC_OPT_TLS int ast_divmagic_env;
+static MCC_OPT_TLS int ast_divrem_env;
+static MCC_OPT_TLS int ast_divrem_folds;
 static MCC_OPT_TLS int ast_abs_env;
 static int ast_select_env;
 #define AST_SEL_MARK ((uint64_t)0x5E1EC7)
@@ -1908,7 +1910,7 @@ static void ast_search_walk_trace(const int *sel, int k, int depth, int walk,
 	MCC_TRACE("combo walk=%s depth=%d k=%d seq=%s\n", combo_walk_name(walk), depth, k,
 						seq);
 }
-#define AST_STRAT_COUNT_MAX 25
+#define AST_STRAT_COUNT_MAX 26
 #define AST_CYCLE_MAX 8
 static int ast_search_order_env;
 static int ast_search_fullset_env;
@@ -2597,6 +2599,7 @@ void ast_configure(MCCState *s1) { MCC_TRACE("enter\n");
 	ast_cse_comm_rel_env = mcc_opt(s1, MCC_OPT_GCSE_COMM_REL);
 	ast_range_env = mcc_opt(s1, MCC_OPT_TREE_VRP);
 	ast_divmagic_env = mcc_opt(s1, MCC_OPT_DIVMAGIC);
+	ast_divrem_env = mcc_opt(s1, MCC_OPT_DIVREM_PAIRS);
 	ast_abs_env = mcc_opt(s1, MCC_OPT_IF_CONVERSION_ABS);
 	ast_select_env = mcc_opt(s1, MCC_OPT_IF_CONVERSION);
 	ast_reassoc_env = mcc_opt(s1, MCC_OPT_TREE_REASSOC);
@@ -12860,6 +12863,71 @@ static int ast_divmagic_run(AstArena *a) { MCC_TRACE("enter\n");
 	return ast_divmagic_folds;
 }
 
+static int ast_divrem_div_op(int op) { MCC_TRACE("enter\n");
+	if (op == '%')
+		{ MCC_TRACE("br\n"); return '/'; }
+	if (op == TOK_UMOD)
+		{ MCC_TRACE("br\n"); return TOK_UDIV; }
+	return 0;
+}
+
+static int ast_divrem_rewrite(AstArena *a, AstLocal n, AstLocal da, AstLocal db,
+															int divop, int toff, AstLocal qref) { MCC_TRACE("enter\n");
+	int hits = 0;
+	if (n == AST_NONE)
+		{ MCC_TRACE("br\n"); return 0; }
+	if (ast_kind(a, n) == AST_Binary && ast_nchild(a, n) == 2 &&
+			ast_divrem_div_op(ast_op(a, n)) == divop) { MCC_TRACE("br\n");
+		AstLocal ma = ast_child(a, n, 0), mb = ast_child(a, n, 1);
+		int t;
+		uint64_t r;
+		if (ast_kind(a, mb) != AST_Literal && ast_ident_same(a, ma, da) &&
+				ast_ident_same(a, mb, db) && ast_ident_pure(a, ma) && ast_ident_pure(a, mb) &&
+				!ast_tco_reads_off(a, da, toff) && !ast_tco_reads_off(a, db, toff) &&
+				ast_ident_etype(a, n, &t, &r)) { MCC_TRACE("br\n");
+			AstLocal qb = ast_bf_bin(a, '*', t, ast_dup_sub(a, qref), ast_dup_sub(a, mb));
+			AstLocal keepa = ast_dup_sub(a, ma);
+			ast_set_op(a, n, '-');
+			ast_set_ival(a, n, 0);
+			ast_set_fbits(a, n, 0);
+			ast_set_sym(a, n, 0);
+			ast_clear_children(a, n);
+			ast_add_child(a, n, keepa);
+			ast_add_child(a, n, qb);
+			return 1;
+		}
+	}
+	for (AstLocal c = ast_first_child(a, n); c != AST_NONE; c = ast_next_sib(a, c))
+		{ MCC_TRACE("br\n"); hits += ast_divrem_rewrite(a, c, da, db, divop, toff, qref); }
+	return hits;
+}
+
+static int ast_divrem_run(AstArena *a) { MCC_TRACE("enter\n");
+	AstLocal nn = ast_count(a);
+	int folds = 0;
+	for (AstLocal bb = 0; bb < nn; bb++) { MCC_TRACE("br\n");
+		if (ast_kind(a, bb) != AST_BasicBlock)
+			{ MCC_TRACE("br\n"); continue; }
+		AstLocal prev = AST_NONE;
+		for (AstLocal s = ast_first_child(a, bb); s != AST_NONE; s = ast_next_sib(a, s)) { MCC_TRACE("br\n");
+			if (prev != AST_NONE && ast_kind(a, prev) == AST_Store) { MCC_TRACE("br\n");
+				AstLocal lval = ast_child(a, prev, 0), val = ast_child(a, prev, 1);
+				int toff, tt;
+				if (val != AST_NONE && ast_kind(a, val) == AST_Binary && ast_nchild(a, val) == 2 &&
+						(ast_op(a, val) == '/' || ast_op(a, val) == TOK_UDIV) &&
+						ast_cse_is_local(a, lval, &toff, &tt)) { MCC_TRACE("br\n");
+					AstLocal da = ast_child(a, val, 0), db = ast_child(a, val, 1);
+					if (ast_kind(a, db) != AST_Literal)
+						{ MCC_TRACE("br\n"); folds += ast_divrem_rewrite(a, s, da, db, ast_op(a, val), toff, lval); }
+				}
+			}
+			prev = s;
+		}
+	}
+	ast_divrem_folds = folds;
+	return folds;
+}
+
 static MCC_OPT_TLS int ast_abs_folds;
 
 static AstLocal ast_abs_neg_of(AstArena *a, AstLocal n) { MCC_TRACE("enter\n");
@@ -18312,6 +18380,7 @@ static int sg_pre(void) { MCC_TRACE("enter\n"); return ast_pre_env; }
 static int sg_bitflag(void) { MCC_TRACE("enter\n"); return ast_bitflag_env; }
 static int sg_range(void) { MCC_TRACE("enter\n"); return ast_range_env; }
 static int sg_divmagic(void) { MCC_TRACE("enter\n"); return ast_divmagic_env; }
+static int sg_divrem(void) { MCC_TRACE("enter\n"); return ast_divrem_env; }
 static int sg_abs(void) { MCC_TRACE("enter\n"); return ast_abs_env; }
 static int sg_select(void) { MCC_TRACE("enter\n"); return ast_select_env; }
 static int sg_reassoc(void) { MCC_TRACE("enter\n"); return ast_reassoc_env; }
@@ -18341,6 +18410,7 @@ static int ast_strat_jt(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; re
 static int ast_strat_bf(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_bf_run(a); }
 static int ast_strat_range(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_range_run(a); }
 static int ast_strat_divmagic(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_divmagic_run(a); }
+static int ast_strat_divrem(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_divrem_run(a); }
 static int ast_strat_abs(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_abs_run(a); }
 static int ast_strat_select(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_select_run(a); }
 static int ast_strat_reassoc(AstArena *a, Sym *s) { MCC_TRACE("enter\n"); (void)s; return ast_reassoc_run(a); }
@@ -18374,6 +18444,7 @@ enum {
 	AST_STRAT_CLOAD,
 	AST_STRAT_SRA,
 	AST_STRAT_SROA,
+	AST_STRAT_DIVREM,
 	AST_STRAT_COUNT
 };
 typedef char ast_strat_count_fits[AST_STRAT_COUNT <= AST_STRAT_COUNT_MAX ? 1 : -1];
@@ -18403,6 +18474,7 @@ static const AstStrategy ast_strategies[AST_STRAT_COUNT] = {
 	{"cload", sg_templates, ast_strat_cload},
 	{"sra", sg_sra, ast_strat_sra},
 	{"sroa", sg_sroa, ast_strat_sroa},
+	{"divrem", sg_divrem, ast_strat_divrem},
 };
 
 static uint32_t ast_strat_admit = 0xffffffffu;

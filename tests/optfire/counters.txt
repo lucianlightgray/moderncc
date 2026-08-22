@@ -19,6 +19,7 @@ jt|-O2|jt
 bf|-O4|bf
 range|-O4|range
 divmagic|-O2|divmagic
+divrem|-O2|divrem
 abs|-O4|abs
 select|-O4|select
 reassoc|-O4|reassoc
