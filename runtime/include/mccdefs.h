@@ -781,9 +781,9 @@
 		return __r;
 	}
 #else
-	__BUILTIN(int, fprintf_unlocked, (void*, const char*, ...))
-	__BUILTIN(int, fputs_unlocked, (const char*, void*))
-	__BUILTIN(int, printf_unlocked, (const char*, ...))
+	#define __builtin_printf_unlocked(...) __builtin_printf(__VA_ARGS__)
+	#define __builtin_fprintf_unlocked(...) __builtin_fprintf(__VA_ARGS__)
+	#define __builtin_fputs_unlocked(__s, __f) __builtin_fputs((__s), (__f))
 #endif
 	__BUILTIN(void, exit, (int))
 	__BUILTIN(void*, memchr, (const void*, int, __SIZE_TYPE__))
