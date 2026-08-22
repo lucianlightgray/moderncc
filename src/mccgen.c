@@ -6150,6 +6150,14 @@ again:
 
 		if (ds >= ss)
 			{ MCC_TRACE("br\n"); goto done; }
+#if defined(MCC_TARGET_RISCV64)
+		if (ss == 8 && ds == 4 && (dbt & VT_UNSIGNED)) { MCC_TRACE("br\n");
+			vunpin_reg(MCC_RC_INT, vtop->type.t);
+			vtop->type.t = VT_INT | VT_UNSIGNED;
+			gen_cvt_sxtw();
+			goto done;
+		}
+#endif
 #if defined MCC_TARGET_I386 || defined MCC_TARGET_X86_64 || defined MCC_TARGET_ARM64 || defined MCC_TARGET_RISCV64
 		if (ss == 4) { MCC_TRACE("br\n");
 			vunpin_reg(MCC_RC_INT, vtop->type.t);
